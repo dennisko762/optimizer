@@ -1,0 +1,39 @@
+# Budapest Ferenc Liszt International Airport
+icao: LHBP
+iata: BUD
+name: Budapest Ferenc Liszt International Airport
+city: Budapest
+country: HU
+continent: EU
+category: medium
+
+taxi:
+  out_p50_min: 11
+  out_p75_min: 14
+  in_p50_min: 8
+  in_p75_min: 11
+  source: "Eurocontrol CODA 2022-2023"
+
+mct:
+  dd_min: 25
+  di_min: 35
+  id_min: 35
+  ii_min: 35
+  schengen_applies: true
+  notes: "Wizz Air hub. Terminal 2A (Schengen) and 2B (non-Schengen). Connected airside."
+  source: "Budapest Airport published MCT"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Europe/Budapest"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 2
+
+data_quality:
+  level: curated
+  source_year: 2023

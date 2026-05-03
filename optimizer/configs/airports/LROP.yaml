@@ -1,0 +1,39 @@
+# Bucharest Henri Coanda International Airport
+icao: LROP
+iata: OTP
+name: Bucharest Henri Coanda International Airport
+city: Bucharest
+country: RO
+continent: EU
+category: medium
+
+taxi:
+  out_p50_min: 11
+  out_p75_min: 15
+  in_p50_min: 8
+  in_p75_min: 11
+  source: "Eurocontrol CODA 2022-2023"
+
+mct:
+  dd_min: 25
+  di_min: 35
+  id_min: 35
+  ii_min: 35
+  schengen_applies: false
+  notes: "Romania not yet in Schengen. T1 for scheduled, T2 for charter/LCC."
+  source: "CNAB / airline MCT"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Europe/Bucharest"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 2
+
+data_quality:
+  level: curated
+  source_year: 2023

@@ -1,0 +1,41 @@
+# Boston Logan International Airport
+icao: KBOS
+iata: BOS
+name: Boston Logan International Airport
+city: Boston
+country: US
+continent: NA
+category: large
+
+taxi:
+  out_p50_min: 20
+  out_p75_min: 27
+  in_p50_min: 12
+  in_p75_min: 16
+  source: "FAA ASPM 2022-2023"
+  notes: "Complex multi-runway layout on a peninsula. Crossing runway intersections cause delays."
+
+mct:
+  dd_min: 30
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "International terminal E separate. Multiple domestic terminals A-C. Cross-terminal via landside."
+  source: "Massport / airline MCT"
+  cross_terminal_ii_min: 75
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/New_York"
+  notes: "No formal curfew."
+
+slot_coordinated: false
+slot_level: 0
+
+data_quality:
+  level: curated
+  source_year: 2023

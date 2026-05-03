@@ -1,0 +1,39 @@
+# Vienna International Airport
+icao: LOWW
+iata: VIE
+name: Vienna International Airport
+city: Vienna
+country: AT
+continent: EU
+category: large
+
+taxi:
+  out_p50_min: 13
+  out_p75_min: 17
+  in_p50_min: 9
+  in_p75_min: 13
+  source: "Eurocontrol CODA 2022-2023"
+
+mct:
+  dd_min: 25
+  di_min: 35
+  id_min: 35
+  ii_min: 35
+  schengen_applies: true
+  notes: "Austrian Airlines hub. Single main terminal complex."
+  source: "Austrian Airlines / VIE Airport"
+
+night_curfew:
+  restricted: true
+  banned: false
+  start_local: "22:00"
+  end_local: "06:00"
+  timezone: "Europe/Vienna"
+  notes: "Night movement restrictions. Quota system for noise. Scheduled ops reduced after 22:00."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

@@ -244,6 +244,19 @@ async def sync_simbrief(
     isa_deviation_c = _resolve_isa_deviation_c(seed, seed_dict)
     avg_wind_dir, avg_wind_spd = _resolve_avg_wind(seed, seed_dict)
 
+    simbrief_taxi_out_min = _resolve_taxi_time_min(seed, seed_dict, "out")
+    simbrief_taxi_in_min = _resolve_taxi_time_min(seed, seed_dict, "in")
+
+    from optimizer.airport_loader import get_taxi_out_min, get_taxi_in_min, get_mct_min, load_airport
+    dest_icao = _normalize_airport(destination) if destination else None
+    origin_icao = _normalize_airport(origin) if origin else None
+    dest_airport = load_airport(dest_icao) if dest_icao else None
+    origin_airport = load_airport(origin_icao) if origin_icao else None
+
+    resolved_taxi_out_min = get_taxi_out_min(origin_icao or "", simbrief_taxi_out_min=simbrief_taxi_out_min) if origin_icao else simbrief_taxi_out_min
+    resolved_taxi_in_min = get_taxi_in_min(dest_icao or "", simbrief_taxi_in_min=simbrief_taxi_in_min) if dest_icao else simbrief_taxi_in_min
+    dest_mct_ii_min = get_mct_min(dest_icao or "") if dest_icao else None
+
     warnings: list[str] = []
 
     if origin is None:
@@ -337,6 +350,14 @@ async def sync_simbrief(
             "sobt_utc": sobt_utc,
             "destination_lat": destination_lat,
             "destination_lon": destination_lon,
+            "simbrief_taxi_out_min": simbrief_taxi_out_min,
+            "simbrief_taxi_in_min": simbrief_taxi_in_min,
+            "resolved_taxi_out_min": resolved_taxi_out_min,
+            "resolved_taxi_in_min": resolved_taxi_in_min,
+            "dest_mct_ii_min": dest_mct_ii_min,
+            "dest_airport_category": dest_airport.category if dest_airport else None,
+            "dest_night_curfew": dest_airport.night_curfew.restricted if dest_airport else None,
+            "dest_airport_is_fallback": dest_airport.is_fallback if dest_airport else None,
             "_debug_simbrief_isa_raw": _first_deep_present(
                 seed, seed_dict,
                 ["isa_dev", "isa_deviation", "planned_isa_deviation_c", "general.isa_dev"],
@@ -476,6 +497,26 @@ def _resolve_flight_number(model: Any, model_dict: dict[str, Any]) -> str | None
         return f"{str(airline_iata).strip().upper()}{flight_text}"
 
     return flight_text
+
+def _resolve_taxi_time_min(model: Any, model_dict: dict[str, Any], direction: str) -> float | None:
+    """
+    Extract planned taxi-out or taxi-in time from the SimBrief seed.
+    direction: "out" or "in"
+    SimBrief returns values in minutes (integer string, e.g. "18").
+    """
+    if direction == "out":
+        keys = ["times.taxi_out", "taxi_out", "taxi_out_min", "params.taxi_out"]
+    else:
+        keys = ["times.taxi_in", "taxi_in", "taxi_in_min", "params.taxi_in"]
+
+    value = _first_float_deep_present(model, model_dict, keys)
+    if value is None:
+        return None
+    # SimBrief may give seconds (>60) or minutes; normalise to minutes
+    if value > 60:
+        return round(value / 60.0, 1)
+    return float(value) if value > 0 else None
+
 
 def _resolve_planned_block_time_min(model: Any, model_dict: dict[str, Any]) -> float | None:
     value = _first_float_deep_present(

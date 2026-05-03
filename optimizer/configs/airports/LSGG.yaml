@@ -1,0 +1,40 @@
+# Geneva Airport
+icao: LSGG
+iata: GVA
+name: Geneva Airport
+city: Geneva
+country: CH
+continent: EU
+category: medium
+
+taxi:
+  out_p50_min: 10
+  out_p75_min: 13
+  in_p50_min: 7
+  in_p75_min: 10
+  source: "Eurocontrol CODA 2022-2023"
+  notes: "Single runway airport. Compact taxiway system."
+
+mct:
+  dd_min: 25
+  di_min: 35
+  id_min: 35
+  ii_min: 35
+  schengen_applies: true
+  notes: "Swiss side and French side (LFLI). Most connections within Swiss/Schengen sector."
+  source: "Geneva Airport / airline published MCT"
+
+night_curfew:
+  restricted: true
+  banned: true
+  start_local: "22:00"
+  end_local: "06:00"
+  timezone: "Europe/Zurich"
+  notes: "Very strict curfew. One of Europe's tightest. Last scheduled departure typically 22:30. Arrivals until approx 00:30 under special provisions."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

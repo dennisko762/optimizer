@@ -1,0 +1,39 @@
+# Athens Eleftherios Venizelos Airport
+icao: LGAV
+iata: ATH
+name: Athens Eleftherios Venizelos Airport
+city: Athens
+country: GR
+continent: EU
+category: large
+
+taxi:
+  out_p50_min: 12
+  out_p75_min: 16
+  in_p50_min: 9
+  in_p75_min: 12
+  source: "Eurocontrol CODA 2022-2023"
+
+mct:
+  dd_min: 25
+  di_min: 40
+  id_min: 40
+  ii_min: 40
+  schengen_applies: true
+  notes: "Aegean Airlines hub. Single terminal with domestic and international piers."
+  source: "Aegean Airlines / AIA"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Europe/Athens"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 2
+
+data_quality:
+  level: curated
+  source_year: 2023

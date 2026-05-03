@@ -1,0 +1,41 @@
+# Shanghai Pudong International Airport
+icao: ZSPD
+iata: PVG
+name: Shanghai Pudong International Airport
+city: Shanghai
+country: CN
+continent: AS
+category: mega_hub
+
+taxi:
+  out_p50_min: 19
+  out_p75_min: 26
+  in_p50_min: 12
+  in_p75_min: 17
+  source: "Estimated from operational data 2022-2023"
+  notes: "T1 and T2. Maglev train to city. Two parallel runway pairs."
+
+mct:
+  dd_min: 45
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "China Eastern / Shanghai Airlines hub."
+  source: "China Eastern / PVG Airport published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Asia/Shanghai"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: estimated
+  source_year: 2023

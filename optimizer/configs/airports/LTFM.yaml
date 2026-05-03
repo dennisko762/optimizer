@@ -1,0 +1,41 @@
+# Istanbul Airport
+icao: LTFM
+iata: IST
+name: Istanbul Airport
+city: Istanbul
+country: TR
+continent: EU
+category: mega_hub
+
+taxi:
+  out_p50_min: 20
+  out_p75_min: 27
+  in_p50_min: 13
+  in_p75_min: 18
+  source: "Estimated; new airport opened 2019"
+  notes: "Very large new airport. Multiple independent runways. Taxi distances can be long at remote stands."
+
+mct:
+  dd_min: 40
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "Turkish Airlines mega-hub. Single large terminal. Domestic-international connections require passport control."
+  source: "Turkish Airlines / Istanbul Airport"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Europe/Istanbul"
+  notes: "No curfew. 24-hour operations."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: estimated
+  source_year: 2023
+  notes: "Airport opened April 2019. Taxi time data based on early operational reports."

@@ -1,0 +1,41 @@
+# London Gatwick Airport
+icao: EGKK
+iata: LGW
+name: London Gatwick Airport
+city: London
+country: GB
+continent: EU
+category: large
+
+taxi:
+  out_p50_min: 14
+  out_p75_min: 18
+  in_p50_min: 9
+  in_p75_min: 12
+  source: "Eurocontrol CODA 2022-2023"
+  notes: "Single runway. North and South terminals connected by transit system."
+
+mct:
+  dd_min: 50
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "UK post-Brexit, no Schengen. North-South terminal cross-connections add 15+ min."
+  source: "Gatwick Airport published MCT"
+  cross_terminal_ii_min: 75
+
+night_curfew:
+  restricted: true
+  banned: true
+  start_local: "23:00"
+  end_local: "06:00"
+  timezone: "Europe/London"
+  notes: "Night quota system similar to Heathrow. Strict noise limits. Very limited scheduled movements between 23:00-06:00."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

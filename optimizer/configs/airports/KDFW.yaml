@@ -1,0 +1,41 @@
+# Dallas/Fort Worth International Airport
+icao: KDFW
+iata: DFW
+name: Dallas Fort Worth International Airport
+city: Dallas
+country: US
+continent: NA
+category: mega_hub
+
+taxi:
+  out_p50_min: 18
+  out_p75_min: 25
+  in_p50_min: 12
+  in_p75_min: 16
+  source: "FAA ASPM 2022-2023"
+  notes: "Linear Skytrain between terminals. American Airlines mega-hub. Large field, long taxi distances to outer runways."
+
+mct:
+  dd_min: 30
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "American Airlines hub. International terminal D connected by Skylink. Same terminal 30 min; cross-terminal 45-60 min."
+  source: "American Airlines published MCT"
+  cross_terminal_ii_min: 60
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/Chicago"
+  notes: "No formal curfew."
+
+slot_coordinated: false
+slot_level: 0
+
+data_quality:
+  level: curated
+  source_year: 2023

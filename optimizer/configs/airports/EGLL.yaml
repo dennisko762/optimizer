@@ -1,0 +1,41 @@
+# London Heathrow Airport
+icao: EGLL
+iata: LHR
+name: London Heathrow Airport
+city: London
+country: GB
+continent: EU
+category: mega_hub
+
+taxi:
+  out_p50_min: 22
+  out_p75_min: 30
+  in_p50_min: 13
+  in_p75_min: 18
+  source: "Eurocontrol CODA 2022-2023"
+  notes: "Extremely congested. Single runway ops during easterly winds increase taxi times substantially."
+
+mct:
+  dd_min: 60
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "UK no longer Schengen. Same-terminal MCT is 60 min. Different terminals require 75-90 min. T5 self-connect: 60 min."
+  source: "British Airways / Heathrow Airport published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: true
+  banned: true
+  start_local: "23:00"
+  end_local: "06:00"
+  timezone: "Europe/London"
+  notes: "Strict night quota system (QC). Movements 23:30-06:00 severely restricted. Quota Count system penalizes noisy aircraft. Scheduled ops cease by 23:00 per BAA rules."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

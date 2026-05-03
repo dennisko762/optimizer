@@ -1,0 +1,43 @@
+# Fallback / generic airport profile
+# Used when no specific airport config is available.
+# Values represent approximate global medians across IATA Level 2/3 airports.
+# Source: Eurocontrol CODA aggregate, FAA ASPM aggregate.
+icao: _FALLBACK
+iata: null
+name: Generic Fallback Airport
+city: null
+country: null
+continent: null
+category: medium
+
+taxi:
+  out_p50_min: 14
+  out_p75_min: 20
+  in_p50_min: 9
+  in_p75_min: 13
+  source: "Global median estimate"
+  notes: "Fallback values. Provide a specific airport config for better accuracy."
+
+mct:
+  dd_min: 30
+  di_min: 45
+  id_min: 45
+  ii_min: 45
+  schengen_applies: false
+  notes: "Conservative fallback MCT. Real airports vary significantly."
+  source: "IATA global MCT guidelines"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: null
+  notes: "Unknown. Assume unrestricted."
+
+slot_coordinated: false
+slot_level: 0
+
+data_quality:
+  level: estimated
+  source_year: 2023

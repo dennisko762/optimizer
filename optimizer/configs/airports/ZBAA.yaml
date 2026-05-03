@@ -1,0 +1,41 @@
+# Beijing Capital International Airport
+icao: ZBAA
+iata: PEK
+name: Beijing Capital International Airport
+city: Beijing
+country: CN
+continent: AS
+category: mega_hub
+
+taxi:
+  out_p50_min: 22
+  out_p75_min: 30
+  in_p50_min: 14
+  in_p75_min: 20
+  source: "Estimated from operational data 2022-2023"
+  notes: "Three terminals (T1/T2/T3). T3 is world's largest single terminal building. Shuttle bus between T1/T2 and T3."
+
+mct:
+  dd_min: 45
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "Air China / Beijing Capital hub. T3 handles most international. Cross-terminal via shuttle."
+  source: "Air China / BCIA published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Asia/Shanghai"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: estimated
+  source_year: 2023

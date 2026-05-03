@@ -1,0 +1,41 @@
+# Delhi Indira Gandhi International Airport
+icao: VIDP
+iata: DEL
+name: Delhi Indira Gandhi International Airport
+city: New Delhi
+country: IN
+continent: AS
+category: hub
+
+taxi:
+  out_p50_min: 18
+  out_p75_min: 25
+  in_p50_min: 12
+  in_p75_min: 17
+  source: "Estimated from operational data 2022-2023"
+  notes: "T3 (international + Air India), T1 (low-cost domestic). High traffic growth in recent years."
+
+mct:
+  dd_min: 40
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "Air India hub. T1-T3 requires landside transfer (shuttle). T3 handles all international and Air India domestic."
+  source: "Air India / DIAL published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Asia/Kolkata"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: estimated
+  source_year: 2023

@@ -1,0 +1,40 @@
+# Hong Kong International Airport
+icao: VHHH
+iata: HKG
+name: Hong Kong International Airport
+city: Hong Kong
+country: HK
+continent: AS
+category: mega_hub
+
+taxi:
+  out_p50_min: 14
+  out_p75_min: 18
+  in_p50_min: 10
+  in_p75_min: 13
+  source: "Estimated from operational data 2022-2023"
+  notes: "Two parallel runways. T1 and T2. Sky Bridge connecting terminals. Remote North Satellite Concourse."
+
+mct:
+  dd_min: 45
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "Cathay Pacific hub. North Satellite requires automated transit. T1-T2 via Sky Bridge."
+  source: "Cathay Pacific / Airport Authority Hong Kong"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Asia/Hong_Kong"
+  notes: "No curfew. 24-hour operations."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

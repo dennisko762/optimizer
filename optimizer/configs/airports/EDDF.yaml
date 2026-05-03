@@ -1,0 +1,40 @@
+# Frankfurt am Main Airport
+icao: EDDF
+iata: FRA
+name: Frankfurt am Main Airport
+city: Frankfurt
+country: DE
+continent: EU
+category: mega_hub
+
+taxi:
+  out_p50_min: 20
+  out_p75_min: 28
+  in_p50_min: 13
+  in_p75_min: 18
+  source: "Eurocontrol CODA 2022-2023"
+  notes: "Values vary significantly with bank timing and runway config (25L/25R vs 07)"
+
+mct:
+  dd_min: 30
+  di_min: 45
+  id_min: 45
+  ii_min: 45
+  schengen_applies: true
+  notes: "Lufthansa hub. Terminal A-Z piers. Same-pier connections may qualify for shorter MCT."
+  source: "Lufthansa published MCT / Frankfurt Airport"
+
+night_curfew:
+  restricted: true
+  banned: false
+  start_local: "22:00"
+  end_local: "05:00"
+  timezone: "Europe/Berlin"
+  notes: "Nighttime movement restrictions in place. Scheduled ops permitted but penalties apply for late departures after 23:00. Emergency and cargo exemptions apply."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

@@ -1,0 +1,40 @@
+# Zurich Airport
+icao: LSZH
+iata: ZRH
+name: Zurich Airport
+city: Zurich
+country: CH
+continent: EU
+category: large
+
+taxi:
+  out_p50_min: 12
+  out_p75_min: 16
+  in_p50_min: 9
+  in_p75_min: 12
+  source: "Eurocontrol CODA 2022-2023"
+  notes: "Compact layout. Three runways (14/16/28). Taxiway system is efficient."
+
+mct:
+  dd_min: 30
+  di_min: 40
+  id_min: 40
+  ii_min: 40
+  schengen_applies: true
+  notes: "Swiss hub. Airside connection facilitated within Schengen zone."
+  source: "Swiss International Air Lines / ZRH Airport"
+
+night_curfew:
+  restricted: true
+  banned: true
+  start_local: "23:00"
+  end_local: "06:00"
+  timezone: "Europe/Zurich"
+  notes: "Very strict curfew enforced by cantonal law. No scheduled movements 23:00-06:00. Heavy fines. Exceptions only for genuine emergencies."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

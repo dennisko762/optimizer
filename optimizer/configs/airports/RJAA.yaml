@@ -1,0 +1,40 @@
+# Tokyo Narita International Airport
+icao: RJAA
+iata: NRT
+name: Tokyo Narita International Airport
+city: Tokyo
+country: JP
+continent: AS
+category: hub
+
+taxi:
+  out_p50_min: 15
+  out_p75_min: 20
+  in_p50_min: 10
+  in_p75_min: 14
+  source: "Estimated from operational data 2022-2023"
+
+mct:
+  dd_min: 60
+  di_min: 90
+  id_min: 90
+  ii_min: 90
+  schengen_applies: false
+  notes: "T1 (mainly non-Japanese carriers), T2 (ANA/JAL), T3 (LCC). T1-T2 via elevated walkway (20 min). T3 by shuttle bus."
+  source: "Narita International Airport / airline MCT"
+  cross_terminal_ii_min: 120
+
+night_curfew:
+  restricted: true
+  banned: true
+  start_local: "23:00"
+  end_local: "06:00"
+  timezone: "Asia/Tokyo"
+  notes: "Strict curfew. No scheduled movements 23:00-06:00. Community agreement. Violators face significant penalties."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

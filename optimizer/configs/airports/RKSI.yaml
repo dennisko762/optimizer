@@ -1,0 +1,41 @@
+# Seoul Incheon International Airport
+icao: RKSI
+iata: ICN
+name: Seoul Incheon International Airport
+city: Seoul
+country: KR
+continent: AS
+category: mega_hub
+
+taxi:
+  out_p50_min: 14
+  out_p75_min: 18
+  in_p50_min: 10
+  in_p75_min: 13
+  source: "Estimated from operational data 2022-2023"
+  notes: "Consistently voted world's best airport. T1 and T2 (Korean Air hub). Automated Transit System between terminals."
+
+mct:
+  dd_min: 45
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "Korean Air / Asiana hub. T1-T2 transit ~15 min. Major layover/transit airport for Asia-Americas routing."
+  source: "Korean Air / Incheon International Airport Corporation"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Asia/Seoul"
+  notes: "No curfew. 24-hour operations."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

@@ -1,0 +1,39 @@
+# Seattle-Tacoma International Airport
+icao: KSEA
+iata: SEA
+name: Seattle-Tacoma International Airport
+city: Seattle
+country: US
+continent: NA
+category: hub
+
+taxi:
+  out_p50_min: 15
+  out_p75_min: 20
+  in_p50_min: 10
+  in_p75_min: 14
+  source: "FAA ASPM 2022-2023"
+
+mct:
+  dd_min: 30
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "Alaska Airlines / Delta hub. North and South satellite concourses connected by underground train."
+  source: "Alaska Airlines / Port of Seattle MCT"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/Los_Angeles"
+  notes: "No formal curfew."
+
+slot_coordinated: false
+slot_level: 0
+
+data_quality:
+  level: curated
+  source_year: 2023

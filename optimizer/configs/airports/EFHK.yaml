@@ -1,0 +1,39 @@
+# Helsinki-Vantaa Airport
+icao: EFHK
+iata: HEL
+name: Helsinki-Vantaa Airport
+city: Helsinki
+country: FI
+continent: EU
+category: medium
+
+taxi:
+  out_p50_min: 11
+  out_p75_min: 14
+  in_p50_min: 8
+  in_p75_min: 11
+  source: "Eurocontrol CODA 2022-2023"
+
+mct:
+  dd_min: 25
+  di_min: 35
+  id_min: 35
+  ii_min: 35
+  schengen_applies: true
+  notes: "Finnair hub. Gateway to Asia via northern polar routes. Compact terminal with clear airside zoning."
+  source: "Finnair / Finavia"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Europe/Helsinki"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 2
+
+data_quality:
+  level: curated
+  source_year: 2023

@@ -1,0 +1,42 @@
+# Newark Liberty International Airport
+icao: KEWR
+iata: EWR
+name: Newark Liberty International Airport
+city: Newark
+country: US
+continent: NA
+category: hub
+
+taxi:
+  out_p50_min: 24
+  out_p75_min: 35
+  in_p50_min: 14
+  in_p75_min: 20
+  source: "FAA ASPM 2022-2023"
+  notes: "One of the highest taxi-out times in the US system. Chronic congestion. Runway crossing conflicts at intersection of runways 11/29 and 04L/22R."
+
+mct:
+  dd_min: 45
+  di_min: 75
+  id_min: 75
+  ii_min: 75
+  schengen_applies: false
+  notes: "United Airlines hub. Terminals A, B, C. AirTrain connects. International in Terminal B and C."
+  source: "United Airlines published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/New_York"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 3
+slot_notes: "High Density Rule applies under FAA slot program"
+
+data_quality:
+  level: curated
+  source_year: 2023

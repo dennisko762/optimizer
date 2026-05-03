@@ -1,0 +1,39 @@
+# Rome Fiumicino Airport (Leonardo da Vinci)
+icao: LIRF
+iata: FCO
+name: Rome Fiumicino Leonardo da Vinci Airport
+city: Rome
+country: IT
+continent: EU
+category: large
+
+taxi:
+  out_p50_min: 16
+  out_p75_min: 21
+  in_p50_min: 10
+  in_p75_min: 14
+  source: "Eurocontrol CODA 2022-2023"
+
+mct:
+  dd_min: 35
+  di_min: 50
+  id_min: 50
+  ii_min: 50
+  schengen_applies: true
+  notes: "ITA Airways (formerly Alitalia) hub. Terminals 1/2/3 for domestic/Schengen; T3 international; new T1 expansion."
+  source: "ITA Airways / Rome Airports"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Europe/Rome"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

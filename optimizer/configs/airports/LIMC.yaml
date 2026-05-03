@@ -1,0 +1,40 @@
+# Milan Malpensa Airport
+icao: LIMC
+iata: MXP
+name: Milan Malpensa Airport
+city: Milan
+country: IT
+continent: EU
+category: large
+
+taxi:
+  out_p50_min: 14
+  out_p75_min: 18
+  in_p50_min: 10
+  in_p75_min: 13
+  source: "Eurocontrol CODA 2022-2023"
+
+mct:
+  dd_min: 35
+  di_min: 50
+  id_min: 50
+  ii_min: 50
+  schengen_applies: true
+  notes: "T1 (most carriers) and T2 (mainly easyJet and low-cost). T1-T2 cross requires bus/transit."
+  source: "SEA Aeroporti / airline MCT"
+  cross_terminal_ii_min: 75
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Europe/Rome"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

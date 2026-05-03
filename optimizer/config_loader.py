@@ -96,6 +96,12 @@ def normalize_aircraft_config(raw: Mapping[str, Any], *, aircraft_key: str | Non
     source.setdefault("primary", "openap")
     source.setdefault("openap_aircraft", openap.get("aircraft_type"))
 
+    speed_envelope = _ensure_dict(performance, "speed_envelope")
+    # Conservative transport-category defaults (most jetliners: VMO ~320 KIAS, MMO ~0.82).
+    # Override per aircraft in the YAML.
+    speed_envelope.setdefault("vmo_kt", 320.0)
+    speed_envelope.setdefault("mmo", 0.82)
+
     cruise = _ensure_dict(performance, "cruise")
     if cfg.get("cruise_mach") is not None:
         cruise.setdefault("reference_mach", cfg.get("cruise_mach"))

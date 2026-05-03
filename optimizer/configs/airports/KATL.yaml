@@ -1,0 +1,40 @@
+# Atlanta Hartsfield-Jackson International Airport
+icao: KATL
+iata: ATL
+name: Atlanta Hartsfield-Jackson International Airport
+city: Atlanta
+country: US
+continent: NA
+category: mega_hub
+
+taxi:
+  out_p50_min: 16
+  out_p75_min: 22
+  in_p50_min: 9
+  in_p75_min: 13
+  source: "FAA ASPM 2022-2023"
+  notes: "World's busiest airport. Linear terminal design (T, A-F concourses). Automated People Mover airside."
+
+mct:
+  dd_min: 35
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "Delta hub. International terminal F separate from domestic. Domestic-to-international and vice-versa requires significant walking or APM ride."
+  source: "Delta Air Lines published MCT"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/New_York"
+  notes: "No curfew. 24-hour operations."
+
+slot_coordinated: false
+slot_level: 0
+
+data_quality:
+  level: curated
+  source_year: 2023

@@ -1,0 +1,41 @@
+# San Francisco International Airport
+icao: KSFO
+iata: SFO
+name: San Francisco International Airport
+city: San Francisco
+country: US
+continent: NA
+category: hub
+
+taxi:
+  out_p50_min: 18
+  out_p75_min: 25
+  in_p50_min: 12
+  in_p75_min: 16
+  source: "FAA ASPM 2022-2023"
+  notes: "Fog-prone. Subject to low-approach minimums reducing to single-runway LAHSO ops which significantly increase delays. Two parallel runway pairs."
+
+mct:
+  dd_min: 30
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "United Airlines hub. T2/T3 (domestic), T1 (domestic/int), International T (A/G). AirTrain between terminals."
+  source: "United Airlines published MCT"
+  cross_terminal_ii_min: 75
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/Los_Angeles"
+  notes: "No formal curfew. Noise restrictions limit reverse thrust on certain taxiways at night."
+
+slot_coordinated: false
+slot_level: 0
+
+data_quality:
+  level: curated
+  source_year: 2023

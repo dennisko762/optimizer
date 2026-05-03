@@ -1,0 +1,42 @@
+# Singapore Changi Airport
+icao: WSSS
+iata: SIN
+name: Singapore Changi Airport
+city: Singapore
+country: SG
+continent: AS
+category: mega_hub
+
+taxi:
+  out_p50_min: 12
+  out_p75_min: 15
+  in_p50_min: 8
+  in_p75_min: 11
+  source: "Estimated from operational data 2022-2023"
+  notes: "Renowned for efficiency. T1/T2/T3/T4. Jewel Changi transit hub. Skytrain between terminals."
+
+mct:
+  dd_min: 45
+  di_min: 50
+  id_min: 50
+  ii_min: 50
+  schengen_applies: false
+  notes: "Singapore Airlines hub. Same-terminal MCT 45 min. Cross-terminal via Skytrain. T4 not airside-connected to others; requires re-entry."
+  source: "Singapore Airlines / Changi Airport Group"
+  cross_terminal_ii_min: 75
+  t4_cross_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Asia/Singapore"
+  notes: "No curfew. 24-hour operations."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

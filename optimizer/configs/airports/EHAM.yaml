@@ -1,0 +1,40 @@
+# Amsterdam Airport Schiphol
+icao: EHAM
+iata: AMS
+name: Amsterdam Airport Schiphol
+city: Amsterdam
+country: NL
+continent: EU
+category: hub
+
+taxi:
+  out_p50_min: 18
+  out_p75_min: 24
+  in_p50_min: 11
+  in_p75_min: 16
+  source: "Eurocontrol CODA 2022-2023"
+  notes: "Single-terminal concept with multiple piers. Taxi times vary by gate pier (B/C/D/E/F/G/H)."
+
+mct:
+  dd_min: 40
+  di_min: 50
+  id_min: 50
+  ii_min: 50
+  schengen_applies: true
+  notes: "KLM hub. Single terminal, multiple piers. Schengen gates in piers B/C/D; non-Schengen in E/F/G."
+  source: "KLM / Schiphol Airport published MCT"
+
+night_curfew:
+  restricted: true
+  banned: false
+  start_local: "23:00"
+  end_local: "06:00"
+  timezone: "Europe/Amsterdam"
+  notes: "Night noise quota system. Scheduled movements limited 23:00-06:00. Subject to annual Alders Accord capacity limits."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

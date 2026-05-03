@@ -1,0 +1,41 @@
+# Los Angeles International Airport
+icao: KLAX
+iata: LAX
+name: Los Angeles International Airport
+city: Los Angeles
+country: US
+continent: NA
+category: mega_hub
+
+taxi:
+  out_p50_min: 18
+  out_p75_min: 26
+  in_p50_min: 12
+  in_p75_min: 17
+  source: "FAA ASPM 2022-2023"
+  notes: "Two parallel runways each direction. Central terminal area with 9 terminals in U-shape. New CONRAC and people mover under construction."
+
+mct:
+  dd_min: 30
+  di_min: 75
+  id_min: 75
+  ii_min: 75
+  schengen_applies: false
+  notes: "T2-T8 and TBIT (Tom Bradley Intl). Cross-terminal requires landside/bus or walking. Same-terminal 30 min; cross 75-90 min."
+  source: "Published airline MCT / LAX"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/Los_Angeles"
+  notes: "No formal curfew."
+
+slot_coordinated: false
+slot_level: 0
+
+data_quality:
+  level: curated
+  source_year: 2023

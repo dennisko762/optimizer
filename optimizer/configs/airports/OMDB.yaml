@@ -1,0 +1,41 @@
+# Dubai International Airport
+icao: OMDB
+iata: DXB
+name: Dubai International Airport
+city: Dubai
+country: AE
+continent: AS
+category: mega_hub
+
+taxi:
+  out_p50_min: 18
+  out_p75_min: 24
+  in_p50_min: 12
+  in_p75_min: 16
+  source: "Estimated from operational data 2022-2023"
+  notes: "T1 (mainly non-Emirates) and T3 (Emirates). T3 has concourses A/B/C. Distant from city; large field."
+
+mct:
+  dd_min: 45
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "Emirates mega-hub. T3 internal transit. T1-T3 cross requires airside bus; allow 90 min. Same-terminal Schengen-equivalent not applicable."
+  source: "Emirates / Dubai Airports published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Asia/Dubai"
+  notes: "No curfew. 24-hour operations."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

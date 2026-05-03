@@ -1,0 +1,41 @@
+# New York LaGuardia Airport
+icao: KLGA
+iata: LGA
+name: New York LaGuardia Airport
+city: New York
+country: US
+continent: NA
+category: large
+
+taxi:
+  out_p50_min: 20
+  out_p75_min: 28
+  in_p50_min: 12
+  in_p75_min: 17
+  source: "FAA ASPM 2022-2023"
+  notes: "Completely rebuilt terminal (Central Terminal Building replaced). Two intersecting runways. Notorious for delays."
+
+mct:
+  dd_min: 40
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "No international scheduled service. Domestic hub for Delta, American, others."
+  source: "PANYNJ / airline MCT"
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/New_York"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 3
+slot_notes: "High Density Rule. Limited slots."
+
+data_quality:
+  level: curated
+  source_year: 2023

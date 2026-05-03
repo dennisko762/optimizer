@@ -1,0 +1,40 @@
+# Tokyo Haneda Airport
+icao: RJTT
+iata: HND
+name: Tokyo Haneda Airport
+city: Tokyo
+country: JP
+continent: AS
+category: mega_hub
+
+taxi:
+  out_p50_min: 13
+  out_p75_min: 17
+  in_p50_min: 9
+  in_p75_min: 12
+  source: "Estimated from operational data 2022-2023"
+
+mct:
+  dd_min: 30
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "ANA/JAL hub. T1 (JAL/domestic), T2 (ANA), T3 (international). T3 added international capacity in 2010. Cross-terminal requires shuttle."
+  source: "ANA / JAL / Tokyo Airports Terminal published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: true
+  banned: false
+  start_local: "23:00"
+  end_local: "06:00"
+  timezone: "Asia/Tokyo"
+  notes: "Nighttime operations restricted to international and late-arriving flights. Curfew-busting charges apply."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

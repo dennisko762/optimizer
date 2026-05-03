@@ -8,7 +8,20 @@
       "Bash(git rm *)",
       "Bash(git commit -m ' *)",
       "Bash(python -c ' *)",
-      "Bash(grep -E \"\\\\.\\(yaml|yml|json|csv|txt\\)$\")"
+      "Bash(grep -E \"\\\\.\\(yaml|yml|json|csv|txt\\)$\")",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python -c \"import yaml; print\\('yaml ok'\\)\")",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(python -c \"import pydantic\")",
+      "Bash(pip install *)",
+      "Bash(sed -n '513,525p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
+      "Bash(sed -n '660,675p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
+      "Bash(sed -n '713,730p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
+      "Bash(sed -n '761,775p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
+      "Bash(sed -n '822,840p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
+      "Bash(sed -n '865,880p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
+      "Bash(sed -n '949,965p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
+      "Bash(sed -n '982,1000p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)"
     ]
   }
 }

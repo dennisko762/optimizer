@@ -1,0 +1,41 @@
+# Mumbai Chhatrapati Shivaji Maharaj International Airport
+icao: VABB
+iata: BOM
+name: Mumbai Chhatrapati Shivaji Maharaj International Airport
+city: Mumbai
+country: IN
+continent: AS
+category: hub
+
+taxi:
+  out_p50_min: 16
+  out_p75_min: 22
+  in_p50_min: 11
+  in_p75_min: 15
+  source: "Estimated from operational data 2022-2023"
+  notes: "Single runway (no parallel). T1 (domestic) and T2 (international + Air India domestic). Heavy congestion."
+
+mct:
+  dd_min: 35
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: false
+  notes: "T1-T2 cross requires landside transfer. T2 handles all international."
+  source: "Air India / CSIA published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Asia/Kolkata"
+  notes: "No formal curfew."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: estimated
+  source_year: 2023

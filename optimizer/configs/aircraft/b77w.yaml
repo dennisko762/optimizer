@@ -51,6 +51,10 @@ performance:
     openap_aircraft: B77W
     fcom_variant: b77w_ge90_115bl_jaa
 
+  speed_envelope:
+    vmo_kt: 330       # Boeing 777 AFM: VMO 330 KIAS
+    mmo: 0.89         # Boeing 777 AFM: MMO 0.89
+
   cruise:
     reference_mach: 0.84
     normal_min_mach: 0.80

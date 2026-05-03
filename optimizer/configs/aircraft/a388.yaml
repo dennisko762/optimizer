@@ -24,6 +24,10 @@ maint: 3796
 own: 5899
 sched: 659
 performance:
+  speed_envelope:
+    vmo_kt: 340    # KIAS
+    mmo: 0.89
+
   min_ci: 0
   max_ci: 100
   ci_step: 5

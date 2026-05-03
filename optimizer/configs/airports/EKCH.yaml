@@ -1,0 +1,39 @@
+# Copenhagen Airport Kastrup
+icao: EKCH
+iata: CPH
+name: Copenhagen Airport Kastrup
+city: Copenhagen
+country: DK
+continent: EU
+category: large
+
+taxi:
+  out_p50_min: 12
+  out_p75_min: 16
+  in_p50_min: 8
+  in_p75_min: 11
+  source: "Eurocontrol CODA 2022-2023"
+
+mct:
+  dd_min: 20
+  di_min: 35
+  id_min: 35
+  ii_min: 35
+  schengen_applies: true
+  notes: "SAS hub. Compact layout. T1/T2/T3 well connected. One of Europe's most efficient transfer airports."
+  source: "SAS / Copenhagen Airports"
+
+night_curfew:
+  restricted: true
+  banned: false
+  start_local: "23:00"
+  end_local: "06:00"
+  timezone: "Europe/Copenhagen"
+  notes: "Night noise quota. Limited movements. No full ban."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

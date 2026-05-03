@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from optimizer.airport_loader import get_mct_min, get_taxi_in_min
 from optimizer.operational_data.connex_models import (
     ConnexConnectionStatus,
     ConnexPassengerGroupUplink,
@@ -432,6 +433,32 @@ def _derive_passenger_compensation_risk(
     required_recovery = max(-margin, 0.0)
 
     return required_recovery >= 30
+
+
+def derive_ltop_from_etd(
+    *,
+    hub_airport: str,
+    etd_utc: str,
+    inbound_is_international: bool = True,
+    outbound_is_international: bool = True,
+    simbrief_taxi_in_min: float | None = None,
+) -> str:
+    """
+    Derive LTOP from outbound ETD using:
+      LTOP = ETD - MCT - taxi_in
+
+    Used when the Connex uplink does not include an explicit LTOP.
+    """
+    mct_min = get_mct_min(
+        hub_airport,
+        inbound_is_international=inbound_is_international,
+        outbound_is_international=outbound_is_international,
+    )
+    taxi_in = get_taxi_in_min(hub_airport, simbrief_taxi_in_min=simbrief_taxi_in_min)
+    buffer_min = mct_min + taxi_in
+    etd_dt = _parse_hhmm_today(etd_utc)
+    ltop_dt = etd_dt - timedelta(minutes=buffer_min)
+    return ltop_dt.strftime("%H:%M")
 
 
 def _is_longhaul_destination(destination: str | None) -> bool:

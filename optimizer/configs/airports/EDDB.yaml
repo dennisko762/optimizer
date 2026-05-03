@@ -1,0 +1,40 @@
+# Berlin Brandenburg Airport (BER)
+icao: EDDB
+iata: BER
+name: Berlin Brandenburg Willy Brandt Airport
+city: Berlin
+country: DE
+continent: EU
+category: large
+
+taxi:
+  out_p50_min: 13
+  out_p75_min: 17
+  in_p50_min: 9
+  in_p75_min: 12
+  source: "Eurocontrol CODA 2022-2023"
+  notes: "Opened October 2020. Replaced EDDT (Tegel) and EDDB (Schönefeld old). Single terminal E with pier N."
+
+mct:
+  dd_min: 25
+  di_min: 35
+  id_min: 35
+  ii_min: 35
+  schengen_applies: true
+  notes: "Eurowings / Ryanair hub. Single terminal."
+  source: "BER Airport published MCT"
+
+night_curfew:
+  restricted: true
+  banned: false
+  start_local: "00:00"
+  end_local: "05:00"
+  timezone: "Europe/Berlin"
+  notes: "Night movement restrictions from midnight to 05:00. Noise abatement enforced."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

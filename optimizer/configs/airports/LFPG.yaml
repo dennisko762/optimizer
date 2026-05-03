@@ -1,0 +1,41 @@
+# Paris Charles de Gaulle Airport
+icao: LFPG
+iata: CDG
+name: Paris Charles de Gaulle Airport
+city: Paris
+country: FR
+continent: EU
+category: mega_hub
+
+taxi:
+  out_p50_min: 22
+  out_p75_min: 30
+  in_p50_min: 14
+  in_p75_min: 19
+  source: "Eurocontrol CODA 2022-2023"
+  notes: "Complex multi-terminal layout (2E, 2F, 2G, 2B, 2C, 2D, T1, T3). Long taxi distances between terminals."
+
+mct:
+  dd_min: 45
+  di_min: 60
+  id_min: 60
+  ii_min: 60
+  schengen_applies: true
+  notes: "Air France hub. Intra-2E connections can be 45 min. Cross-terminal (e.g., T1 to 2E) may require 90+ min. CDG Express rail between terminals."
+  source: "Air France / CDG Airport published MCT"
+  cross_terminal_ii_min: 90
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "Europe/Paris"
+  notes: "No formal curfew. Voluntary noise abatement. Some runway restrictions at night."
+
+slot_coordinated: true
+slot_level: 3
+
+data_quality:
+  level: curated
+  source_year: 2023

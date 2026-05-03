@@ -1182,8 +1182,8 @@ export default function App() {
                 <div className="recommendation-display">
                   <div>
                     <span>Current</span>
-                    <strong>CI {current?.costIndex ?? flightState.currentCostIndex ?? "—"}</strong>
-                    <small>M{formatNumber(current?.mach ?? flightState.mach, 3)}</small>
+                    <strong>CI {flightState.currentCostIndex || current?.costIndex || "—"}</strong>
+                    <small>M{formatNumber(flightState.mach || current?.mach, 3)}</small>
                   </div>
                   <div className="recommendation-separator" />
                   <div>

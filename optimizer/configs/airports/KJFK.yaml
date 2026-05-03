@@ -1,0 +1,42 @@
+# New York John F. Kennedy International Airport
+icao: KJFK
+iata: JFK
+name: New York John F. Kennedy International Airport
+city: New York
+country: US
+continent: NA
+category: mega_hub
+
+taxi:
+  out_p50_min: 26
+  out_p75_min: 38
+  in_p50_min: 16
+  in_p75_min: 24
+  source: "FAA ASPM 2022-2023"
+  notes: "One of the highest taxi times in the US. Complex multi-terminal layout. AirTrain between terminals. Congestion especially during peak hours."
+
+mct:
+  dd_min: 50
+  di_min: 90
+  id_min: 90
+  ii_min: 90
+  schengen_applies: false
+  notes: "Multiple separate terminals (T1-T8). Cross-terminal connections require AirTrain (~20 min) plus security. Same-terminal MCT varies by airline."
+  source: "Published airline MCT data / JFK"
+  cross_terminal_ii_min: 120
+
+night_curfew:
+  restricted: false
+  banned: false
+  start_local: null
+  end_local: null
+  timezone: "America/New_York"
+  notes: "No formal curfew. Operations subject to FAA EDCT and GDP programs during delays."
+
+slot_coordinated: true
+slot_level: 3
+slot_notes: "High Density Rule applies. Slot-controlled under FAA Order 7210.3"
+
+data_quality:
+  level: curated
+  source_year: 2023
