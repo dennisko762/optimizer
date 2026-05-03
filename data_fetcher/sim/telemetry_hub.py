@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
+from data_fetcher.sim.sim_client import SimClient, SimClientError
+from data_fetcher.sim.sim_config import create_sim_client
 from data_fetcher.sim.sim_models import LiveSimState
-from data_fetcher.sim.simconnect_client import SimConnectClient, SimConnectClientError
 
 
 DEFAULT_POLL_INTERVAL_S = 1.0
-DEFAULT_SIMCONNECT_CACHE_MS = 200
 
 
 @dataclass(slots=True)
@@ -45,12 +45,10 @@ class TelemetryHub:
         self,
         *,
         poll_interval_s: float = DEFAULT_POLL_INTERVAL_S,
-        client_factory: Callable[[], SimConnectClient] | None = None,
+        client_factory: Callable[[], SimClient] | None = None,
     ) -> None:
         self.poll_interval_s = poll_interval_s
-        self._client_factory = client_factory or (
-            lambda: SimConnectClient(cache_ms=DEFAULT_SIMCONNECT_CACHE_MS)
-        )
+        self._client_factory = client_factory or create_sim_client
         self._client = self._client_factory()
         self._snapshot = TelemetrySnapshot(poll_interval_s=poll_interval_s)
         self._snapshot_lock = asyncio.Lock()
@@ -105,7 +103,7 @@ class TelemetryHub:
         async with self._poll_lock:
             try:
                 live = await self._client.get_live_state()
-            except SimConnectClientError as exc:
+            except SimClientError as exc:
                 await asyncio.to_thread(self._safe_close_client)
                 await self._store_disconnected(str(exc))
             except Exception as exc:

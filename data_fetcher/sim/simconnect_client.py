@@ -5,11 +5,12 @@ from typing import Any
 
 from SimConnect import SimConnect, AircraftRequests
 
-from data_fetcher.sim.sim_client import SimClient
+from data_fetcher.sim.sim_client import SimClient, SimClientError
 from data_fetcher.sim.sim_models import LiveSimState, RawSimState
 from data_fetcher.sim.sim_normalizer import normalize_raw_sim_state
 
-class SimConnectClientError(RuntimeError):
+
+class SimConnectClientError(SimClientError):
     pass
 
 
