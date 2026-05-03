@@ -403,10 +403,12 @@ def _display_name_for_entry(entry: AircraftCatalogEntry) -> str:
 
 
 def _aircraft_config_file_exists(config_key: str) -> bool:
-    optimizer_package_dir = Path(__file__).resolve().parents[1]
-    config_path = optimizer_package_dir / "configs" / "aircraft" / f"{config_key}.yaml"
-
-    return config_path.exists()
+    import sys
+    if getattr(sys, "frozen", False):
+        base = Path(sys._MEIPASS) / "optimizer"
+    else:
+        base = Path(__file__).resolve().parents[1]
+    return (base / "configs" / "aircraft" / f"{config_key}.yaml").exists()
 
 
 def _resolve_flight_number(model: Any, model_dict: dict[str, Any]) -> str | None:

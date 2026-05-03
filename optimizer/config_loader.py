@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
 
 
-CONFIG_DIR = Path(__file__).resolve().parent / "configs"
+def _get_config_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "optimizer" / "configs"
+    return Path(__file__).resolve().parent / "configs"
+
+
+CONFIG_DIR = _get_config_dir()
 
 
 def load_general_config() -> dict[str, Any]:

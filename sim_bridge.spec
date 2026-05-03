@@ -41,6 +41,12 @@ for _pkg in ("optimizer", "data_fetcher", "delay_module", "performance_engine", 
 _hidden += collect_submodules("uvicorn")
 _hidden += ["h11"]
 
+# ── Bundle project data files (YAML configs, etc.) ───────────────────────────
+# collect_all() only handles installed packages — our own files must be explicit.
+_datas += [
+    (os.path.join("optimizer", "configs"), os.path.join("optimizer", "configs")),
+]
+
 # ── Bundle the built React frontend ──────────────────────────────────────────
 _ui_dist = os.path.join("efb-ui", "dist")
 _datas += [(_ui_dist, os.path.join("efb-ui", "dist"))]
