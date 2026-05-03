@@ -34,7 +34,7 @@ if errorlevel 1 (
 )
 
 echo  Installing Python dependencies...
-python -m pip install httpx fastapi uvicorn[standard] SimConnect pydantic --quiet
+python -m pip install -r requirements.txt --quiet
 
 echo.
 echo  Building efb.exe...

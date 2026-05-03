@@ -7,8 +7,7 @@ frontend — all in one process. No separate backend or cloud needed.
 Open in browser from any device on the same network:
     http://<sim-pc-ip>:7070
 
-Tailscale is installed automatically on first run if not present,
-so the EFB is reachable from anywhere (not just the local network).
+Tailscale is set up automatically on first run if not present.
 """
 from __future__ import annotations
 
@@ -18,13 +17,14 @@ import os
 import socket
 import subprocess
 import sys
-import urllib.request
+import traceback
 
-# Exe always runs alongside MSFS — use SimConnect directly.
+# Must be set before any project imports so telemetry_hub picks it up.
 os.environ.setdefault("SIM_SOURCE", "local")
 os.environ.setdefault("CORS_ORIGINS", "*")
 
 _DEFAULT_PORT = int(os.environ.get("EFB_PORT", "7070"))
+
 
 def _local_ip() -> str:
     try:
@@ -35,58 +35,75 @@ def _local_ip() -> str:
         return "localhost"
 
 
-_TAILSCALE_INSTALLER_URL = (
-    "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe"
-)
-
-
-def _tailscale_installed() -> bool:
+def _tailscale_running() -> bool:
     try:
-        result = subprocess.run(
-            ["tailscale", "version"],
-            capture_output=True,
-            timeout=5,
-        )
-        return result.returncode == 0
+        r = subprocess.run(["tailscale", "version"], capture_output=True, timeout=5)
+        return r.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 
-def _install_tailscale() -> None:
-    print("  Tailscale not found — downloading installer...")
-    installer_path = os.path.join(os.environ.get("TEMP", "."), "tailscale-setup.exe")
+def _tailscale_ip() -> str | None:
     try:
-        urllib.request.urlretrieve(_TAILSCALE_INSTALLER_URL, installer_path)
-        print("  Running Tailscale installer (follow the prompts)...")
-        subprocess.run([installer_path, "/silent", "/norestart"], check=True)
-        print("  Tailscale installed.")
-        print("  Open Tailscale in the system tray and log in to get your remote IP.")
-    except Exception as exc:
-        print(f"  Could not install Tailscale automatically: {exc}")
-        print(f"  Install manually from https://tailscale.com/download")
+        r = subprocess.run(
+            ["tailscale", "ip", "--4"],
+            capture_output=True, text=True, timeout=5,
+        )
+        ip = r.stdout.strip()
+        return ip if ip else None
+    except Exception:
+        return None
 
 
-def _ensure_tailscale() -> None:
-    if _tailscale_installed():
-        try:
-            result = subprocess.run(
-                ["tailscale", "ip", "--4"],
-                capture_output=True, text=True, timeout=5,
-            )
-            ts_ip = result.stdout.strip()
-            if ts_ip:
-                print(f"  Tailscale:     http://{ts_ip}:{_DEFAULT_PORT}  (from anywhere)")
-        except Exception:
-            pass
+def _install_tailscale_winget() -> bool:
+    """Try installing via winget (available on Windows 10 1709+ / Windows 11)."""
+    try:
+        r = subprocess.run(
+            [
+                "winget", "install", "tailscale.tailscale",
+                "-e", "--silent",
+                "--accept-source-agreements",
+                "--accept-package-agreements",
+            ],
+            timeout=120,
+        )
+        return r.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _ensure_tailscale(port: int) -> None:
+    if _tailscale_running():
+        ts_ip = _tailscale_ip()
+        if ts_ip:
+            print(f"  Tailscale:     http://{ts_ip}:{port}  (from anywhere)")
         return
 
     print()
-    print("  Tailscale not detected.")
-    answer = input("  Install Tailscale for remote access from anywhere? [Y/n]: ").strip().lower()
-    if answer in ("", "y", "yes", "j", "ja"):
-        _install_tailscale()
+    print("  Tailscale not found.")
+    print("  With Tailscale you can reach this EFB from anywhere,")
+    print("  not just your local network.")
+    print()
+    answer = input("  Install Tailscale now? [Y/n]: ").strip().lower()
+    if answer not in ("", "y", "yes", "j", "ja"):
+        print("  Skipped. Install later from https://tailscale.com/download/windows")
+        return
+
+    print("  Installing via winget...")
+    if _install_tailscale_winget():
+        print("  Tailscale installed.")
+        print("  Open Tailscale in the system tray and log in.")
+        ts_ip = _tailscale_ip()
+        if ts_ip:
+            print(f"  Tailscale: http://{ts_ip}:{port}")
     else:
-        print("  Skipped. Install later from https://tailscale.com/download")
+        print("  winget install failed or not available.")
+        print("  Opening download page...")
+        try:
+            import webbrowser
+            webbrowser.open("https://tailscale.com/download/windows")
+        except Exception:
+            print("  Download manually: https://tailscale.com/download/windows")
 
 
 def main() -> None:
@@ -95,8 +112,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="EFB Server")
     parser.add_argument("--port", type=int, default=_DEFAULT_PORT)
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--no-tailscale", action="store_true",
-                        help="Skip Tailscale check")
+    parser.add_argument("--no-tailscale", action="store_true")
     args = parser.parse_args()
 
     local_ip = _local_ip()
@@ -110,15 +126,31 @@ def main() -> None:
     print(f"  Local network: http://{local_ip}:{args.port}")
 
     if not args.no_tailscale:
-        _ensure_tailscale()
+        _ensure_tailscale(args.port)
 
     print()
 
-    from optimizer.api.app import create_app
-    import uvicorn
+    try:
+        from optimizer.api.app import create_app
+        import uvicorn
+    except Exception:
+        print("  ERROR: Failed to load application modules.")
+        print()
+        traceback.print_exc()
+        print()
+        input("  Press Enter to exit...")
+        sys.exit(1)
 
-    app = create_app()
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    try:
+        app = create_app()
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    except Exception:
+        print()
+        print("  ERROR: Server crashed.")
+        traceback.print_exc()
+        print()
+        input("  Press Enter to exit...")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
