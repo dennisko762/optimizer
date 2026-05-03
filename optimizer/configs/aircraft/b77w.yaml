@@ -1,0 +1,102 @@
+aircraft_type: 777-300ER
+simbrief_code: B77W
+family: B777
+seats: 396
+type: p
+
+aircraft:
+  key: b77w
+  display_name: "Boeing 777-300ER GE90-115BL FCOM baseline"
+  icao_type: B77W
+  family: B777
+
+engine:
+  manufacturer: GE Aerospace
+  family: GE90
+  model: GE90-115BL
+  variant_key: GE90-115BL
+  support_status: supported_fcom_variant
+
+certification:
+  mtow_kg: 351534
+  mlw_kg: 251290
+
+crew:
+  cockpit:
+    base_pilots: 2
+    augmentation_rule:
+      trigger: block_time_hours
+      threshold_hours: 10.0
+    hourly_cost_eur: 500
+  cabin:
+    min_by_easa: 8
+    typical_service_range:
+      - 8
+      - 13
+    default_fa: 10
+    hourly_cost_eur: 60
+
+maint: 2798
+own: 4139
+sched: 588
+
+performance:
+  min_ci: 0
+  max_ci: 100
+  ci_step: 5
+  ci_normalization_factor: 21500
+
+  source:
+    primary: boeing_fcom_hybrid
+    openap_aircraft: B77W
+    fcom_variant: b77w_ge90_115bl_jaa
+
+  cruise:
+    reference_mach: 0.84
+    normal_min_mach: 0.80
+    normal_max_mach: 0.86
+    recovery_max_mach: 0.87
+    default_segment_distance_nm: 50.0
+
+  calibration:
+    fuel_flow_multiplier: 1.0
+    fuel_flow_factor_by_mach:
+      - { mach: 0.80, factor: 1.00 }
+      - { mach: 0.82, factor: 1.00 }
+      - { mach: 0.84, factor: 1.00 }
+      - { mach: 0.86, factor: 1.00 }
+      - { mach: 0.87, factor: 1.00 }
+    high_mach_penalty:
+      enabled: false
+      reference_mach: 0.84
+      coefficient_per_0_01_mach_sq: 0.0
+      only_above_reference: true
+
+cost_index_mapping:
+  min_ci: 0
+  max_ci: 100
+  kg_per_min_to_ci_factor: 1.0
+
+ff: 10500
+
+support_status:
+  estimated: false
+  has_curated_catalog_entry: true
+  performance_model: boeing_fcom_hybrid_lrc_anchor
+
+data_quality:
+  level: curated
+  notes:
+    - "Long-range cruise anchor comes from the hand-encoded Boeing FCOM dataset."
+    - "Non-LRC Mach effects are still scaled with OpenAP around the FCOM anchor."
+    - "Step-climb, climb and descent logic are not yet driven by Boeing FCOM data."
+
+notes:
+  important:
+    - This profile uses a Boeing FCOM long-range cruise anchor for the 777-300ER GE90-115BL.
+    - Off-LRC Mach points still rely on generic OpenAP scaling around that FCOM anchor.
+    - Cost values remain operator-agnostic estimates until airline data is provided.
+  sources:
+    crew_regulation: EASA ORO.CC.100 one-per-50-or-fraction installed passenger seats.
+    cost_model: A320 baseline scaled by MTOW/seats; replace with VA/operator-provided cost data.
+    performance: Boeing 777 FCOM Volume 2 Performance Inflight LRC tables plus OpenAP hybrid scaling.

@@ -1,0 +1,50 @@
+aircraft_type: A350-900
+simbrief_code: A359
+family: A350
+seats: 293
+type: p
+certification:
+  mtow_kg: 280000
+  mlw_kg: 207000
+crew:
+  cockpit:
+    base_pilots: 2
+    augmentation_rule:
+      trigger: block_time_hours
+      threshold_hours: 10.0
+    hourly_cost_eur: 450
+  cabin:
+    min_by_easa: 6
+    typical_service_range:
+    - 6
+    - 11
+    default_fa: 8
+    hourly_cost_eur: 60
+maint: 2430
+own: 3514
+sched: 514
+performance:
+  min_ci: 0
+  max_ci: 100
+  ci_step: 5
+  ci_normalization_factor: 21500
+ff: 7200
+support_status:
+  estimated: false
+  has_curated_catalog_entry: true
+  performance_model: estimated_baseline_scaling
+notes:
+  important:
+  - This file is generated for simulator/VA optimization use.
+  - Cost values are estimates scaled from the A320 baseline until operator/VA data
+    is provided.
+  - Cabin crew minimum uses EASA ORO.CC.100 one cabin crew member per 50 or fraction
+    of 50 installed passenger seats.
+  - Actual airline seating, crew service levels, MTOW/MLW and costs can differ by
+    operator and airframe.
+  sources:
+    crew_regulation: EASA ORO.CC.100 one-per-50-or-fraction installed passenger seats.
+    cost_model: A320 baseline scaled by MTOW/seats; replace with VA/operator-provided
+      cost data.
+    performance: Reference fuel flow is approximate unless backed by curated/OpenAP/performance
+      data.

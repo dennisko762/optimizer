@@ -1,0 +1,101 @@
+aircraft_type: 777-200LR
+simbrief_code: B77L
+family: B777
+seats: 317
+type: p
+
+aircraft:
+  key: b77l
+  display_name: "Boeing 777-200LR GE90-110B1 baseline"
+  icao_type: B77L
+  family: B777
+
+engine:
+  manufacturer: GE Aerospace
+  family: GE90
+  model: GE90-110B1
+  variant_key: GE90-110B1
+  support_status: metadata_only
+
+certification:
+  mtow_kg: 347450
+  mlw_kg: 223168
+
+crew:
+  cockpit:
+    base_pilots: 2
+    augmentation_rule:
+      trigger: block_time_hours
+      threshold_hours: 10.0
+    hourly_cost_eur: 500
+  cabin:
+    min_by_easa: 7
+    typical_service_range:
+      - 7
+      - 12
+    default_fa: 9
+    hourly_cost_eur: 60
+
+maint: 2777
+own: 4105
+sched: 532
+
+performance:
+  min_ci: 0
+  max_ci: 100
+  ci_step: 5
+  ci_normalization_factor: 21500
+
+  source:
+    primary: openap
+    openap_aircraft: B77L
+    pending_fcom_variant: b77l_ge90_110b1
+
+  cruise:
+    reference_mach: 0.84
+    normal_min_mach: 0.80
+    normal_max_mach: 0.86
+    recovery_max_mach: 0.87
+    default_segment_distance_nm: 50.0
+
+  calibration:
+    fuel_flow_multiplier: 1.0
+    fuel_flow_factor_by_mach:
+      - { mach: 0.80, factor: 1.00 }
+      - { mach: 0.82, factor: 1.00 }
+      - { mach: 0.84, factor: 1.00 }
+      - { mach: 0.86, factor: 1.00 }
+      - { mach: 0.87, factor: 1.00 }
+    high_mach_penalty:
+      enabled: false
+      reference_mach: 0.84
+      coefficient_per_0_01_mach_sq: 0.0
+      only_above_reference: true
+
+cost_index_mapping:
+  min_ci: 0
+  max_ci: 100
+  kg_per_min_to_ci_factor: 1.0
+
+ff: 9500
+
+support_status:
+  estimated: false
+  has_curated_catalog_entry: true
+  performance_model: openap_generic_profile
+
+data_quality:
+  level: estimated
+  notes:
+    - "Engine metadata is explicit, but no registered Boeing FCOM performance dataset is wired yet."
+    - "Cruise fuel flow still uses the generic OpenAP baseline with neutral calibration."
+
+notes:
+  important:
+    - This profile is ready for engine-aware resolution, but still runs on the generic OpenAP path.
+    - Wire a Boeing FCOM dataset before treating B77L speed/fuel as curated data.
+    - Cost values remain operator-agnostic estimates until airline data is provided.
+  sources:
+    crew_regulation: EASA ORO.CC.100 one-per-50-or-fraction installed passenger seats.
+    cost_model: A320 baseline scaled by MTOW/seats; replace with VA/operator-provided cost data.
+    performance: OpenAP baseline; Boeing 777-200LR GE90-110B1 FCOM integration pending.

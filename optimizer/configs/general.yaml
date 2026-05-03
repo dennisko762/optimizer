@@ -1,0 +1,121 @@
+delay_cost_eur_per_min:
+  GENERIC:
+    gate: 110
+    taxi: 125
+    enroute: 150
+    arrival: 140
+    reactionary_factor: 1.5
+  A320:
+    gate: 110
+    taxi: 125
+    enroute: 150
+    arrival: 140
+    reactionary_factor: 1.5
+  A300:
+    gate: 145
+    taxi: 165
+    enroute: 200
+    arrival: 190
+    reactionary_factor: 1.6
+  A310:
+    gate: 145
+    taxi: 165
+    enroute: 200
+    arrival: 190
+    reactionary_factor: 1.6
+  A330:
+    gate: 145
+    taxi: 165
+    enroute: 200
+    arrival: 190
+    reactionary_factor: 1.6
+  A340:
+    gate: 165
+    taxi: 180
+    enroute: 215
+    arrival: 205
+    reactionary_factor: 1.7
+  A350:
+    gate: 155
+    taxi: 170
+    enroute: 205
+    arrival: 195
+    reactionary_factor: 1.65
+  A380:
+    gate: 165
+    taxi: 180
+    enroute: 215
+    arrival: 205
+    reactionary_factor: 1.7
+  B737:
+    gate: 110
+    taxi: 125
+    enroute: 150
+    arrival: 140
+    reactionary_factor: 1.5
+  B747:
+    gate: 165
+    taxi: 180
+    enroute: 215
+    arrival: 205
+    reactionary_factor: 1.7
+  B757:
+    gate: 145
+    taxi: 165
+    enroute: 200
+    arrival: 190
+    reactionary_factor: 1.6
+  B767:
+    gate: 145
+    taxi: 165
+    enroute: 200
+    arrival: 190
+    reactionary_factor: 1.6
+  B777:
+    gate: 165
+    taxi: 180
+    enroute: 215
+    arrival: 205
+    reactionary_factor: 1.7
+  B787:
+    gate: 155
+    taxi: 170
+    enroute: 205
+    arrival: 195
+    reactionary_factor: 1.65
+  CRJ:
+    gate: 110
+    taxi: 125
+    enroute: 150
+    arrival: 140
+    reactionary_factor: 1.5
+  DASH8:
+    gate: 110
+    taxi: 125
+    enroute: 150
+    arrival: 140
+    reactionary_factor: 1.5
+  EJET:
+    gate: 110
+    taxi: 125
+    enroute: 150
+    arrival: 140
+    reactionary_factor: 1.5
+  MD11:
+    gate: 165
+    taxi: 180
+    enroute: 215
+    arrival: 205
+    reactionary_factor: 1.7
+  ATR:
+    gate: 110
+    taxi: 125
+    enroute: 150
+    arrival: 140
+    reactionary_factor: 1.5
+
+ci_factors: 25
+
+fuel:
+  price_eur_per_kg: 2.0
+  ets_eur_per_kg: 0.24

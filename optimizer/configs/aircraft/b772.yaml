@@ -1,0 +1,108 @@
+aircraft_type: 777-200ER
+simbrief_code: B772
+family: B777
+seats: 317
+type: p
+
+aircraft:
+  key: b772
+  display_name: "Boeing 777-200ER GE90-94B FCOM baseline"
+  icao_type: B772
+  family: B777
+
+engine:
+  manufacturer: GE Aerospace
+  family: GE90
+  model: GE90-94B
+  variant_key: GE90-94B
+  selection_status: supported_fcom_variant
+
+openap:
+  enabled: true
+  aircraft_type: B772
+
+certification:
+  mtow_kg: 247200
+  mlw_kg: 201800
+
+crew:
+  cockpit:
+    base_pilots: 2
+    augmentation_rule:
+      trigger: block_time_hours
+      threshold_hours: 10.0
+    hourly_cost_eur: 500
+  cabin:
+    min_by_easa: 7
+    typical_service_range:
+      - 7
+      - 12
+    default_fa: 9
+    hourly_cost_eur: 60
+
+maint: 2249
+own: 3212
+sched: 532
+
+performance:
+  min_ci: 0
+  max_ci: 999
+  ci_step: 5
+  ci_scale_factor: 1.0
+
+  source:
+    primary: boeing_fcom_hybrid
+    openap_aircraft: B772
+    fcom_variant: b772_ge90_94b_faa
+
+  cruise:
+    reference_mach: 0.84
+    normal_min_mach: 0.80
+    normal_max_mach: 0.86
+    recovery_max_mach: 0.87
+    default_segment_distance_nm: 50.0
+
+  calibration:
+    fuel_flow_multiplier: 1.0
+    fuel_flow_factor_by_mach:
+      - { mach: 0.80, factor: 1.00 }
+      - { mach: 0.82, factor: 1.00 }
+      - { mach: 0.84, factor: 1.00 }
+      - { mach: 0.86, factor: 1.00 }
+      - { mach: 0.87, factor: 1.00 }
+    high_mach_penalty:
+      enabled: false
+      reference_mach: 0.84
+      coefficient_per_0_01_mach_sq: 0.0
+      only_above_reference: true
+
+cost_index_mapping:
+  min_ci: 0
+  max_ci: 999
+  kg_per_min_to_ci_factor: 1.0
+
+ff: 8500
+
+support_status:
+  estimated: false
+  has_curated_catalog_entry: true
+  performance_model: boeing_fcom_hybrid_lrc_anchor
+
+data_quality:
+  level: curated
+  notes:
+    - "Long-range cruise anchor comes from the hand-encoded Boeing 777-200ER GE90-94B FCOM dataset."
+    - "Holding and optimum-altitude tables are also encoded from the same FCOM block."
+    - "Descent profile and wind-altitude trade are still pending in the structured dataset."
+    - "Cruise Mach bounds remain profile data, not hard-coded simulator logic."
+
+notes:
+  important:
+    - This file is for simulator/VA optimization use, not real-world dispatch.
+    - This profile is aircraft-centric and uses the 777-200ER GE90-94B FCOM as the baseline truth.
+    - Off-LRC Mach points still rely on generic OpenAP scaling around the FCOM anchor.
+    - Descent and wind-altitude-trade tables are not yet wired into runtime calculations.
+  sources:
+    crew_regulation: EASA ORO.CC.100 one-per-50-or-fraction installed passenger seats.
+    cost_model: A320 baseline scaled by MTOW/seats; replace with VA/operator-provided cost data.
+    performance: Boeing 777-200ER GE90-94B FCOM PI.11.x tables plus OpenAP hybrid scaling.

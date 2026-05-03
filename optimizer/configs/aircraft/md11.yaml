@@ -1,0 +1,43 @@
+aircraft_type: MD-11
+simbrief_code: MD11
+family: MD11
+seats: 293
+type: p
+certification:
+  mtow_kg: 286897
+  mlw_kg: 199580
+crew:
+  cockpit:
+    base_pilots: 2
+    augmentation_rule:
+      trigger: block_time_hours
+      threshold_hours: 10.0
+    hourly_cost_eur: 500
+  cabin:
+    min_by_easa: 6
+    typical_service_range:
+    - 6
+    - 10
+    default_fa: 8
+    hourly_cost_eur: 60
+maint: 3200
+own: 2800
+sched: 450
+performance:
+  min_ci: 0
+  max_ci: 120
+  ci_step: 5
+  ci_normalization_factor: 21500
+ff: 10800
+support_status:
+  estimated: true
+  has_curated_catalog_entry: true
+  performance_model: estimated_baseline_scaling
+notes:
+  important:
+  - Three-engine widebody. Fuel flow approx. 3x 3600 kg/h at cruise.
+  - Most flying MD-11s are freighters (FedEx, Lufthansa Cargo).
+  - For freighter ops set seats to 0 manually; delay cost model not applicable.
+  sources:
+    performance: GE CF6-80C2 / PW4460 cruise fuel burn estimates.
+    cost_model: A320 baseline scaled by MTOW/seats.

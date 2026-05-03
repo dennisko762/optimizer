@@ -1,0 +1,42 @@
+aircraft_type: 777F
+simbrief_code: B77F
+family: B777
+seats: 0
+type: f
+certification:
+  mtow_kg: 347450
+  mlw_kg: 223168
+crew:
+  cockpit:
+    base_pilots: 2
+    augmentation_rule:
+      trigger: block_time_hours
+      threshold_hours: 10.0
+    hourly_cost_eur: 500
+  cabin:
+    min_by_easa: 0
+    typical_service_range:
+    - 0
+    - 0
+    default_fa: 0
+    hourly_cost_eur: 60
+maint: 2900
+own: 4200
+sched: 500
+performance:
+  min_ci: 0
+  max_ci: 100
+  ci_step: 5
+  ci_normalization_factor: 21500
+ff: 9500
+support_status:
+  estimated: true
+  has_curated_catalog_entry: true
+  performance_model: estimated_baseline_scaling
+notes:
+  important:
+  - Cargo variant based on 777-200LR airframe.
+  - No cabin crew. Delay cost model not representative for cargo ops.
+  - Use for CI/speed optimization testing only.
+  sources:
+    performance: Aerodynamics scaled from B77L. Fuel flow approximate.
