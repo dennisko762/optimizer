@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from data_fetcher.sim.simconnect_routes import router as simconnect_router
 from data_fetcher.sim.telemetry_hub import start_telemetry_hub, stop_telemetry_hub
@@ -48,6 +51,16 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Serve the built Vite frontend if dist/ exists.
+    # Must be mounted last — catches all unmatched routes.
+    # sys._MEIPASS is set by PyInstaller when running as a frozen exe.
+    if getattr(sys, "frozen", False):
+        _dist = Path(sys._MEIPASS) / "efb-ui" / "dist"
+    else:
+        _dist = Path(__file__).parent.parent.parent / "efb-ui" / "dist"
+    if _dist.exists():
+        app.mount("/", StaticFiles(directory=_dist, html=True), name="ui")
 
     return app
 

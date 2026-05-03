@@ -1,128 +1,123 @@
 """
-EFB Sim Bridge — runs on the Windows sim PC alongside MSFS.
+EFB Server — single executable for the sim PC.
 
-Exposes SimConnect telemetry over HTTP so the EFB backend and UI can
-run on any device that can reach this PC (tablet, laptop, remote server).
+Runs SimConnect, optimization API, SimBrief sync, and serves the
+frontend — all in one process. No separate backend or cloud needed.
 
-Usage (from project root on the sim PC):
-    python sim_bridge/main.py
+Open in browser from any device on the same network:
+    http://<sim-pc-ip>:7070
 
-Configuration via environment variables:
-    SIM_BRIDGE_HOST   Bind address (default: 0.0.0.0 — all interfaces)
-    SIM_BRIDGE_PORT   Port          (default: 7070)
-
-Remote access options:
-    Local network  — connect using this PC's LAN IP (e.g. 192.168.1.x)
-    From anywhere  — use Tailscale, ZeroTier, or ngrok as a secure tunnel
-
-On the device running the EFB backend, set:
-    SIM_SOURCE=remote
-    SIM_BRIDGE_URL=http://<sim-pc-ip>:7070
+Tailscale is installed automatically on first run if not present,
+so the EFB is reachable from anywhere (not just the local network).
 """
 from __future__ import annotations
 
 import argparse
+import multiprocessing
 import os
+import socket
+import subprocess
+import sys
+import urllib.request
 
-import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+# Exe always runs alongside MSFS — use SimConnect directly.
+os.environ.setdefault("SIM_SOURCE", "local")
+os.environ.setdefault("CORS_ORIGINS", "*")
 
-from data_fetcher.sim.sim_models import LiveSimState
-from data_fetcher.sim.simconnect_client import SimConnectClient
-from data_fetcher.sim.telemetry_hub import TelemetryHub, TelemetrySnapshot
+_DEFAULT_PORT = int(os.environ.get("EFB_PORT", "7070"))
 
-_DEFAULT_HOST = os.environ.get("SIM_BRIDGE_HOST", "0.0.0.0")
-_DEFAULT_PORT = int(os.environ.get("SIM_BRIDGE_PORT", "7070"))
+def _local_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "localhost"
 
-app = FastAPI(title="EFB Sim Bridge", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET"],
-    allow_headers=["*"],
+
+_TAILSCALE_INSTALLER_URL = (
+    "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe"
 )
 
-_hub: TelemetryHub | None = None
 
-
-@app.on_event("startup")
-async def _startup() -> None:
-    global _hub
-    _hub = TelemetryHub(
-        poll_interval_s=1.0,
-        client_factory=lambda: SimConnectClient(cache_ms=200),
-    )
-    await _hub.start()
-
-
-@app.on_event("shutdown")
-async def _shutdown() -> None:
-    if _hub is not None:
-        await _hub.stop()
-
-
-async def _get_snapshot() -> TelemetrySnapshot:
-    if _hub is None:
-        return TelemetrySnapshot()
-    snap = await _hub.get_snapshot()
-    if snap.live_state is None and snap.last_error is None:
-        snap = await _hub.refresh_now()
-    return snap
-
-
-@app.get("/health")
-async def health() -> dict:
-    snap = await _get_snapshot()
-    return {
-        "status": "ok",
-        "sim": "connected" if snap.connected else "disconnected",
-    }
-
-
-@app.get("/sim/status")
-async def sim_status() -> dict:
-    snap = await _get_snapshot()
-    return {
-        "connected": snap.connected,
-        "sampleCount": snap.sample_count,
-        "dataAgeMs": snap.data_age_ms,
-        "lastError": snap.last_error,
-        "lastSampleUtc": (
-            snap.last_sample_utc.isoformat() if snap.last_sample_utc else None
-        ),
-    }
-
-
-@app.get("/sim/telemetry", response_model=LiveSimState)
-async def sim_telemetry() -> LiveSimState:
-    snap = await _get_snapshot()
-    if not snap.connected or snap.live_state is None:
-        raise HTTPException(
-            status_code=503,
-            detail=snap.last_error or "SimConnect not connected. Make sure MSFS is running.",
+def _tailscale_installed() -> bool:
+    try:
+        result = subprocess.run(
+            ["tailscale", "version"],
+            capture_output=True,
+            timeout=5,
         )
-    return snap.live_state
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _install_tailscale() -> None:
+    print("  Tailscale not found — downloading installer...")
+    installer_path = os.path.join(os.environ.get("TEMP", "."), "tailscale-setup.exe")
+    try:
+        urllib.request.urlretrieve(_TAILSCALE_INSTALLER_URL, installer_path)
+        print("  Running Tailscale installer (follow the prompts)...")
+        subprocess.run([installer_path, "/silent", "/norestart"], check=True)
+        print("  Tailscale installed.")
+        print("  Open Tailscale in the system tray and log in to get your remote IP.")
+    except Exception as exc:
+        print(f"  Could not install Tailscale automatically: {exc}")
+        print(f"  Install manually from https://tailscale.com/download")
+
+
+def _ensure_tailscale() -> None:
+    if _tailscale_installed():
+        try:
+            result = subprocess.run(
+                ["tailscale", "ip", "--4"],
+                capture_output=True, text=True, timeout=5,
+            )
+            ts_ip = result.stdout.strip()
+            if ts_ip:
+                print(f"  Tailscale:     http://{ts_ip}:{_DEFAULT_PORT}  (from anywhere)")
+        except Exception:
+            pass
+        return
+
+    print()
+    print("  Tailscale not detected.")
+    answer = input("  Install Tailscale for remote access from anywhere? [Y/n]: ").strip().lower()
+    if answer in ("", "y", "yes", "j", "ja"):
+        _install_tailscale()
+    else:
+        print("  Skipped. Install later from https://tailscale.com/download")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="EFB Sim Bridge")
-    parser.add_argument(
-        "--host", default=_DEFAULT_HOST,
-        help="Bind address (default: 0.0.0.0)",
-    )
-    parser.add_argument(
-        "--port", type=int, default=_DEFAULT_PORT,
-        help="Port (default: 7070)",
-    )
+    multiprocessing.freeze_support()
+
+    parser = argparse.ArgumentParser(description="EFB Server")
+    parser.add_argument("--port", type=int, default=_DEFAULT_PORT)
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--no-tailscale", action="store_true",
+                        help="Skip Tailscale check")
     args = parser.parse_args()
 
-    print(f"\n  EFB Sim Bridge — starting on {args.host}:{args.port}")
-    print(f"  Waiting for MSFS / SimConnect...")
-    print(f"\n  Connect the EFB backend from another device:")
-    print(f"    SIM_SOURCE=remote")
-    print(f"    SIM_BRIDGE_URL=http://<this-pc-ip>:{args.port}\n")
+    local_ip = _local_ip()
 
+    print()
+    print("  ╔══════════════════════════════╗")
+    print("  ║       EFB Server             ║")
+    print("  ╚══════════════════════════════╝")
+    print()
+    print(f"  This PC:       http://localhost:{args.port}")
+    print(f"  Local network: http://{local_ip}:{args.port}")
+
+    if not args.no_tailscale:
+        _ensure_tailscale()
+
+    print()
+
+    from optimizer.api.app import create_app
+    import uvicorn
+
+    app = create_app()
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 

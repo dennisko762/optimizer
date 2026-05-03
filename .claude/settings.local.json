@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Dennis Korolevych\\\\optimizer\" -Recurse -Directory)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(chmod +x /Users/dennis/private/optimizer/start.sh)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

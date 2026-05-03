@@ -22,7 +22,9 @@ import {
   WifiOff,
 } from "lucide-react";
 
-const API_BASE_URL = "http://localhost:8000";
+// Empty string = same-origin (when served by FastAPI).
+// Override via VITE_API_URL env var for separate deployments.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
 const ACTIONS = [
   {
@@ -837,7 +839,7 @@ export default function App() {
       simPollInFlightRef.current = true;
 
       try {
-        const telemetryUrl = new URL(`${API_BASE_URL}/api/simconnect/telemetry`);
+        const telemetryUrl = new URL(`${API_BASE_URL}/api/simconnect/telemetry`, window.location.origin);
         if (flightContext.destinationLat != null && flightContext.destinationLon != null) {
           telemetryUrl.searchParams.set("destinationLat", String(flightContext.destinationLat));
           telemetryUrl.searchParams.set("destinationLon", String(flightContext.destinationLon));

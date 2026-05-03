@@ -1,57 +1,46 @@
-# PyInstaller spec for sim_bridge.exe
+# PyInstaller spec — builds efb.exe
 #
-# Build:  pyinstaller sim_bridge.spec
-# Output: dist/sim_bridge.exe
+# Build:  pyinstaller sim_bridge.spec   (via build_bridge.bat)
+# Output: dist/efb.exe
 #
-# Run on the sim PC (Windows + MSFS). No Python installation required.
+# Single executable: SimConnect + full API + bundled React frontend.
+# Runs on the sim PC. Other devices connect via browser.
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+import os
 
-_datas = []
+_datas    = []
 _binaries = []
-_hiddenimports = []
+_hidden   = []
 
-# SimConnect Python package — includes the SimConnect SDK DLL
+# SimConnect Python package (includes SimConnect SDK DLL)
 _sc = collect_all("SimConnect")
-_datas     += _sc[0]
-_binaries  += _sc[1]
-_hiddenimports += _sc[2]
+_datas    += _sc[0]
+_binaries += _sc[1]
+_hidden   += _sc[2]
 
-# uvicorn uses dynamic imports that PyInstaller misses without this
-_hiddenimports += collect_submodules("uvicorn")
+# uvicorn dynamic imports
+_hidden += collect_submodules("uvicorn")
+_hidden += ["h11"]
 
-# h11 is uvicorn's HTTP/1.1 backend
-_hiddenimports += ["h11"]
+# Project modules
+for _pkg in ("optimizer", "data_fetcher", "delay_module", "performance_engine", "strategy"):
+    _hidden += collect_submodules(_pkg)
 
-# Our own modules (static analysis may not pick them all up)
-_hiddenimports += [
-    "data_fetcher.sim.sim_client",
-    "data_fetcher.sim.sim_models",
-    "data_fetcher.sim.sim_config",
-    "data_fetcher.sim.sim_normalizer",
-    "data_fetcher.sim.simconnect_client",
-    "data_fetcher.sim.telemetry_hub",
-    "data_fetcher.sim.remaining_distance",
-    "data_fetcher.sim.airport_lookup",
-]
+# Bundle the built React frontend
+_ui_dist = os.path.join("efb-ui", "dist")
+_datas += [(_ui_dist, os.path.join("efb-ui", "dist"))]
 
 a = Analysis(
     ["sim_bridge/main.py"],
-    pathex=["."],           # project root so data_fetcher.* resolves
+    pathex=["."],
     binaries=_binaries,
     datas=_datas,
-    hiddenimports=_hiddenimports,
+    hiddenimports=_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
-        "tkinter",
-        "matplotlib",
-        "numpy",
-        "pandas",
-        "scipy",
-        "PIL",
-    ],
+    excludes=["tkinter", "matplotlib", "PIL"],
     noarchive=False,
 )
 
@@ -63,13 +52,11 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="sim_bridge",
+    name="efb",
     debug=False,
-    bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,       # keep console window — shows connection status
-    icon=None,
+    console=True,
 )
