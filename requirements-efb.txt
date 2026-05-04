@@ -1,0 +1,10 @@
+# Direct runtime/build dependencies for the packaged EFB executable.
+# Keep the broad development requirements.txt separate so the Windows build
+# does not install or bundle unrelated ML/tooling packages.
+fastapi==0.136.1
+httpx==0.28.1
+openap==2.5.0
+pydantic==2.12.5
+PyYAML==6.0.2
+SimConnect==0.4.26
+uvicorn==0.46.0

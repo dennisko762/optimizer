@@ -15,7 +15,11 @@ if errorlevel 1 (
 
 echo  Building frontend...
 cd efb-ui
-call npm install --silent
+if exist package-lock.json (
+    call npm ci --silent --prefer-offline
+) else (
+    call npm install --silent --prefer-offline
+)
 if errorlevel 1 ( echo  ERROR: npm install failed. & cd .. & pause & exit /b 1 )
 call npm run build
 if errorlevel 1 ( echo  ERROR: npm run build failed. & cd .. & pause & exit /b 1 )
@@ -34,7 +38,7 @@ if errorlevel 1 (
 )
 
 echo  Installing Python dependencies...
-python -m pip install -r requirements.txt --quiet
+python -m pip install --disable-pip-version-check --upgrade-strategy only-if-needed -r requirements-efb.txt --quiet
 
 echo.
 echo  Building efb.exe...

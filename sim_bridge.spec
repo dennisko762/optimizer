@@ -74,8 +74,8 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
+    # Do not exclude matplotlib: openap imports it at package import time.
     excludes=[
-        "matplotlib",
         "sentence_transformers",
         "torch",
         "transformers",
