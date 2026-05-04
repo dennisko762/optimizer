@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RawSimState(BaseModel):
@@ -187,6 +187,7 @@ class CurrentFlightState(BaseModel):
 
     fuel_remaining_kg: float | None = None
     ground_speed_kt: float | None = None
+    cruise_segments: list[dict[str, float]] = Field(default_factory=list)
 
     # Current cost index selected in FMC / SimBrief / test UI.
     # This must NOT be derived from Mach.

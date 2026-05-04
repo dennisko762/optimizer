@@ -18,6 +18,7 @@ from optimizer.scenario_engine.scenario_models import (
 )
 
 from performance_engine.remaining_cruise_simulator import (
+    CruiseSegment,
     RemainingCruiseInput,
     RemainingCruiseResult,
     simulate_remaining_cruise,
@@ -382,12 +383,39 @@ def _simulate_strategy(
         remaining_distance_nm=current_state.remaining_distance_nm,
         wind_component_kt=current_state.wind_component_kt,
         isa_deviation_c=current_state.isa_deviation_c,
+        segments=_to_cruise_segments(current_state.cruise_segments),
     )
     return simulate_remaining_cruise(
         request,
         aircraft_cfg=aircraft_cfg,
         general_cfg=general_cfg,
     )
+
+
+def _to_cruise_segments(raw_segments: list[dict[str, float]]) -> list[CruiseSegment] | None:
+    segments: list[CruiseSegment] = []
+
+    for raw in raw_segments or []:
+        distance_nm = raw.get("distanceNm") or raw.get("distance_nm")
+        if distance_nm is None or float(distance_nm) <= 0:
+            continue
+
+        segments.append(
+            CruiseSegment(
+                distance_nm=float(distance_nm),
+                altitude_ft=_optional_float(raw.get("altitudeFt") or raw.get("altitude_ft")),
+                wind_component_kt=_optional_float(raw.get("windComponentKt") or raw.get("wind_component_kt")),
+                isa_deviation_c=_optional_float(raw.get("isaDeviationC") or raw.get("isa_deviation_c")),
+            )
+        )
+
+    return segments or None
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _delay_for_candidate(

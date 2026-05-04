@@ -39,7 +39,7 @@ for _pkg in ("optimizer", "data_fetcher", "delay_module", "performance_engine", 
 # Keep this list deliberately small. Collecting the whole Python environment
 # makes the one-file exe much bigger and slows down cold start because PyInstaller
 # must unpack all bundled binaries/data before Python starts.
-for _pkg in ("openap", "SimConnect"):
+for _pkg in ("openap", "opentop", "fastmeteo", "casadi", "cartopy", "pyproj", "shapely", "pyarrow", "SimConnect"):
     _tmp = collect_all(_pkg)
     _datas    += _tmp[0]
     _binaries += _tmp[1]

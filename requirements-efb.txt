@@ -4,6 +4,8 @@
 fastapi==0.136.1
 httpx==0.28.1
 openap==2.5.0
+opentop==2.2.0
+fastmeteo==1.1.1
 pydantic==2.12.5
 PyYAML==6.0.2
 SimConnect==0.4.26

@@ -302,6 +302,15 @@ class CiOptimizationService:
             isa_deviation_c=0.0 if fs.isa_deviation_c is None else fs.isa_deviation_c,
             fuel_remaining_kg=fs.fuel_remaining_kg,
             ground_speed_kt=fs.ground_speed_kt,
+            cruise_segments=[
+                (
+                    segment.model_dump(by_alias=True)
+                    if hasattr(segment, "model_dump")
+                    else segment.dict(by_alias=True)
+                )
+                for segment in fs.cruise_segments
+                if segment.distance_nm > 0
+            ],
             total_pax=fs.pax_count or 0,
         )
 

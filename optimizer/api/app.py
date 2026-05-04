@@ -13,6 +13,7 @@ from data_fetcher.sim.telemetry_hub import start_telemetry_hub, stop_telemetry_h
 
 from optimizer.api.optimize_routes import router as optimize_router
 from optimizer.api.simbrief_routes import router as simbrief_router
+from optimizer.api.trajectory_routes import router as trajectory_router
 
 
 def create_app() -> FastAPI:
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(optimize_router)
     app.include_router(simbrief_router)
     app.include_router(simconnect_router)
+    app.include_router(trajectory_router)
 
     @app.on_event("startup")
     async def startup_telemetry() -> None:

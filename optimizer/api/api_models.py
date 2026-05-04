@@ -21,6 +21,17 @@ class EfbAction(str, Enum):
     OFP_DRIFT_CHECK = "OFP_DRIFT_CHECK"
 
 
+class UiCruiseSegment(BaseModel):
+    distance_nm: float = Field(alias="distanceNm")
+    altitude_ft: float | None = Field(default=None, alias="altitudeFt")
+    wind_component_kt: float | None = Field(default=None, alias="windComponentKt")
+    isa_deviation_c: float | None = Field(default=None, alias="isaDeviationC")
+
+    model_config = {
+        "populate_by_name": True,
+    }
+
+
 class UiFlightState(BaseModel):
     aircraft: str = "A320"
     engine_variant: str | None = Field(default=None, alias="engineVariant")
@@ -35,6 +46,7 @@ class UiFlightState(BaseModel):
     isa_deviation_c: float | None = Field(default=None, alias="isaDeviationC")
     fuel_remaining_kg: float | None = Field(default=None, alias="fuelRemainingKg")
     ground_speed_kt: float | None = Field(default=None, alias="groundSpeedKt")
+    cruise_segments: list[UiCruiseSegment] = Field(default_factory=list, alias="cruiseSegments")
 
     pax_count: int | None = Field(default=None, alias="paxCount")
     """

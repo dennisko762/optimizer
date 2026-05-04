@@ -153,39 +153,77 @@ function getInitialPayload(action, eta = null) {
 
 // ─── ETA computation (pure JS, no API needed) ─────────────────────────────────
 
+const ETA_FILTER_ALPHA = 0.18;
+const ETA_DISPLAY_DEADBAND_MIN = 1.0;
+const ETA_ROUTE_CHANGE_SNAP_MIN = 20.0;
+
 function computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt, gpsEteSeconds) {
   const nm = parseFlexibleNumber(remainingNm);
   const gpsEte = parseFlexibleNumber(gpsEteSeconds);
+  const usesGpsEte = gpsEte && gpsEte > 0;
   const gsRaw = parseFlexibleNumber(groundSpeedKt);
   const gsEstimated = !gsRaw ? estimateGroundSpeedKt(mach, altFt, isaDev, windKt) : null;
   const gs = gsRaw || gsEstimated;
   const gsIsEstimated = !gsRaw && !!gsEstimated;
 
-  if ((!nm || nm <= 0) && (!gpsEte || gpsEte <= 0)) return null;
-  if ((!gpsEte || gpsEte <= 0) && (!gs || gs <= 0)) return null;
+  if ((!nm || nm <= 0) && !usesGpsEte) return null;
+  if (!usesGpsEte && (!gs || gs <= 0)) return null;
 
-  const remainingTimeMin = gpsEte && gpsEte > 0 ? gpsEte / 60 : (nm / gs) * 60;
+  const remainingTimeMin = usesGpsEte ? gpsEte / 60 : (nm / gs) * 60;
 
   const now = new Date();
   const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes() + now.getUTCSeconds() / 60;
   const etaMin = nowMin + remainingTimeMin;
 
-  const etaH = Math.floor(etaMin / 60) % 24;
-  const etaM = Math.round(etaMin % 60) % 60;
-  const etaUtc = `${String(etaH).padStart(2, "0")}:${String(etaM).padStart(2, "0")}`;
-
   return {
     remainingTimeMin: Math.round(remainingTimeMin * 10) / 10,
-    etaUtc,
+    etaUtc: minutesToUtcClock(etaMin),
     nowMin,
     etaMin,
+    source: usesGpsEte ? "gps" : "computed",
     gsIsEstimated,
     groundSpeedKt: Math.round(gs),
   };
 }
 
+function stabilizeLiveEta(liveEta, filterRef) {
+  if (!liveEta) {
+    filterRef.current = null;
+    return null;
+  }
+
+  const previous = filterRef.current;
+  let etaMin = liveEta.etaMin;
+
+  if (previous && previous.source === liveEta.source) {
+    etaMin = unwrapMinutesNearReference(etaMin, previous.etaMin);
+    const delta = etaMin - previous.etaMin;
+
+    if (Math.abs(delta) < ETA_DISPLAY_DEADBAND_MIN) {
+      etaMin = previous.etaMin;
+    } else if (liveEta.source !== "gps" && Math.abs(delta) <= ETA_ROUTE_CHANGE_SNAP_MIN) {
+      etaMin = previous.etaMin + delta * ETA_FILTER_ALPHA;
+    }
+  }
+
+  filterRef.current = {
+    etaMin,
+    source: liveEta.source,
+  };
+
+  return {
+    ...liveEta,
+    etaMin,
+    etaUtc: minutesToUtcClock(etaMin),
+  };
+}
+
 function computeEta(remainingNm, groundSpeedKt, sibtUtc, lastDelayMin, mach, altFt, isaDev, windKt, gpsEteSeconds) {
   const liveEta = computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt, gpsEteSeconds);
+  return computeEtaFromLiveEta(liveEta, sibtUtc, lastDelayMin);
+}
+
+function computeEtaFromLiveEta(liveEta, sibtUtc, lastDelayMin) {
   if (!liveEta || !sibtUtc) return null;
 
   const sibtBaseMin = utcClockToMinutes(sibtUtc);
@@ -280,6 +318,14 @@ function normalizeUtcClock(value) {
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
 
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function minutesToUtcClock(minutes) {
+  const rounded = Math.round(minutes);
+  const total = ((rounded % 1440) + 1440) % 1440;
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 }
 
 function utcClockToMinutes(value) {
@@ -764,6 +810,7 @@ export default function App() {
   // ── ETA state ──────────────────────────────────────────────────────────────
   const [etaDismissed, setEtaDismissed] = useState(false);
   const lastEtaDelayRef = useRef(null);
+  const liveEtaFilterRef = useRef(null);
   const simPollInFlightRef = useRef(false);
   const [simConnectStatus, setSimConnectStatus] = useState("unknown");
   const [liveTelemetry, setLiveTelemetry] = useState({
@@ -783,9 +830,12 @@ export default function App() {
   const hasLiveTelemetry = simConnectStatus === "connected" && liveTelemetry.collectorStatus === "connected";
 
   const liveEta = useMemo(() => {
-    if (!hasLiveTelemetry) return null;
+    if (!hasLiveTelemetry) {
+      liveEtaFilterRef.current = null;
+      return null;
+    }
 
-    return computeLiveEta(
+    const rawLiveEta = computeLiveEta(
       telemetryPatch.remainingDistanceNm,
       telemetryPatch.groundSpeedKt,
       telemetryPatch.mach,
@@ -794,6 +844,7 @@ export default function App() {
       telemetryPatch.windComponentKt,
       telemetryPatch.gpsEteSeconds,
     );
+    return stabilizeLiveEta(rawLiveEta, liveEtaFilterRef);
   }, [
     hasLiveTelemetry,
     telemetryPatch.remainingDistanceNm,
@@ -808,28 +859,15 @@ export default function App() {
   const eta = useMemo(() => {
     if (!liveEta) return null;
 
-    const result = computeEta(
-      telemetryPatch.remainingDistanceNm,
-      telemetryPatch.groundSpeedKt,
+    const result = computeEtaFromLiveEta(
+      liveEta,
       plannedEta?.etaUtc ?? null,
       lastEtaDelayRef.current,
-      telemetryPatch.mach,
-      telemetryPatch.altitudeFt,
-      telemetryPatch.isaDeviationC,
-      telemetryPatch.windComponentKt,
-      telemetryPatch.gpsEteSeconds,
     );
     if (result) lastEtaDelayRef.current = result.delayMin;
     return result;
   }, [
     liveEta,
-    telemetryPatch.remainingDistanceNm,
-    telemetryPatch.groundSpeedKt,
-    telemetryPatch.mach,
-    telemetryPatch.altitudeFt,
-    telemetryPatch.isaDeviationC,
-    telemetryPatch.windComponentKt,
-    telemetryPatch.gpsEteSeconds,
     plannedEta?.etaUtc,
   ]);
 

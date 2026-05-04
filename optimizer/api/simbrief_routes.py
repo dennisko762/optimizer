@@ -294,6 +294,16 @@ async def sync_simbrief(
     if destination_lat is None or destination_lon is None:
         warnings.append("Destination coordinates not found in SimBrief seed or airport fallback.")
 
+    from data_fetcher.simbrief.route_profile import build_cruise_segments_from_waypoints
+    from optimizer.api.route_profile_cache import set_latest_cruise_segments
+
+    route_waypoints = getattr(seed, "route_waypoints", []) or []
+    cruise_segments = build_cruise_segments_from_waypoints(route_waypoints)
+    set_latest_cruise_segments(cruise_segments)
+
+    if route_waypoints and not cruise_segments:
+        warnings.append("SimBrief route waypoints were found, but no usable cruise segment distances were parsed.")
+
     return SimBriefSyncResponse(
         username=username,
         aircraftInfo=aircraft_info,
@@ -351,6 +361,12 @@ async def sync_simbrief(
             "sobt_utc": sobt_utc,
             "destination_lat": destination_lat,
             "destination_lon": destination_lon,
+            "route_waypoint_count": len(route_waypoints),
+            "cruise_segment_count": len(cruise_segments),
+            "cruise_segment_distance_nm": round(
+                sum(segment["distanceNm"] for segment in cruise_segments),
+                2,
+            ) if cruise_segments else None,
             "simbrief_taxi_out_min": simbrief_taxi_out_min,
             "simbrief_taxi_in_min": simbrief_taxi_in_min,
             "resolved_taxi_out_min": resolved_taxi_out_min,

@@ -1,4 +1,15 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class SimBriefRouteWaypoint(BaseModel):
+    ident: str | None = None
+    lat: float
+    lon: float
+    flight_level: int | None = None
+    altitude_ft: float | None = None
+    distance_from_previous_nm: float | None = None
+    wind_component_kt: float | None = None
+    isa_deviation_c: float | None = None
 
 
 class SimBriefPerformanceSeed(BaseModel):
@@ -47,3 +58,5 @@ class SimBriefPerformanceSeed(BaseModel):
     # Average wind: "231 / 15" → stored as direction_deg and speed_kt
     planned_avg_wind_direction_deg: float | None = None
     planned_avg_wind_speed_kt: float | None = None
+
+    route_waypoints: list[SimBriefRouteWaypoint] = Field(default_factory=list)
