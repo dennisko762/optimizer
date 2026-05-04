@@ -38,6 +38,13 @@ class RawSimState(BaseModel):
 
     on_ground: bool | None = None
 
+    gps_is_active_flight_plan: bool | None = None
+    gps_ete_seconds: float | None = None
+    gps_eta_seconds: float | None = None
+    gps_target_distance_m: float | None = None
+    gps_wp_distance_m: float | None = None
+    gps_ground_speed_m_s: float | None = None
+
 
 class LiveSimState(BaseModel):
     # Primary altitude shown to the UI and passed into optimization.
@@ -71,6 +78,13 @@ class LiveSimState(BaseModel):
     # Wind component along aircraft track (positive = tailwind).
     # Populated from AIRCRAFT_WIND_X SimVar when available.
     wind_x_kt: float | None = None
+
+    gps_is_active_flight_plan: bool | None = None
+    gps_ete_seconds: float | None = None
+    gps_eta_seconds: float | None = None
+    gps_remaining_distance_nm: float | None = None
+    gps_waypoint_distance_nm: float | None = None
+    gps_ground_speed_kt: float | None = None
 
     def get_remaining_distance_nm(
         self,

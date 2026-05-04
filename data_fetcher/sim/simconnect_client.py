@@ -89,6 +89,13 @@ class SimConnectClient(SimClient):
             wind_x_kt=self._safe_get_float(aq, "AIRCRAFT_WIND_X"),
 
             on_ground=self._safe_get_bool(aq, "SIM_ON_GROUND"),
+
+            gps_is_active_flight_plan=self._safe_get_bool(aq, "GPS_IS_ACTIVE_FLIGHT_PLAN"),
+            gps_ete_seconds=self._safe_get_float(aq, "GPS_ETE"),
+            gps_eta_seconds=self._safe_get_float(aq, "GPS_ETA"),
+            gps_target_distance_m=self._safe_get_float(aq, "GPS_TARGET_DISTANCE"),
+            gps_wp_distance_m=self._safe_get_float(aq, "GPS_WP_DISTANCE"),
+            gps_ground_speed_m_s=self._safe_get_float(aq, "GPS_GROUND_SPEED"),
         )
 
     @staticmethod

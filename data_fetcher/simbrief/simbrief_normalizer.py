@@ -99,20 +99,20 @@ def to_performance_seed(raw: dict) -> SimBriefPerformanceSeed:
         ),
 
         sibt_utc=_unix_or_seconds_to_hhmm(
-            times.get("sched_in")
-            or times.get("schedin")
-            or times.get("est_in")
+            times.get("est_in")
             or times.get("estin")
-            or general.get("sched_in")
+            or times.get("sched_in")
+            or times.get("schedin")
             or general.get("est_in")
+            or general.get("sched_in")
         ),
         sobt_utc=_unix_or_seconds_to_hhmm(
-            times.get("sched_out")
-            or times.get("schedout")
-            or times.get("est_out")
+            times.get("est_out")
             or times.get("estout")
-            or general.get("sched_out")
+            or times.get("sched_out")
+            or times.get("schedout")
             or general.get("est_out")
+            or general.get("sched_out")
         ),
 
         planned_wind_component_kt=_parse_pm_value(

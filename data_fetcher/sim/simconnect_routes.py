@@ -45,6 +45,11 @@ class SimConnectFlightStatePatch(BaseModel):
     # Replaces the static SimBrief OFP distance during flight.
     remaining_distance_nm: float | None = Field(default=None, alias="remainingDistanceNm")
 
+    # Optional GPS flightplan timing. The UI keeps the same layout but prefers
+    # this for Live ETA when available.
+    gps_ete_seconds: float | None = Field(default=None, alias="gpsEteSeconds")
+    gps_eta_seconds: float | None = Field(default=None, alias="gpsEtaSeconds")
+
     model_config = {
         "populate_by_name": True,
     }
@@ -294,6 +299,7 @@ async def simconnect_telemetry(
         warnings.append(destination_lookup_warning)
 
     res = SimConnectTelemetryResponse(
+        source=_navigation_source(live),
         connected=True,
         collectorStatus=_collector_status(snapshot),
         sampleIntervalS=snapshot.poll_interval_s,
@@ -315,7 +321,12 @@ def _live_state_to_patch(
     destination_lon: float | None = None,
 ) -> SimConnectFlightStatePatch:
     # Remaining distance: live Haversine when destination coords provided.
-    remaining_nm = live.get_remaining_distance_nm(
+    gps_remaining_nm = (
+        live.gps_remaining_distance_nm
+        if live.gps_is_active_flight_plan and _positive(live.gps_remaining_distance_nm)
+        else None
+    )
+    remaining_nm = gps_remaining_nm or live.get_remaining_distance_nm(
         destination_lat=destination_lat,
         destination_lon=destination_lon,
     )
@@ -333,6 +344,8 @@ def _live_state_to_patch(
         isaDeviationC=live.isa_deviation_c,
         windComponentKt=wind_component_kt,
         remainingDistanceNm=remaining_nm,
+        gpsEteSeconds=live.gps_ete_seconds if live.gps_is_active_flight_plan else None,
+        gpsEtaSeconds=live.gps_eta_seconds if live.gps_is_active_flight_plan else None,
     )
 
 
@@ -366,7 +379,9 @@ def _build_warnings(
     if live.wind_x_kt is None and live.wind_velocity_kt is None:
         warnings.append("SimConnect did not return wind data.")
 
-    if destination_lat is None or destination_lon is None:
+    if live.gps_is_active_flight_plan and _positive(live.gps_remaining_distance_nm):
+        pass
+    elif destination_lat is None or destination_lon is None:
         warnings.append(
             "No destination coordinates available for live remaining-distance calculation."
         )
@@ -421,6 +436,13 @@ def _raw_summary(live: LiveSimState) -> dict[str, Any]:
         "ambient_temperature_c": live.ambient_temperature_c,
         "isa_deviation_c": live.isa_deviation_c,
         "on_ground": live.on_ground,
+        "navigation_source": _navigation_source(live).lower(),
+        "gps_is_active_flight_plan": live.gps_is_active_flight_plan,
+        "gps_ete_seconds": live.gps_ete_seconds,
+        "gps_eta_seconds": live.gps_eta_seconds,
+        "gps_remaining_distance_nm": live.gps_remaining_distance_nm,
+        "gps_waypoint_distance_nm": live.gps_waypoint_distance_nm,
+        "gps_ground_speed_kt": live.gps_ground_speed_kt,
     }
 
 
@@ -457,3 +479,16 @@ def _format_snapshot_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     return value.isoformat().replace("+00:00", "Z")
+
+
+def _positive(value: float | None) -> bool:
+    return value is not None and value > 0
+
+
+def _navigation_source(live: LiveSimState) -> str:
+    if live.gps_is_active_flight_plan and (
+        _positive(live.gps_remaining_distance_nm)
+        or _positive(live.gps_ete_seconds)
+    ):
+        return "GPS"
+    return "SimConnect"

@@ -116,6 +116,8 @@ const EMPTY_TELEMETRY_PATCH = {
   fuelRemainingKg: null,
   groundSpeedKt: null,
   remainingDistanceNm: null,
+  gpsEteSeconds: null,
+  gpsEtaSeconds: null,
 };
 
 function getInitialPayload(action, eta = null) {
@@ -151,18 +153,18 @@ function getInitialPayload(action, eta = null) {
 
 // ─── ETA computation (pure JS, no API needed) ─────────────────────────────────
 
-function computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt) {
+function computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt, gpsEteSeconds) {
   const nm = parseFlexibleNumber(remainingNm);
-  if (!nm || nm <= 0) return null;
-
+  const gpsEte = parseFlexibleNumber(gpsEteSeconds);
   const gsRaw = parseFlexibleNumber(groundSpeedKt);
   const gsEstimated = !gsRaw ? estimateGroundSpeedKt(mach, altFt, isaDev, windKt) : null;
   const gs = gsRaw || gsEstimated;
   const gsIsEstimated = !gsRaw && !!gsEstimated;
 
-  if (!gs || gs <= 0) return null;
+  if ((!nm || nm <= 0) && (!gpsEte || gpsEte <= 0)) return null;
+  if ((!gpsEte || gpsEte <= 0) && (!gs || gs <= 0)) return null;
 
-  const remainingTimeMin = (nm / gs) * 60;
+  const remainingTimeMin = gpsEte && gpsEte > 0 ? gpsEte / 60 : (nm / gs) * 60;
 
   const now = new Date();
   const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes() + now.getUTCSeconds() / 60;
@@ -182,18 +184,14 @@ function computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt)
   };
 }
 
-function computeEta(remainingNm, groundSpeedKt, sibtUtc, lastDelayMin, mach, altFt, isaDev, windKt) {
-  const liveEta = computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt);
+function computeEta(remainingNm, groundSpeedKt, sibtUtc, lastDelayMin, mach, altFt, isaDev, windKt, gpsEteSeconds) {
+  const liveEta = computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt, gpsEteSeconds);
   if (!liveEta || !sibtUtc) return null;
 
-  const parts = sibtUtc.split(":");
-  if (parts.length < 2) return null;
-  let sibtMin = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  const sibtBaseMin = utcClockToMinutes(sibtUtc);
+  if (sibtBaseMin === null) return null;
 
-  // Overnight wrap
-  if (sibtMin - liveEta.nowMin < -12 * 60) sibtMin += 24 * 60;
-  if (sibtMin - liveEta.nowMin > 12 * 60) sibtMin -= 24 * 60;
-
+  const sibtMin = unwrapMinutesNearReference(sibtBaseMin, liveEta.etaMin);
   const delayMin = liveEta.etaMin - sibtMin;
 
   let status = "ON_TIME";
@@ -282,6 +280,23 @@ function normalizeUtcClock(value) {
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
 
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function utcClockToMinutes(value) {
+  const normalized = normalizeUtcClock(value);
+  if (!normalized) return null;
+
+  const [hours, minutes] = normalized.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function unwrapMinutesNearReference(minutes, referenceMin) {
+  if (!Number.isFinite(minutes) || !Number.isFinite(referenceMin)) return minutes;
+
+  let candidate = minutes;
+  while (candidate - referenceMin > 12 * 60) candidate -= 24 * 60;
+  while (candidate - referenceMin < -12 * 60) candidate += 24 * 60;
+  return candidate;
 }
 
 function shiftUtcClock(utcClock, deltaMin) {
@@ -777,6 +792,7 @@ export default function App() {
       telemetryPatch.altitudeFt,
       telemetryPatch.isaDeviationC,
       telemetryPatch.windComponentKt,
+      telemetryPatch.gpsEteSeconds,
     );
   }, [
     hasLiveTelemetry,
@@ -786,6 +802,7 @@ export default function App() {
     telemetryPatch.altitudeFt,
     telemetryPatch.isaDeviationC,
     telemetryPatch.windComponentKt,
+    telemetryPatch.gpsEteSeconds,
   ]);
 
   const eta = useMemo(() => {
@@ -800,6 +817,7 @@ export default function App() {
       telemetryPatch.altitudeFt,
       telemetryPatch.isaDeviationC,
       telemetryPatch.windComponentKt,
+      telemetryPatch.gpsEteSeconds,
     );
     if (result) lastEtaDelayRef.current = result.delayMin;
     return result;
@@ -811,6 +829,7 @@ export default function App() {
     telemetryPatch.altitudeFt,
     telemetryPatch.isaDeviationC,
     telemetryPatch.windComponentKt,
+    telemetryPatch.gpsEteSeconds,
     plannedEta?.etaUtc,
   ]);
 

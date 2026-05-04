@@ -105,8 +105,10 @@ def compute_eta(
     eta_min = now_min + remaining_time_min
     sibt_min = _hhmm_to_minutes(sibt_utc)
 
-    # Handle overnight wrap (e.g. depart 23:00, arrive 01:30 next day)
-    sibt_min = _unwrap_minutes(sibt_min, reference=now_min)
+    # Handle overnight wrap by placing the scheduled in-block time on the
+    # calendar day closest to the computed ETA, not closest to "now".
+    # Long-haul flights can depart before midnight and arrive the next UTC day.
+    sibt_min = _unwrap_minutes(sibt_min, reference=eta_min)
 
     delay_min = eta_min - sibt_min
     eta_str = _minutes_to_hhmm(eta_min)

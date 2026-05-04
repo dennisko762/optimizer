@@ -4,6 +4,8 @@ from data_fetcher.sim.sim_models import RawSimState
 
 LB_TO_KG = 0.45359237
 M_TO_FT = 3.280839895013123
+M_TO_NM = 0.0005399568034557235
+MPS_TO_KT = 1.9438444924406048
 DEFAULT_ROUND_DIGITS = 2
 POSITION_ROUND_DIGITS = 6
 
@@ -54,6 +56,13 @@ def normalize_raw_sim_state(raw: RawSimState) -> LiveSimState:
 
         on_ground=raw.on_ground,
         wind_x_kt=round_optional(raw.wind_x_kt),
+
+        gps_is_active_flight_plan=raw.gps_is_active_flight_plan,
+        gps_ete_seconds=round_optional(raw.gps_ete_seconds),
+        gps_eta_seconds=round_optional(raw.gps_eta_seconds),
+        gps_remaining_distance_nm=round_optional(m_to_nm(raw.gps_target_distance_m)),
+        gps_waypoint_distance_nm=round_optional(m_to_nm(raw.gps_wp_distance_m)),
+        gps_ground_speed_kt=round_optional(mps_to_kt(raw.gps_ground_speed_m_s)),
     )
 
 
@@ -79,6 +88,18 @@ def m_to_ft(value_m: float | None) -> float | None:
     if value_m is None:
         return None
     return value_m * M_TO_FT
+
+
+def m_to_nm(value_m: float | None) -> float | None:
+    if value_m is None:
+        return None
+    return value_m * M_TO_NM
+
+
+def mps_to_kt(value_m_s: float | None) -> float | None:
+    if value_m_s is None:
+        return None
+    return value_m_s * MPS_TO_KT
 
 
 def altitude_to_flight_level(altitude_ft: float | None) -> int | None:
