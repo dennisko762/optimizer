@@ -4,6 +4,7 @@
 # Output: dist/efb.exe
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
+import importlib.util
 import os
 
 _datas    = []
@@ -38,11 +39,20 @@ for _pkg in ("optimizer", "data_fetcher", "delay_module", "performance_engine", 
 # Keep this list deliberately small. Collecting the whole Python environment
 # makes the one-file exe much bigger and slows down cold start because PyInstaller
 # must unpack all bundled binaries/data before Python starts.
-for _pkg in ("openap",):
+for _pkg in ("openap", "SimConnect"):
     _tmp = collect_all(_pkg)
     _datas    += _tmp[0]
     _binaries += _tmp[1]
     _hidden   += _tmp[2]
+
+# SimConnect loads SimConnect.dll relative to SimConnect/SimConnect.py.
+# Keep that DLL at the package path inside the PyInstaller bundle.
+_simconnect_spec = importlib.util.find_spec("SimConnect")
+if _simconnect_spec and _simconnect_spec.submodule_search_locations:
+    _simconnect_dir = next(iter(_simconnect_spec.submodule_search_locations))
+    _simconnect_dll = os.path.join(_simconnect_dir, "SimConnect.dll")
+    if os.path.exists(_simconnect_dll):
+        _binaries += [(_simconnect_dll, "SimConnect")]
 
 # ── uvicorn dynamic imports ───────────────────────────────────────────────────
 _hidden += collect_submodules("uvicorn")

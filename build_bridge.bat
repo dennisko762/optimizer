@@ -31,7 +31,7 @@ echo.
 where python >nul 2>&1
 if errorlevel 1 ( echo  ERROR: Python not found. & pause & exit /b 1 )
 
-where pyinstaller >nul 2>&1
+python -m PyInstaller --version >nul 2>&1
 if errorlevel 1 (
     echo  Installing PyInstaller...
     python -m pip install pyinstaller --quiet
@@ -39,11 +39,16 @@ if errorlevel 1 (
 
 echo  Installing Python dependencies...
 python -m pip install --disable-pip-version-check --upgrade-strategy only-if-needed -r requirements-efb.txt --quiet
+if errorlevel 1 ( echo  ERROR: Python dependency install failed. & pause & exit /b 1 )
+
+echo  Checking Python runtime imports...
+python -c "import SimConnect; import matplotlib; import openap; import fastapi; import uvicorn"
+if errorlevel 1 ( echo  ERROR: Runtime import check failed. & pause & exit /b 1 )
 
 echo.
 echo  Building efb.exe...
 echo.
-pyinstaller sim_bridge.spec --noconfirm --clean
+python -m PyInstaller sim_bridge.spec --noconfirm --clean
 if errorlevel 1 ( echo. & echo  ERROR: Build failed. & pause & exit /b 1 )
 
 echo.
