@@ -5,7 +5,6 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
-from data_fetcher.sim.airport_lookup import lookup_airport_coordinates
 from data_fetcher.sim.sim_models import LiveSimState
 from data_fetcher.sim.telemetry_hub import TelemetrySnapshot, get_telemetry_hub
 from delay_module.eta_calculator import DelayTriggerConfig, compute_eta_if_possible
@@ -384,6 +383,8 @@ def _resolve_destination_coordinates(
 ) -> tuple[float | None, float | None, str | None]:
     if destination_lat is not None and destination_lon is not None:
         return destination_lat, destination_lon, None
+
+    from data_fetcher.sim.airport_lookup import lookup_airport_coordinates
 
     coordinates = lookup_airport_coordinates(destination)
     if coordinates is None:

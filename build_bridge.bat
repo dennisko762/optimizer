@@ -39,7 +39,7 @@ python -m pip install -r requirements.txt --quiet
 echo.
 echo  Building efb.exe...
 echo.
-pyinstaller sim_bridge.spec --noconfirm
+pyinstaller sim_bridge.spec --noconfirm --clean
 if errorlevel 1 ( echo. & echo  ERROR: Build failed. & pause & exit /b 1 )
 
 echo.

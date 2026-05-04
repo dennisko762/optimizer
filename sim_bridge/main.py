@@ -7,7 +7,7 @@ frontend — all in one process. No separate backend or cloud needed.
 Open in browser from any device on the same network:
     http://<sim-pc-ip>:7070
 
-Tailscale is set up automatically on first run if not present.
+Tailscale can be set up explicitly with --setup-tailscale.
 """
 from __future__ import annotations
 
@@ -18,6 +18,11 @@ import socket
 import subprocess
 import sys
 import traceback
+
+if not getattr(sys, "frozen", False):
+    _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
 
 # Must be set before any project imports so telemetry_hub picks it up.
 os.environ.setdefault("SIM_SOURCE", "local")
@@ -37,7 +42,7 @@ def _local_ip() -> str:
 
 def _tailscale_running() -> bool:
     try:
-        r = subprocess.run(["tailscale", "version"], capture_output=True, timeout=5)
+        r = subprocess.run(["tailscale", "version"], capture_output=True, timeout=1.5)
         return r.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -47,7 +52,7 @@ def _tailscale_ip() -> str | None:
     try:
         r = subprocess.run(
             ["tailscale", "ip", "--4"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=1.5,
         )
         ip = r.stdout.strip()
         return ip if ip else None
@@ -72,11 +77,22 @@ def _install_tailscale_winget() -> bool:
         return False
 
 
-def _ensure_tailscale(port: int) -> None:
+def _pause_before_exit() -> None:
+    try:
+        input("  Press Enter to exit...")
+    except EOFError:
+        pass
+
+
+def _show_tailscale_status(port: int, *, setup: bool) -> None:
     if _tailscale_running():
         ts_ip = _tailscale_ip()
         if ts_ip:
             print(f"  Tailscale:     http://{ts_ip}:{port}  (from anywhere)")
+        return
+
+    if not setup:
+        print("  Tailscale:     not running  (use --setup-tailscale to enable)")
         return
 
     print()
@@ -113,6 +129,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=_DEFAULT_PORT)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--no-tailscale", action="store_true")
+    parser.add_argument("--setup-tailscale", action="store_true")
     args = parser.parse_args()
 
     local_ip = _local_ip()
@@ -126,7 +143,7 @@ def main() -> None:
     print(f"  Local network: http://{local_ip}:{args.port}")
 
     if not args.no_tailscale:
-        _ensure_tailscale(args.port)
+        _show_tailscale_status(args.port, setup=args.setup_tailscale)
 
     print()
 
@@ -138,7 +155,7 @@ def main() -> None:
         print()
         traceback.print_exc()
         print()
-        input("  Press Enter to exit...")
+        _pause_before_exit()
         sys.exit(1)
 
     try:
@@ -149,7 +166,7 @@ def main() -> None:
         print("  ERROR: Server crashed.")
         traceback.print_exc()
         print()
-        input("  Press Enter to exit...")
+        _pause_before_exit()
         sys.exit(1)
 
 

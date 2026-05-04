@@ -50,7 +50,7 @@ No installation required on client devices. No cloud subscription. No account re
 
 A single executable runs on the sim PC. Every other device — tablet, laptop, phone — connects via browser. Nothing to install on client devices.
 
-For access outside the local network, Tailscale is set up automatically on first launch.
+For access outside the local network, Tailscale can be set up explicitly on the sim PC.
 
 ---
 

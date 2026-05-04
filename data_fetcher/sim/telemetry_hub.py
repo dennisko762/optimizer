@@ -49,7 +49,7 @@ class TelemetryHub:
     ) -> None:
         self.poll_interval_s = poll_interval_s
         self._client_factory = client_factory or create_sim_client
-        self._client = self._client_factory()
+        self._client: SimClient | None = None
         self._snapshot = TelemetrySnapshot(poll_interval_s=poll_interval_s)
         self._snapshot_lock = asyncio.Lock()
         self._poll_lock = asyncio.Lock()
@@ -102,7 +102,7 @@ class TelemetryHub:
     async def _poll_once(self) -> None:
         async with self._poll_lock:
             try:
-                live = await self._client.get_live_state()
+                live = await self._get_client().get_live_state()
             except SimClientError as exc:
                 await asyncio.to_thread(self._safe_close_client)
                 await self._store_disconnected(str(exc))
@@ -112,6 +112,11 @@ class TelemetryHub:
                 )
             else:
                 await self._store_live(live)
+
+    def _get_client(self) -> SimClient:
+        if self._client is None:
+            self._client = self._client_factory()
+        return self._client
 
     async def _store_live(self, live: LiveSimState) -> None:
         async with self._snapshot_lock:
@@ -136,11 +141,12 @@ class TelemetryHub:
             )
 
     def _safe_close_client(self) -> None:
-        try:
-            self._client.close()
-        except Exception:
-            pass
-        self._client = self._client_factory()
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+        self._client = None
 
 
 _telemetry_hub = TelemetryHub()

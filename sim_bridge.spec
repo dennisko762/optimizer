@@ -3,43 +3,55 @@
 # Build:  build_bridge.bat
 # Output: dist/efb.exe
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
-import importlib.metadata
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 import os
 
 _datas    = []
 _binaries = []
 _hidden   = []
 
-# ── Auto-collect all installed packages ──────────────────────────────────────
-# Applies collect_all() to every package in the environment so that data files
-# (CSVs, fonts, JSONs, etc.) are never missing — no manual whack-a-mole.
-_skip = {
-    "pip", "setuptools", "wheel",
-    "pyinstaller", "pyinstaller-hooks-contrib",
-    "altgraph", "packaging", "pefile", "pywin32-ctypes",
-}
 
-for _dist in importlib.metadata.distributions():
-    _name = _dist.metadata["Name"]
-    if not _name or _name.lower() in _skip:
-        continue
-    _pkg = _name.replace("-", "_")
-    try:
-        _tmp = collect_all(_pkg)
-        _datas    += _tmp[0]
-        _binaries += _tmp[1]
-        _hidden   += _tmp[2]
-    except Exception:
-        pass
+def _is_runtime_module(module_name):
+    parts = module_name.split(".")
+    if "bak" in parts:
+        return False
+    if module_name.endswith("_bak") or "._bak" in module_name:
+        return False
+    if module_name.endswith(".test") or module_name.endswith("_test"):
+        return False
+    if module_name in {"optimizer.test"}:
+        return False
+    if module_name.endswith(".generate_aircraft_yamls"):
+        return False
+    return True
+
 
 # ── Project modules ───────────────────────────────────────────────────────────
 for _pkg in ("optimizer", "data_fetcher", "delay_module", "performance_engine", "strategy"):
-    _hidden += collect_submodules(_pkg)
+    _hidden += [
+        _module
+        for _module in collect_submodules(_pkg)
+        if _is_runtime_module(_module)
+    ]
+
+# ── Runtime packages with non-Python data ─────────────────────────────────────
+# Keep this list deliberately small. Collecting the whole Python environment
+# makes the one-file exe much bigger and slows down cold start because PyInstaller
+# must unpack all bundled binaries/data before Python starts.
+for _pkg in ("openap",):
+    _tmp = collect_all(_pkg)
+    _datas    += _tmp[0]
+    _binaries += _tmp[1]
+    _hidden   += _tmp[2]
 
 # ── uvicorn dynamic imports ───────────────────────────────────────────────────
 _hidden += collect_submodules("uvicorn")
 _hidden += ["h11"]
+
+# Some FastAPI/Starlette responses use package data that PyInstaller hooks may
+# not always infer in lean builds.
+_datas += collect_data_files("fastapi")
+_datas += collect_data_files("starlette")
 
 # ── Bundle project data files (YAML configs, etc.) ───────────────────────────
 # collect_all() only handles installed packages — our own files must be explicit.
@@ -62,7 +74,13 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter"],
+    excludes=[
+        "matplotlib",
+        "sentence_transformers",
+        "torch",
+        "transformers",
+        "tkinter",
+    ],
     noarchive=False,
 )
 
@@ -77,7 +95,7 @@ exe = EXE(
     name="efb",
     debug=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,

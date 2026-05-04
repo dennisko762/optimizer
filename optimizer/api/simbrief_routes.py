@@ -4,11 +4,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from matplotlib.pylab import seed
 from pydantic import BaseModel, Field
 
-from data_fetcher.sim.airport_lookup import lookup_airport_coordinates
-from data_fetcher.simbrief.simbrief_service import SimBriefService
 from optimizer.configs.aircraft.aircraft_catalog import AircraftCatalogEntry, get_catalog_entry, normalize_aircraft_code
 from optimizer.number_utils import parse_number
 
@@ -108,6 +105,8 @@ async def sync_simbrief(
     overwritten by SimConnect/live aircraft state.
     """
 
+    from data_fetcher.simbrief.simbrief_service import SimBriefService
+
     service = SimBriefService()
 
     try:
@@ -194,6 +193,8 @@ async def sync_simbrief(
         ],
     )
     if (destination_lat is None or destination_lon is None) and destination is not None:
+        from data_fetcher.sim.airport_lookup import lookup_airport_coordinates
+
         airport_coordinates = lookup_airport_coordinates(str(destination))
         if airport_coordinates is not None:
             destination_lat, destination_lon = airport_coordinates

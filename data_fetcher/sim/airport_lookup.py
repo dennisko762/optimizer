@@ -4,8 +4,6 @@ import csv
 from functools import lru_cache
 from pathlib import Path
 
-import openap
-
 
 def lookup_airport_coordinates(code: str | None) -> tuple[float, float] | None:
     normalized = _normalize_code(code)
@@ -16,6 +14,8 @@ def lookup_airport_coordinates(code: str | None) -> tuple[float, float] | None:
 
 @lru_cache(maxsize=1)
 def _airport_coordinates() -> dict[str, tuple[float, float]]:
+    import openap
+
     path = Path(openap.__file__).resolve().parent / "data" / "nav" / "airports.csv"
     coordinates: dict[str, tuple[float, float]] = {}
 
