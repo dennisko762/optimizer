@@ -54,6 +54,8 @@ class TelemetryHub:
         self._snapshot_lock = asyncio.Lock()
         self._poll_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
+        self._last_logged_error: str | None = None
+        self._last_logged_connected = False
 
     async def start(self) -> None:
         if self._task is not None and not self._task.done():
@@ -119,6 +121,11 @@ class TelemetryHub:
         return self._client
 
     async def _store_live(self, live: LiveSimState) -> None:
+        if not self._last_logged_connected:
+            print("SimConnect telemetry connected.")
+        self._last_logged_connected = True
+        self._last_logged_error = None
+
         async with self._snapshot_lock:
             self._snapshot = TelemetrySnapshot(
                 connected=True,
@@ -130,6 +137,11 @@ class TelemetryHub:
             )
 
     async def _store_disconnected(self, error_message: str) -> None:
+        if self._last_logged_connected or error_message != self._last_logged_error:
+            print(f"SimConnect telemetry offline: {error_message}")
+        self._last_logged_connected = False
+        self._last_logged_error = error_message
+
         async with self._snapshot_lock:
             self._snapshot = TelemetrySnapshot(
                 connected=False,

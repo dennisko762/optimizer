@@ -318,10 +318,20 @@ function resolvePlannedEta(flightContext) {
   return null;
 }
 
-function formatTelemetryAge(dataAgeMs, collectorStatus) {
+function formatTelemetryIssue(message) {
+  if (!message) return "";
+  const text = String(message).trim();
+  if (!text) return "";
+  return text.length > 72 ? `${text.slice(0, 69)}...` : text;
+}
+
+function formatTelemetryAge(dataAgeMs, collectorStatus, lastError) {
   const age = parseFlexibleNumber(dataAgeMs);
   if (collectorStatus === "warming_up") return "waiting for telemetry";
-  if (collectorStatus !== "connected") return "telemetry offline";
+  if (collectorStatus !== "connected") {
+    const issue = formatTelemetryIssue(lastError);
+    return issue ? `telemetry offline · ${issue}` : "telemetry offline";
+  }
   if (age === null) return "waiting for telemetry";
   if (age < 1000) return "live telemetry";
   return `live telemetry · ${(age / 1000).toFixed(1)}s old`;
@@ -746,6 +756,8 @@ export default function App() {
     collectorStatus: "warming_up",
     dataAgeMs: null,
     lastSampleUtc: null,
+    lastError: null,
+    warnings: [],
   });
 
   const plannedEta = useMemo(
@@ -867,6 +879,8 @@ export default function App() {
             collectorStatus: data.collectorStatus ?? "connected",
             dataAgeMs: data.dataAgeMs ?? null,
             lastSampleUtc: data.lastSampleUtc ?? null,
+            lastError: data.lastError ?? null,
+            warnings: Array.isArray(data.warnings) ? data.warnings : [],
           }));
           // Merge live values into flightState — only overwrite non-null values
           setFlightState((prev) => {
@@ -890,6 +904,8 @@ export default function App() {
             collectorStatus: data.collectorStatus ?? "disconnected",
             dataAgeMs: data.dataAgeMs ?? prev.dataAgeMs,
             lastSampleUtc: data.lastSampleUtc ?? prev.lastSampleUtc,
+            lastError: data.lastError ?? data.warnings?.[0] ?? prev.lastError,
+            warnings: Array.isArray(data.warnings) ? data.warnings : prev.warnings,
           }));
         }
       } catch {
@@ -898,6 +914,7 @@ export default function App() {
           setLiveTelemetry((prev) => ({
             ...prev,
             collectorStatus: "disconnected",
+            lastError: "EFB server did not answer the telemetry request.",
           }));
         }
       } finally {
@@ -1098,7 +1115,11 @@ export default function App() {
       return aCost - bCost;
     })
     .slice(0, 6);
-  const telemetrySummary = formatTelemetryAge(liveTelemetry.dataAgeMs, liveTelemetry.collectorStatus);
+  const telemetrySummary = formatTelemetryAge(
+    liveTelemetry.dataAgeMs,
+    liveTelemetry.collectorStatus,
+    liveTelemetry.lastError ?? liveTelemetry.warnings?.[0],
+  );
   const plannedEtaLabel = plannedEta?.etaUtc ?? "—";
 
   // ── Render ─────────────────────────────────────────────────────────────────

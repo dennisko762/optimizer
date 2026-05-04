@@ -57,6 +57,7 @@ class SimConnectTelemetryResponse(BaseModel):
     sample_interval_s: float = Field(default=1.0, alias="sampleIntervalS")
     data_age_ms: int | None = Field(default=None, alias="dataAgeMs")
     last_sample_utc: str | None = Field(default=None, alias="lastSampleUtc")
+    last_error: str | None = Field(default=None, alias="lastError")
 
     flight_state_patch: SimConnectFlightStatePatch = Field(alias="flightStatePatch")
 
@@ -260,6 +261,7 @@ async def simconnect_telemetry(
             sampleIntervalS=snapshot.poll_interval_s,
             dataAgeMs=snapshot.data_age_ms,
             lastSampleUtc=_format_snapshot_timestamp(snapshot.last_sample_utc),
+            lastError=snapshot.last_error,
             flightStatePatch=SimConnectFlightStatePatch(),
             rawSummary={},
             warnings=_collector_warnings(snapshot, fallback="SimConnect telemetry collector is warming up."),
@@ -297,6 +299,7 @@ async def simconnect_telemetry(
         sampleIntervalS=snapshot.poll_interval_s,
         dataAgeMs=snapshot.data_age_ms,
         lastSampleUtc=_format_snapshot_timestamp(snapshot.last_sample_utc),
+        lastError=snapshot.last_error,
         flightStatePatch=patch,
         rawSummary=_raw_summary(live),
         warnings=warnings,
