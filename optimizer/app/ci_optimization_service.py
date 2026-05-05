@@ -418,7 +418,10 @@ class CiOptimizationService:
 
         if request.action == EfbAction.FIXED_SPEED_FL:
             scenario, data = self._build_fixed_speed_fl_scenario(
-                request=request, flight_context=flight_context, cost=cost,
+                request=request,
+                current_state=current_state,
+                flight_context=flight_context,
+                cost=cost,
                 max_mach=max_mach,
             )
             return scenario, data, []
@@ -857,23 +860,38 @@ class CiOptimizationService:
         self,
         *,
         request: OptimizeRequest,
+        current_state: CurrentFlightState,
         flight_context: FlightContextInput,
         cost: CostScenarioInput,
         max_mach: float = 0.82,
     ) -> tuple[ScenarioInput, OperationalDataResponse]:
-        fixed_mach_raw = request.payload.get("fixedMach", 0.78)
-        fixed_fl_raw = request.payload.get("fixedFlightLevel", 330)
+        fixed_mach_raw = request.payload.get("fixedMach")
+        fixed_fl_raw = request.payload.get(
+            "fixedFlightLevel",
+            request.payload.get("flightLevel"),
+        )
 
         fixed_mach = float(fixed_mach_raw) if fixed_mach_raw is not None else None
         fixed_fl = int(fixed_fl_raw) if fixed_fl_raw is not None else None
+        new_wind = request.payload.get("newWindComponentKt", request.payload.get("windComponentKt"))
+        new_isa = request.payload.get("newIsaDeviationC", request.payload.get("isaDeviationC"))
+        source = str(request.payload.get("source", "EFB cruise CI recalculation"))
 
         scenario = ScenarioInput(
             trigger=OperationalTrigger.MANUAL_RECALCULATION,
-            source="EFB fixed speed/FL evaluation",
+            source=source,
             scenario_type=ScenarioType.FIXED_SPEED_FL,
             priority=ScenarioPriority.MEDIUM,
             flight_context=flight_context,
             cost=cost,
+            weather=WeatherScenarioInput(
+                weather_update_received=new_wind is not None or new_isa is not None,
+                old_wind_component_kt=current_state.wind_component_kt,
+                new_wind_component_kt=float(new_wind) if new_wind is not None else None,
+                old_isa_deviation_c=current_state.isa_deviation_c,
+                new_isa_deviation_c=float(new_isa) if new_isa is not None else None,
+                updated_forecast_source=source,
+            ),
             fixed_constraints=FixedConstraintInput(
                 fixed_mach=fixed_mach,
                 fixed_flight_level=fixed_fl,
@@ -881,18 +899,21 @@ class CiOptimizationService:
             **self._base_optimizer_kwargs(
                 allow_speed_up=False if fixed_mach is not None else True,
                 allow_slow_down=False if fixed_mach is not None else True,
-                max_mach=fixed_mach,
+                max_mach=fixed_mach if fixed_mach is not None else max_mach,
             ),
         )
 
         data = OperationalDataResponse(
-            title="Fixed Speed / Flight Level",
-            status="Constraint evaluation",
+            title="Cruise Cost Index",
+            status="Current flight data applied",
             rows=[
-                ("Fixed Mach", f"M{fixed_mach:.3f}" if fixed_mach is not None else "—"),
-                ("Fixed FL", f"FL{fixed_fl}" if fixed_fl is not None else "—"),
+                ("Gross weight", f"{current_state.gross_weight_kg / 1000:.1f} t"),
+                ("Flight level", f"FL{fixed_fl}" if fixed_fl is not None else f"FL{round(current_state.altitude_ft / 100)}"),
+                ("Wind component", f"{float(new_wind):+.0f} kt" if new_wind is not None else f"{current_state.wind_component_kt:+.0f} kt"),
+                ("ISA deviation", f"{float(new_isa):+.1f}°C" if new_isa is not None else f"{current_state.isa_deviation_c:+.1f}°C"),
+                ("Fixed Mach", f"M{fixed_mach:.3f}" if fixed_mach is not None else "not fixed"),
             ],
-            note="This evaluates the cost/time/fuel impact of a fixed operational constraint.",
+            note="Cruise CI recalculation uses the current weight, level, temperature deviation and wind state. Mach remains optimized unless an explicit fixed Mach is provided.",
         )
 
         return scenario, data

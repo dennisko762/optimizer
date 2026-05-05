@@ -64,10 +64,10 @@ const ACTIONS = [
   },
   {
     id: "FIXED_SPEED_FL",
-    label: "Speed/FL",
-    short: "SPD",
+    label: "Cruise CI",
+    short: "CCI",
     icon: Gauge,
-    description: "Evaluate fixed Mach or flight level.",
+    description: "Recalculate from weight, ISA, flight level and winds.",
   },
   {
     id: "HOLDING_OR_METERING",
@@ -143,7 +143,7 @@ function getInitialPayload(action, eta = null) {
         expectedWeatherRerouteNm: 0,
       };
     case "FIXED_SPEED_FL":
-      return { fixedMach: 0.78, fixedFlightLevel: 330 };
+      return { fixedFlightLevel: "" };
     case "HOLDING_OR_METERING":
       return { expectedHoldingMin: 20, arrivalMeteringDelayMin: 10 };
     default:
@@ -404,6 +404,12 @@ function formatFlightLevelValue(altitudeFt) {
   return `FL${Math.round(altitude / 100)}`;
 }
 
+function formatFlightLevelInput(altitudeFt) {
+  const altitude = parseFlexibleNumber(altitudeFt);
+  if (altitude === null) return "";
+  return String(Math.round(altitude / 100));
+}
+
 // ─── Utility helpers (unchanged) ─────────────────────────────────────────────
 
 function isFiniteNumber(value) {
@@ -444,6 +450,21 @@ function formatNumber(value, decimals = 0) {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
+}
+
+function formatInputNumber(value, decimals = 1) {
+  const number = parseFlexibleNumber(value);
+  if (number === null) return value ?? "";
+  return Number.isInteger(number)
+    ? String(number)
+    : number.toFixed(decimals).replace(/\.?0+$/, "");
+}
+
+function formatWeightThousandsInput(grossWeightKg) {
+  const weight = parseFlexibleNumber(grossWeightKg);
+  if (weight === null) return "";
+  const scaled = Math.abs(weight) >= 1000 ? weight / 1000 : weight;
+  return formatInputNumber(scaled, 1);
 }
 
 function formatSigned(value, decimals = 0, suffix = "") {
@@ -629,6 +650,11 @@ function buildOptimizeRequest({ selectedAction, aircraftConfig, flightState, fli
     }
   }
 
+  if (selectedAction === "FIXED_SPEED_FL" && cleanedPayload.fixedFlightLevel == null) {
+    const altitudeFt = numberOrNull(flightState.altitudeFt);
+    if (altitudeFt !== null) cleanedPayload.fixedFlightLevel = Math.round(altitudeFt / 100);
+  }
+
   return {
     action: selectedAction,
     aircraftConfig: aircraftConfig || null,
@@ -784,6 +810,80 @@ function ConnexGroupsInput({ payload, updatePayload, eta }) {
       >
         + Add Connection
       </button>
+    </div>
+  );
+}
+
+function CruiseCiInput({ flightState, updateFlightState, payload, updatePayload, hasLiveTelemetry }) {
+  const flightLevelValue =
+    payload.fixedFlightLevel !== null && payload.fixedFlightLevel !== undefined && payload.fixedFlightLevel !== ""
+      ? payload.fixedFlightLevel
+      : formatFlightLevelInput(flightState.altitudeFt);
+
+  function updateGrossWeight(value) {
+    const parsed = parseFlexibleNumber(value);
+    if (parsed === null) {
+      updateFlightState("grossWeightKg", value);
+      return;
+    }
+
+    const weightKg = Math.abs(parsed) < 1000 ? parsed * 1000 : parsed;
+    updateFlightState("grossWeightKg", String(Math.round(weightKg)));
+  }
+
+  function updateFlightLevel(value) {
+    updatePayload("fixedFlightLevel", value);
+    const parsed = parseFlexibleNumber(value);
+    if (parsed !== null) {
+      updateFlightState("altitudeFt", String(Math.round(parsed * 100)));
+    }
+  }
+
+  return (
+    <div className="cruise-ci-input">
+      <div className="ci-tail-strip">
+        <Tile
+          className="ci-tail-tile"
+          label="Tail Number"
+          value={flightState.aircraftRegistration || "—"}
+          sub={flightState.aircraft || "Aircraft not loaded"}
+        />
+        <Tile
+          className="ci-tail-tile"
+          label="Acft Data"
+          value={hasLiveTelemetry ? "LIVE" : "MANUAL"}
+          sub={hasLiveTelemetry ? "AID / SimConnect" : "Crew entry"}
+        />
+      </div>
+
+      <div className="form-grid form-grid--2">
+        <NumberInput
+          label="Gross Weight KG x1000"
+          value={formatWeightThousandsInput(flightState.grossWeightKg)}
+          onChange={updateGrossWeight}
+        />
+        <NumberInput
+          label="ISA Δ C"
+          value={formatInputNumber(flightState.isaDeviationC)}
+          onChange={(v) => updateFlightState("isaDeviationC", v)}
+        />
+        <NumberInput
+          label="Flight Level"
+          value={flightLevelValue}
+          onChange={updateFlightLevel}
+        />
+        <NumberInput
+          label="Wind Component KT"
+          value={formatInputNumber(flightState.windComponentKt, 0)}
+          onChange={(v) => updateFlightState("windComponentKt", v)}
+        />
+      </div>
+
+      <div className="ci-current-strip">
+        <Tile label="Planned CI" value={flightState.currentCostIndex || "—"} />
+        <Tile label="Current Mach" value={isFiniteNumber(flightState.mach) ? `M${formatNumber(flightState.mach, 3)}` : "—"} />
+        <Tile label="Remain" value={isFiniteNumber(flightState.remainingDistanceNm) ? `${formatNumber(flightState.remainingDistanceNm, 0)} NM` : "—"} />
+      </div>
     </div>
   );
 }
@@ -1145,10 +1245,13 @@ export default function App() {
 
       case "FIXED_SPEED_FL":
         return (
-          <div className="form-grid form-grid--2">
-            <NumberInput label="Fixed Mach" value={payload.fixedMach} step="0.001" onChange={(v) => updatePayload("fixedMach", v)} />
-            <NumberInput label="Fixed FL" value={payload.fixedFlightLevel} onChange={(v) => updatePayload("fixedFlightLevel", v)} />
-          </div>
+          <CruiseCiInput
+            flightState={flightState}
+            updateFlightState={updateFlightState}
+            payload={payload}
+            updatePayload={updatePayload}
+            hasLiveTelemetry={hasLiveTelemetry}
+          />
         );
 
       case "HOLDING_OR_METERING":

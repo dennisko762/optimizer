@@ -41,6 +41,11 @@ def apply_scenario_to_current_state(
         scenario_input=scenario_input,
     )
 
+    _apply_fixed_level_update(
+        updates=updates,
+        scenario_input=scenario_input,
+    )
+
     if not updates:
         return current_state
 
@@ -137,6 +142,34 @@ def _apply_reroute_update(
         _validate_remaining_distance_nm(new_distance)
         updates["remaining_distance_nm"] = new_distance
         return
+
+
+def _apply_fixed_level_update(
+    *,
+    updates: dict[str, float | int | str | None],
+    scenario_input: ScenarioInput,
+) -> None:
+    """
+    Applies a crew-entered cruise flight level to the performance altitude.
+
+    Fixed Mach is an optimizer constraint, but fixed FL is a state input: the
+    simulator must evaluate the remaining cruise at that altitude.
+    """
+
+    if scenario_input.scenario_type != ScenarioType.FIXED_SPEED_FL:
+        return
+
+    fixed_fl = scenario_input.fixed_constraints.fixed_flight_level
+    if fixed_fl is None:
+        return
+
+    if fixed_fl < 100 or fixed_fl > 600:
+        raise ValueError(
+            f"Unreasonable flight level: FL{fixed_fl}. "
+            "Expected range roughly FL100..FL600."
+        )
+
+    updates["altitude_ft"] = float(fixed_fl * 100)
 
 
 def _validate_wind_component_kt(value: float) -> None:

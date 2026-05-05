@@ -449,8 +449,8 @@ def _interpret_fixed_speed_fl(
     resolved_type: ScenarioType,
 ) -> InterpretedScenario:
     reasons: list[str] = [
-        "Fixed speed / flight level scenario selected.",
-        "Objective is fixed strategy evaluation.",
+        "Cruise CI recalculation selected.",
+        "Objective is to optimize CI/Mach at the selected flight level.",
     ]
     warnings: list[str] = []
 
@@ -458,13 +458,14 @@ def _interpret_fixed_speed_fl(
 
     if fixed.fixed_mach is not None:
         reasons.append(f"Fixed Mach: {fixed.fixed_mach:.3f}.")
+        reasons.append("Fixed Mach provided; objective is fixed strategy evaluation.")
 
     if fixed.fixed_flight_level is not None:
         reasons.append(f"Fixed flight level: FL{fixed.fixed_flight_level}.")
 
     if fixed.fixed_mach is None and fixed.fixed_flight_level is None:
         warnings.append(
-            "Fixed speed / FL selected but no fixed_mach or fixed_flight_level was provided."
+            "Cruise CI selected but no flight level or fixed Mach was provided."
         )
 
     # Important:
