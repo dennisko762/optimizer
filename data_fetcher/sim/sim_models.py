@@ -4,6 +4,8 @@ import math
 
 from pydantic import BaseModel, Field
 
+from optimizer.route_profile_models import RemainingRouteProfile
+
 
 class RawSimState(BaseModel):
     aircraft_title: str | None = None
@@ -188,6 +190,7 @@ class CurrentFlightState(BaseModel):
     fuel_remaining_kg: float | None = None
     ground_speed_kt: float | None = None
     cruise_segments: list[dict[str, float]] = Field(default_factory=list)
+    remaining_route_profile: RemainingRouteProfile | None = None
 
     # Current cost index selected in FMC / SimBrief / test UI.
     # This must NOT be derived from Mach.

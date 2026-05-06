@@ -608,7 +608,14 @@ function numberOrNull(value) {
   return parseFlexibleNumber(value);
 }
 
-function buildOptimizeRequest({ selectedAction, aircraftConfig, flightState, flightContext, payload }) {
+function buildOptimizeRequest({
+  selectedAction,
+  aircraftConfig,
+  flightState,
+  flightContext,
+  remainingRouteProfile,
+  payload,
+}) {
   const cleanedPayload = {};
   for (const [key, value] of Object.entries(payload ?? {})) {
     if (value === "" || value === undefined || value === null) {
@@ -654,6 +661,7 @@ function buildOptimizeRequest({ selectedAction, aircraftConfig, flightState, fli
       sibtUtc: emptyToNull(flightContext.sibtUtc),
       sobtUtc: emptyToNull(flightContext.sobtUtc),
     },
+    remainingRouteProfile: remainingRouteProfile ?? null,
     payload: cleanedPayload,
   };
 }
@@ -865,6 +873,7 @@ function OperationalApp() {
   const [aircraftConfig, setAircraftConfig] = useState("");
   const [flightState, setFlightState] = useState(EMPTY_FLIGHT_STATE);
   const [flightContext, setFlightContext] = useState(EMPTY_FLIGHT_CONTEXT);
+  const [remainingRouteProfile, setRemainingRouteProfile] = useState(null);
   const [payload, setPayload] = useState(getInitialPayload("NORMAL_RECALC"));
   const [simbriefUsername, setSimbriefUsername] = useState(
     () => localStorage.getItem("simbriefUsername") ?? ""
@@ -1101,6 +1110,7 @@ function OperationalApp() {
       const flightStatePatch = data.flightStatePatch ?? {};
       const flightContextPatch = data.flightContextPatch ?? {};
       const aircraftInfo = data.aircraftInfo ?? {};
+      const nextRemainingRouteProfile = data.remainingRouteProfile ?? null;
 
       const { destinationLat, destinationLon, ...restStatePatch } = flightStatePatch;
       setFlightState((p) => ({ ...p, ...removeEmptyValues(restStatePatch) }));
@@ -1110,6 +1120,7 @@ function OperationalApp() {
         ...(destinationLat != null ? { destinationLat } : {}),
         ...(destinationLon != null ? { destinationLon } : {}),
       }));
+      setRemainingRouteProfile(nextRemainingRouteProfile);
 
       if (destinationLat != null && destinationLon != null) {
         fetch(`${API_BASE_URL}/api/simconnect/destination`, {
@@ -1139,7 +1150,14 @@ function OperationalApp() {
     const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     try {
-      const requestBody = buildOptimizeRequest({ selectedAction, aircraftConfig, flightState, flightContext, payload });
+      const requestBody = buildOptimizeRequest({
+        selectedAction,
+        aircraftConfig,
+        flightState,
+        flightContext,
+        remainingRouteProfile,
+        payload,
+      });
 
       if (!requestBody.aircraftConfig) throw new Error("Missing aircraft config. Sync SimBrief first.");
       if (!requestBody.flightState.aircraft) throw new Error("Missing aircraft. Sync SimBrief first.");

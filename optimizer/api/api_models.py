@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from optimizer.route_profile_models import RemainingRouteProfile
+
 
 class EfbAction(str, Enum):
     NORMAL_RECALC = "NORMAL_RECALC"
@@ -85,6 +87,10 @@ class OptimizeRequest(BaseModel):
 
     flight_state: UiFlightState = Field(alias="flightState")
     flight_context: UiFlightContext = Field(alias="flightContext")
+    remaining_route_profile: RemainingRouteProfile | None = Field(
+        default=None,
+        alias="remainingRouteProfile",
+    )
 
     # Trigger-specific data from UI.
     # Examples:

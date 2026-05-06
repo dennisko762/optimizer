@@ -31,6 +31,10 @@ from optimizer.operational_data.connex_resolver import (
     build_demo_connex_uplink,
     resolve_connex_uplink,
 )
+from optimizer.route_profile_models import (
+    clip_remaining_route_profile,
+    cruise_segments_from_remaining_route_profile,
+)
 from optimizer.scenario_engine.scenario_interpreter import interpret_scenario
 from optimizer.scenario_engine.scenario_models import (
     ArrivalUncertaintyInput,
@@ -284,6 +288,23 @@ class CiOptimizationService:
 
     def _to_current_flight_state(self, request: OptimizeRequest) -> CurrentFlightState:
         fs = request.flight_state
+        remaining_route_profile = clip_remaining_route_profile(
+            request.remaining_route_profile,
+            fs.remaining_distance_nm,
+        )
+        cruise_segments = cruise_segments_from_remaining_route_profile(
+            remaining_route_profile,
+        )
+        if not cruise_segments:
+            cruise_segments = [
+                (
+                    segment.model_dump(by_alias=True)
+                    if hasattr(segment, "model_dump")
+                    else segment.dict(by_alias=True)
+                )
+                for segment in fs.cruise_segments
+                if segment.distance_nm > 0
+            ]
 
         return CurrentFlightState(
             aircraft=fs.aircraft,
@@ -302,15 +323,8 @@ class CiOptimizationService:
             isa_deviation_c=0.0 if fs.isa_deviation_c is None else fs.isa_deviation_c,
             fuel_remaining_kg=fs.fuel_remaining_kg,
             ground_speed_kt=fs.ground_speed_kt,
-            cruise_segments=[
-                (
-                    segment.model_dump(by_alias=True)
-                    if hasattr(segment, "model_dump")
-                    else segment.dict(by_alias=True)
-                )
-                for segment in fs.cruise_segments
-                if segment.distance_nm > 0
-            ],
+            cruise_segments=cruise_segments,
+            remaining_route_profile=remaining_route_profile,
             total_pax=fs.pax_count or 0,
         )
 
