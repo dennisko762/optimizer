@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import OptimizerShowcase from "./OptimizerShowcase";
 import {
   Activity,
   AlertTriangle,
@@ -8,7 +9,6 @@ import {
   Clock3,
   CloudSun,
   DownloadCloud,
-  Fuel,
   Gauge,
   Loader2,
   Map,
@@ -120,6 +120,13 @@ const EMPTY_TELEMETRY_PATCH = {
   gpsEtaSeconds: null,
 };
 
+function isShowcaseView() {
+  if (typeof window === "undefined") return false;
+
+  const params = new URLSearchParams(window.location.search);
+  return params.get("view") === "showcase" || window.location.hash === "#showcase";
+}
+
 function getInitialPayload(action, eta = null) {
   switch (action) {
     case "CONNEX_UPLINK":
@@ -153,10 +160,6 @@ function getInitialPayload(action, eta = null) {
 
 // ─── ETA computation (pure JS, no API needed) ─────────────────────────────────
 
-const ETA_FILTER_ALPHA = 0.18;
-const ETA_DISPLAY_DEADBAND_MIN = 1.0;
-const ETA_ROUTE_CHANGE_SNAP_MIN = 20.0;
-
 function computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt, gpsEteSeconds) {
   const nm = parseFlexibleNumber(remainingNm);
   const gpsEte = parseFlexibleNumber(gpsEteSeconds);
@@ -184,43 +187,6 @@ function computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt,
     gsIsEstimated,
     groundSpeedKt: Math.round(gs),
   };
-}
-
-function stabilizeLiveEta(liveEta, filterRef) {
-  if (!liveEta) {
-    filterRef.current = null;
-    return null;
-  }
-
-  const previous = filterRef.current;
-  let etaMin = liveEta.etaMin;
-
-  if (previous && previous.source === liveEta.source) {
-    etaMin = unwrapMinutesNearReference(etaMin, previous.etaMin);
-    const delta = etaMin - previous.etaMin;
-
-    if (Math.abs(delta) < ETA_DISPLAY_DEADBAND_MIN) {
-      etaMin = previous.etaMin;
-    } else if (liveEta.source !== "gps" && Math.abs(delta) <= ETA_ROUTE_CHANGE_SNAP_MIN) {
-      etaMin = previous.etaMin + delta * ETA_FILTER_ALPHA;
-    }
-  }
-
-  filterRef.current = {
-    etaMin,
-    source: liveEta.source,
-  };
-
-  return {
-    ...liveEta,
-    etaMin,
-    etaUtc: minutesToUtcClock(etaMin),
-  };
-}
-
-function computeEta(remainingNm, groundSpeedKt, sibtUtc, lastDelayMin, mach, altFt, isaDev, windKt, gpsEteSeconds) {
-  const liveEta = computeLiveEta(remainingNm, groundSpeedKt, mach, altFt, isaDev, windKt, gpsEteSeconds);
-  return computeEtaFromLiveEta(liveEta, sibtUtc, lastDelayMin);
 }
 
 function computeEtaFromLiveEta(liveEta, sibtUtc, lastDelayMin) {
@@ -274,6 +240,11 @@ function computeEtaFromLiveEta(liveEta, sibtUtc, lastDelayMin) {
     gsIsEstimated: liveEta.gsIsEstimated,
     groundSpeedKt: liveEta.groundSpeedKt,
   };
+}
+
+function buildEtaPromptKey(eta) {
+  if (!eta) return null;
+  return `${eta.delayStatus}:${eta.currentDelayMin}:${eta.etaUtc}`;
 }
 
 function estimateGroundSpeedKt(mach, altFt, isaDev, windKt) {
@@ -888,7 +859,7 @@ function CruiseCiInput({ flightState, updateFlightState, payload, updatePayload,
   );
 }
 
-export default function App() {
+function OperationalApp() {
   const [page, setPage] = useState("data");
   const [selectedAction, setSelectedAction] = useState("NORMAL_RECALC");
   const [aircraftConfig, setAircraftConfig] = useState("");
@@ -908,9 +879,8 @@ export default function App() {
   const [error, setError] = useState("");
 
   // ── ETA state ──────────────────────────────────────────────────────────────
-  const [etaDismissed, setEtaDismissed] = useState(false);
-  const lastEtaDelayRef = useRef(null);
-  const liveEtaFilterRef = useRef(null);
+  const [etaPromptDismissedKey, setEtaPromptDismissedKey] = useState(null);
+  const [etaReferenceDelayMin, setEtaReferenceDelayMin] = useState(null);
   const simPollInFlightRef = useRef(false);
   const [simConnectStatus, setSimConnectStatus] = useState("unknown");
   const [liveTelemetry, setLiveTelemetry] = useState({
@@ -922,20 +892,18 @@ export default function App() {
     warnings: [],
   });
 
+  const { plannedBlockTimeMin, sibtUtc, sobtUtc } = flightContext;
   const plannedEta = useMemo(
-    () => resolvePlannedEta(flightContext),
-    [flightContext.plannedBlockTimeMin, flightContext.sibtUtc, flightContext.sobtUtc]
+    () => resolvePlannedEta({ plannedBlockTimeMin, sibtUtc, sobtUtc }),
+    [plannedBlockTimeMin, sibtUtc, sobtUtc]
   );
   const telemetryPatch = liveTelemetry.patch;
   const hasLiveTelemetry = simConnectStatus === "connected" && liveTelemetry.collectorStatus === "connected";
 
   const liveEta = useMemo(() => {
-    if (!hasLiveTelemetry) {
-      liveEtaFilterRef.current = null;
-      return null;
-    }
+    if (!hasLiveTelemetry) return null;
 
-    const rawLiveEta = computeLiveEta(
+    return computeLiveEta(
       telemetryPatch.remainingDistanceNm,
       telemetryPatch.groundSpeedKt,
       telemetryPatch.mach,
@@ -944,7 +912,6 @@ export default function App() {
       telemetryPatch.windComponentKt,
       telemetryPatch.gpsEteSeconds,
     );
-    return stabilizeLiveEta(rawLiveEta, liveEtaFilterRef);
   }, [
     hasLiveTelemetry,
     telemetryPatch.remainingDistanceNm,
@@ -959,24 +926,22 @@ export default function App() {
   const eta = useMemo(() => {
     if (!liveEta) return null;
 
-    const result = computeEtaFromLiveEta(
+    return computeEtaFromLiveEta(
       liveEta,
       plannedEta?.etaUtc ?? null,
-      lastEtaDelayRef.current,
+      etaReferenceDelayMin,
     );
-    if (result) lastEtaDelayRef.current = result.delayMin;
-    return result;
   }, [
     liveEta,
     plannedEta?.etaUtc,
+    etaReferenceDelayMin,
   ]);
-
-  // Reset dismiss when status improves or ETA recomputes
-  useEffect(() => {
-    if (!eta || eta.delayStatus === "ON_TIME") setEtaDismissed(false);
-  }, [eta?.delayStatus]);
-
-  const showDelayPrompt = eta?.shouldRecalculate && !etaDismissed;
+  const etaPromptKey = useMemo(() => buildEtaPromptKey(eta), [eta]);
+  const showDelayPrompt = Boolean(
+    eta?.shouldRecalculate &&
+    eta.delayStatus !== "ON_TIME" &&
+    etaPromptDismissedKey !== etaPromptKey
+  );
 
   // ── Result ─────────────────────────────────────────────────────────────────
   const result = useMemo(() => normalizeResult(rawResult), [rawResult]);
@@ -1100,7 +1065,7 @@ export default function App() {
   function changeAction(action) {
     setSelectedAction(action);
     setPayload(getInitialPayload(action, eta));
-    setEtaDismissed(false);
+    setEtaPromptDismissedKey(null);
   }
 
   function applyEtaDelay() {
@@ -1112,7 +1077,8 @@ export default function App() {
     } else {
       changeAction("TARGET_ON_BLOCK");
     }
-    setEtaDismissed(true);
+    setEtaReferenceDelayMin(eta.delayMin);
+    setEtaPromptDismissedKey(etaPromptKey);
   }
 
   // ── SimBrief sync ──────────────────────────────────────────────────────────
@@ -1193,6 +1159,10 @@ export default function App() {
       if (!response.ok) throw new Error(text || `HTTP ${response.status}`);
 
       setRawResult(text ? JSON.parse(text) : null);
+      if (eta) {
+        setEtaReferenceDelayMin(eta.delayMin);
+      }
+      setEtaPromptDismissedKey(null);
     } catch (err) {
       if (err.name === "AbortError") {
         setError("Optimization timed out after 20 seconds.");
@@ -1321,7 +1291,11 @@ export default function App() {
             )}
           </div>
 
-          <div className="efb-status" style={{ display: "flex", gap: 6 }}>
+          <div className="efb-status">
+            <button className="topbar-link" onClick={() => { window.location.hash = "showcase"; }}>
+              <Map size={12} />
+              System View
+            </button>
             {simConnectStatus === "connected" && (
               <StatusPill tone="good"><Activity size={12} /> SIM</StatusPill>
             )}
@@ -1426,7 +1400,7 @@ export default function App() {
                       Apply +{eta.currentDelayMin} min
                     </button>
                     <button
-                      onClick={() => setEtaDismissed(true)}
+                      onClick={() => setEtaPromptDismissedKey(etaPromptKey)}
                       style={{ border: "none", background: "transparent", color: "var(--dim)", cursor: "pointer", padding: "4px 6px", fontSize: 14 }}
                     >
                       ✕
@@ -1686,4 +1660,31 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+export default function App() {
+  const [showcaseMode, setShowcaseMode] = useState(() => isShowcaseView());
+
+  useEffect(() => {
+    const syncShowcaseMode = () => setShowcaseMode(isShowcaseView());
+
+    syncShowcaseMode();
+    window.addEventListener("hashchange", syncShowcaseMode);
+    window.addEventListener("popstate", syncShowcaseMode);
+
+    return () => {
+      window.removeEventListener("hashchange", syncShowcaseMode);
+      window.removeEventListener("popstate", syncShowcaseMode);
+    };
+  }, []);
+
+  function closeShowcase() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("view");
+    url.hash = "";
+    window.history.replaceState(null, "", url);
+    setShowcaseMode(false);
+  }
+
+  return showcaseMode ? <OptimizerShowcase onClose={closeShowcase} /> : <OperationalApp />;
 }
