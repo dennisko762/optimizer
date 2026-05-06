@@ -479,6 +479,7 @@ function normalizeStrategy(strategy) {
   return {
     costIndex: pick(strategy, ["costIndex", "cost_index"], null),
     mach: pick(strategy, ["mach"], null),
+    flightLevel: pick(strategy, ["flightLevel", "flight_level"], null),
     fuelKg: pick(strategy, ["fuelKg", "performance.remainingFuelKg", "performance.remaining_fuel_kg"], null),
     timeMin: pick(strategy, ["timeMin", "performance.remainingTimeMin", "performance.remaining_time_min"], null),
     totalCostEur: pick(strategy, ["totalCostEur", "cost.totalCostEur", "cost.total_cost_eur"], null),
@@ -664,6 +665,20 @@ function buildOptimizeRequest({
     remainingRouteProfile: remainingRouteProfile ?? null,
     payload: cleanedPayload,
   };
+}
+
+function formatStrategyProfile(strategy, fallbackAltitudeFt = null) {
+  if (!strategy) return "—";
+
+  const mach = strategy.mach != null ? `M${formatNumber(strategy.mach, 3)}` : null;
+  const flightLevel =
+    strategy.flightLevel != null
+      ? `FL${strategy.flightLevel}`
+      : fallbackAltitudeFt != null
+      ? formatFlightLevelValue(fallbackAltitudeFt)
+      : null;
+
+  return [flightLevel, mach].filter(Boolean).join(" / ") || "—";
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
@@ -1356,13 +1371,13 @@ function OperationalApp() {
                   <div>
                     <span>Current</span>
                     <strong>CI {flightState.currentCostIndex || current?.costIndex || "—"}</strong>
-                    <small>M{formatNumber(flightState.mach || current?.mach, 3)}</small>
+                    <small>{formatStrategyProfile(current, flightState.altitudeFt)}</small>
                   </div>
                   <div className="recommendation-separator" />
                   <div>
                     <span>Recommended</span>
                     <strong>CI {best?.costIndex ?? "—"}</strong>
-                    <small>{best?.mach != null ? `M${formatNumber(best.mach, 3)}` : "—"}</small>
+                    <small>{formatStrategyProfile(best)}</small>
                   </div>
                 </div>
 
@@ -1616,16 +1631,17 @@ function OperationalApp() {
                     const isBest =
                       best &&
                       String(strategy.costIndex) === String(best.costIndex) &&
-                      Number(strategy.mach) === Number(best.mach);
+                      Number(strategy.mach) === Number(best.mach) &&
+                      Number(strategy.flightLevel) === Number(best.flightLevel);
 
                     return (
                       <div
                         className={`strategy-row ${isBest ? "strategy-row--best" : ""}`}
-                        key={`${strategy.costIndex}-${strategy.mach}-${index}`}
+                        key={`${strategy.costIndex}-${strategy.flightLevel}-${strategy.mach}-${index}`}
                       >
                         <div>
                           <strong>CI {strategy.costIndex ?? "—"}</strong>
-                          <span>M{formatNumber(strategy.mach, 3)}</span>
+                          <span>{formatStrategyProfile(strategy)}</span>
                         </div>
                         <div>
                           <span>Fuel</span>
