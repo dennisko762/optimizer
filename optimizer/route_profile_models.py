@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 class RemainingRouteSegment(BaseModel):
     sequence: int | None = None
     ident: str | None = None
+    start_lat: float | None = Field(default=None, alias="startLat")
+    start_lon: float | None = Field(default=None, alias="startLon")
     lat: float | None = None
     lon: float | None = None
 

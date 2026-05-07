@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import unittest
 
+from data_fetcher.sim.remaining_distance import (
+    calculate_route_remaining_distance_nm,
+    estimate_route_remaining_distance,
+)
 from data_fetcher.sim.sim_models import CurrentFlightState
 from data_fetcher.simbrief.route_profile import build_remaining_route_profile_from_waypoints
 from data_fetcher.simbrief.simbrief_models import SimBriefRouteWaypoint
@@ -55,6 +59,83 @@ class RemainingRouteProfileTests(unittest.TestCase):
         self.assertAlmostEqual(profile.total_distance_nm or 0.0, 200.0)
         self.assertEqual(profile.segments[0].ident, "FIX01")
         self.assertEqual(profile.segments[1].ident, "FIX02")
+        self.assertEqual(profile.segments[0].start_lat, 50.0)
+        self.assertEqual(profile.segments[0].start_lon, 8.0)
+        self.assertEqual(profile.segments[1].start_lat, 51.0)
+        self.assertEqual(profile.segments[1].start_lon, 9.0)
+
+    def test_calculates_remaining_distance_from_active_route_segment(self) -> None:
+        profile = RemainingRouteProfile(
+            source="TEST",
+            segments=[
+                RemainingRouteSegment(
+                    ident="FIX01",
+                    startLat=0.0,
+                    startLon=0.0,
+                    lat=0.0,
+                    lon=2.0,
+                    distanceNm=120.0,
+                ),
+                RemainingRouteSegment(
+                    ident="FIX02",
+                    startLat=0.0,
+                    startLon=2.0,
+                    lat=0.0,
+                    lon=4.0,
+                    distanceNm=120.0,
+                ),
+            ],
+        )
+
+        remaining_nm = calculate_route_remaining_distance_nm(
+            current_lat=0.0,
+            current_lon=1.0,
+            route_profile=profile,
+        )
+        estimate = estimate_route_remaining_distance(
+            current_lat=0.0,
+            current_lon=1.0,
+            route_profile=profile,
+        )
+
+        self.assertIsNotNone(remaining_nm)
+        self.assertIsNotNone(estimate)
+        self.assertAlmostEqual(remaining_nm or 0.0, 180.0, delta=1.0)
+        self.assertEqual(estimate["activeWaypointIdent"], "FIX01")
+        self.assertAlmostEqual(estimate["distanceToNextWaypointNm"] or 0.0, 60.0, delta=1.0)
+
+    def test_switches_to_later_segment_when_position_is_further_along_route(self) -> None:
+        profile = RemainingRouteProfile(
+            source="TEST",
+            segments=[
+                RemainingRouteSegment(
+                    ident="FIX01",
+                    startLat=0.0,
+                    startLon=0.0,
+                    lat=0.0,
+                    lon=2.0,
+                    distanceNm=120.0,
+                ),
+                RemainingRouteSegment(
+                    ident="FIX02",
+                    startLat=0.0,
+                    startLon=2.0,
+                    lat=0.0,
+                    lon=4.0,
+                    distanceNm=120.0,
+                ),
+            ],
+        )
+
+        estimate = estimate_route_remaining_distance(
+            current_lat=0.0,
+            current_lon=3.0,
+            route_profile=profile,
+        )
+
+        self.assertIsNotNone(estimate)
+        self.assertEqual(estimate["activeWaypointIdent"], "FIX02")
+        self.assertAlmostEqual(estimate["remainingDistanceNm"] or 0.0, 60.0, delta=1.0)
 
     def test_clip_profile_and_convert_to_cruise_segments(self) -> None:
         profile = RemainingRouteProfile(

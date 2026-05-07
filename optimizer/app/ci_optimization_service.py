@@ -77,7 +77,16 @@ class CiOptimizationService:
 
         eta = self._compute_eta(request=request, current_state=current_state)
 
-        eff_max_mach = self._effective_max_mach(aircraft_cfg, current_state.altitude_ft)
+        eff_normal_max_mach = self._effective_max_mach(
+            aircraft_cfg,
+            current_state.altitude_ft,
+            use_recovery_max=False,
+        )
+        eff_recovery_max_mach = self._effective_max_mach(
+            aircraft_cfg,
+            current_state.altitude_ft,
+            use_recovery_max=True,
+        )
 
         scenario_input, operational_data, irops_groups = self._build_scenario(
             request=request,
@@ -85,7 +94,8 @@ class CiOptimizationService:
             flight_context=flight_context,
             cost=cost,
             eta=eta,
-            max_mach=eff_max_mach,
+            normal_max_mach=eff_normal_max_mach,
+            recovery_max_mach=eff_recovery_max_mach,
         )
 
         updated_state = apply_scenario_to_current_state(
@@ -104,6 +114,10 @@ class CiOptimizationService:
             aircraft_cfg=aircraft_cfg,
             irops_groups=irops_groups if irops_groups else None,
             arrival_sigma_min=arrival_sigma,
+            flight_level_candidates=self._build_flight_level_candidates(
+                current_state=updated_state,
+                scenario_input=scenario_input,
+            ),
         )
 
         warnings = list(result.warnings)
@@ -116,7 +130,7 @@ class CiOptimizationService:
         if (
             current_state.altitude_ft is not None
             and current_state.altitude_ft > 0
-            and eff_max_mach < normal_max - 0.01
+            and eff_normal_max_mach < normal_max - 0.01
         ):
             advisory = climb_advisory(
                 current_state.altitude_ft,
@@ -129,6 +143,7 @@ class CiOptimizationService:
 
         return OptimizeResponse(
             recommendation=result.recommendation,
+            optimizerMode=result.optimizer_mode,
             currentStrategy=self._to_strategy_response(result.current_strategy),
             bestStrategy=self._to_strategy_response(result.best_strategy),
             strategies=[
@@ -322,9 +337,17 @@ class CiOptimizationService:
             wind_component_kt=0.0 if fs.wind_component_kt is None else fs.wind_component_kt,
             isa_deviation_c=0.0 if fs.isa_deviation_c is None else fs.isa_deviation_c,
             fuel_remaining_kg=fs.fuel_remaining_kg,
+            fuel_flow_kg_h=fs.fuel_flow_kg_h,
+            fuel_flow_source=fs.fuel_flow_source,
             ground_speed_kt=fs.ground_speed_kt,
             cruise_segments=cruise_segments,
             remaining_route_profile=remaining_route_profile,
+            fuel_flow_reference_altitude_ft=fs.altitude_ft,
+            fuel_flow_reference_gross_weight_kg=fs.gross_weight_kg,
+            fuel_flow_reference_mach=fs.mach,
+            fuel_flow_reference_isa_deviation_c=(
+                0.0 if fs.isa_deviation_c is None else fs.isa_deviation_c
+            ),
             total_pax=fs.pax_count or 0,
         )
 
@@ -384,7 +407,8 @@ class CiOptimizationService:
         flight_context: FlightContextInput,
         cost: CostScenarioInput,
         eta: EtaEstimate | None = None,
-        max_mach: float = 0.82,
+        normal_max_mach: float = 0.82,
+        recovery_max_mach: float = 0.82,
     ) -> tuple[ScenarioInput, OperationalDataResponse, list[IropsConnectionGroup]]:
         """
         Returns (ScenarioInput, OperationalDataResponse, irops_groups).
@@ -397,7 +421,10 @@ class CiOptimizationService:
 
         if request.action == EfbAction.NORMAL_RECALC:
             scenario, data = self._build_normal_scenario(
-                flight_context=flight_context, cost=cost
+                flight_context=flight_context,
+                cost=cost,
+                eta=eta,
+                max_mach=normal_max_mach,
             )
             return scenario, data, []
 
@@ -405,20 +432,20 @@ class CiOptimizationService:
             return self._build_connex_scenario(
                 request=request, current_state=current_state,
                 flight_context=flight_context, cost=cost, eta=eta,
-                max_mach=max_mach,
+                max_mach=recovery_max_mach,
             )
 
         if request.action == EfbAction.TARGET_ON_BLOCK:
             scenario, data = self._build_target_on_block_scenario(
                 request=request, flight_context=flight_context, cost=cost, eta=eta,
-                max_mach=max_mach,
+                max_mach=recovery_max_mach,
             )
             return scenario, data, []
 
         if request.action == EfbAction.REROUTE:
             scenario, data = self._build_reroute_scenario(
                 request=request, flight_context=flight_context, cost=cost,
-                max_mach=max_mach,
+                max_mach=recovery_max_mach,
             )
             return scenario, data, []
 
@@ -426,7 +453,7 @@ class CiOptimizationService:
             scenario, data = self._build_weather_scenario(
                 request=request, current_state=current_state,
                 flight_context=flight_context, cost=cost,
-                max_mach=max_mach,
+                max_mach=normal_max_mach,
             )
             return scenario, data, []
 
@@ -436,14 +463,15 @@ class CiOptimizationService:
                 current_state=current_state,
                 flight_context=flight_context,
                 cost=cost,
-                max_mach=max_mach,
+                eta=eta,
+                max_mach=normal_max_mach,
             )
             return scenario, data, []
 
         if request.action == EfbAction.HOLDING_OR_METERING:
             scenario, data = self._build_holding_scenario(
                 request=request, flight_context=flight_context, cost=cost,
-                max_mach=max_mach,
+                max_mach=normal_max_mach,
             )
             return scenario, data, []
 
@@ -456,27 +484,27 @@ class CiOptimizationService:
         if request.action == EfbAction.ATC_LEVEL_CONSTRAINT:
             scenario, data = self._build_atc_level_scenario(
                 request=request, flight_context=flight_context, cost=cost,
-                max_mach=max_mach,
+                max_mach=normal_max_mach,
             )
             return scenario, data, []
 
         if request.action == EfbAction.VATSIM_EVENT_FLOW:
             scenario, data = self._build_vatsim_scenario(
                 request=request, flight_context=flight_context, cost=cost,
-                max_mach=max_mach,
+                max_mach=normal_max_mach,
             )
             return scenario, data, []
 
         if request.action == EfbAction.VA_SCORING:
             scenario, data = self._build_va_scenario(
                 flight_context=flight_context, cost=cost,
-                max_mach=max_mach,
+                max_mach=normal_max_mach,
             )
             return scenario, data, []
 
         scenario, data = self._build_ofp_drift_scenario(
             flight_context=flight_context, cost=cost,
-            max_mach=max_mach,
+            max_mach=normal_max_mach,
         )
         return scenario, data, []
 
@@ -484,6 +512,7 @@ class CiOptimizationService:
         self,
         aircraft_cfg: dict,
         altitude_ft: float | None,
+        use_recovery_max: bool = False,
     ) -> float:
         """
         Return the highest Mach number that is physically achievable at
@@ -497,13 +526,36 @@ class CiOptimizationService:
         mmo = float(envelope.get("mmo") or 0.82)
 
         cruise = (aircraft_cfg.get("performance") or {}).get("cruise") or {}
-        aircraft_max = float(cruise.get("normal_max_mach") or mmo)
+        configured_max = (
+            cruise.get("recovery_max_mach")
+            if use_recovery_max and cruise.get("recovery_max_mach") is not None
+            else cruise.get("normal_max_mach")
+        )
+        aircraft_max = float(configured_max or mmo)
 
         if altitude_ft is None or altitude_ft <= 0:
             return min(aircraft_max, mmo)
 
         envelope_ceiling = max_mach_at_altitude(altitude_ft, vmo_kt=vmo_kt, mmo=mmo)
         return min(aircraft_max, envelope_ceiling)
+
+    def _build_flight_level_candidates(
+        self,
+        *,
+        current_state: CurrentFlightState,
+        scenario_input: ScenarioInput,
+    ) -> list[int]:
+        from strategy.strategy_generator import generate_flight_level_candidates
+
+        fixed_fl = scenario_input.fixed_constraints.fixed_flight_level
+        assigned_fl = scenario_input.fixed_constraints.assigned_flight_level
+
+        return generate_flight_level_candidates(
+            current_altitude_ft=current_state.altitude_ft,
+            remaining_distance_nm=current_state.remaining_distance_nm,
+            fixed_flight_level=fixed_fl,
+            assigned_flight_level=assigned_fl,
+        )
 
     def _base_optimizer_kwargs(
         self,
@@ -528,7 +580,11 @@ class CiOptimizationService:
         *,
         flight_context: FlightContextInput,
         cost: CostScenarioInput,
+        eta: EtaEstimate | None = None,
+        max_mach: float | None = 0.82,
     ) -> tuple[ScenarioInput, OperationalDataResponse]:
+        allow_speed_up = not (eta is not None and eta.delay_min <= 0)
+
         scenario = ScenarioInput(
             trigger=OperationalTrigger.MANUAL_RECALCULATION,
             source="EFB normal recalculation",
@@ -538,9 +594,9 @@ class CiOptimizationService:
             cost=cost,
             arrival_uncertainty=ArrivalUncertaintyInput(),
             **self._base_optimizer_kwargs(
-                allow_speed_up=True,
+                allow_speed_up=allow_speed_up,
                 allow_slow_down=True,
-                max_mach=None,
+                max_mach=max_mach,
             ),
         )
 
@@ -877,6 +933,7 @@ class CiOptimizationService:
         current_state: CurrentFlightState,
         flight_context: FlightContextInput,
         cost: CostScenarioInput,
+        eta: EtaEstimate | None = None,
         max_mach: float = 0.82,
     ) -> tuple[ScenarioInput, OperationalDataResponse]:
         fixed_mach_raw = request.payload.get("fixedMach")
@@ -890,6 +947,7 @@ class CiOptimizationService:
         new_wind = request.payload.get("newWindComponentKt", request.payload.get("windComponentKt"))
         new_isa = request.payload.get("newIsaDeviationC", request.payload.get("isaDeviationC"))
         source = str(request.payload.get("source", "EFB cruise CI recalculation"))
+        allow_speed_up = not (eta is not None and eta.delay_min <= 0)
 
         scenario = ScenarioInput(
             trigger=OperationalTrigger.MANUAL_RECALCULATION,
@@ -911,7 +969,7 @@ class CiOptimizationService:
                 fixed_flight_level=fixed_fl,
             ),
             **self._base_optimizer_kwargs(
-                allow_speed_up=False if fixed_mach is not None else True,
+                allow_speed_up=False if fixed_mach is not None else allow_speed_up,
                 allow_slow_down=False if fixed_mach is not None else True,
                 max_mach=fixed_mach if fixed_mach is not None else max_mach,
             ),
@@ -1185,6 +1243,12 @@ class CiOptimizationService:
         return StrategyResponse(
             costIndex=strategy.cost_index,
             mach=strategy.mach,
+            speedMode=strategy.speed_mode,
+            targetCasKt=strategy.cas_kt,
+            costIndexSource=strategy.cost_index_source,
+            costIndexLabel=strategy.cost_index_label,
+            performanceCiKgPerMin=strategy.performance_ci_kg_per_min,
+            flightLevel=strategy.flight_level,
             label=strategy.label,
             fuelKg=strategy.performance.remaining_fuel_kg,
             timeMin=strategy.performance.remaining_time_min,

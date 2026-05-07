@@ -91,6 +91,8 @@ const EMPTY_FLIGHT_STATE = {
   windComponentKt: "",
   isaDeviationC: "",
   fuelRemainingKg: "",
+  fuelFlowKgH: "",
+  fuelFlowSource: "",
   groundSpeedKt: "",
   paxCount: "",
 };
@@ -114,6 +116,8 @@ const EMPTY_TELEMETRY_PATCH = {
   windComponentKt: null,
   isaDeviationC: null,
   fuelRemainingKg: null,
+  fuelFlowKgH: null,
+  fuelFlowSource: null,
   groundSpeedKt: null,
   remainingDistanceNm: null,
   gpsEteSeconds: null,
@@ -379,6 +383,40 @@ function formatFlightLevelInput(altitudeFt) {
   const altitude = parseFlexibleNumber(altitudeFt);
   if (altitude === null) return "";
   return String(Math.round(altitude / 100));
+}
+
+function formatRemainingDistanceSourceLabel(source) {
+  if (!source) return "";
+  switch (String(source).toLowerCase()) {
+    case "simbrief_route":
+      return "SimBrief route";
+    case "gps_flight_plan":
+      return "GPS flight plan";
+    case "destination_gc":
+      return "direct destination";
+    default:
+      return String(source).replaceAll("_", " ").toLowerCase();
+  }
+}
+
+function formatFuelFlowSourceLabel(source) {
+  if (!source) return "";
+  switch (String(source).toLowerCase()) {
+    case "turb_eng_fuel_flow_pph":
+      return "live turbine flow";
+    case "eng_fuel_flow_pph":
+      return "live engine flow";
+    case "recip_eng_fuel_flow":
+      return "live recip flow";
+    case "eng_fuel_flow_gph":
+      return "live flow";
+    case "turb_eng_corrected_ff":
+      return "corrected FF";
+    case "fuel_total_quantity_weight_delta":
+      return "fuel burn delta";
+    default:
+      return String(source).replaceAll("_", " ").toLowerCase();
+  }
 }
 
 // ─── Utility helpers (unchanged) ─────────────────────────────────────────────
@@ -650,6 +688,8 @@ function buildOptimizeRequest({
       windComponentKt: numberOrNull(flightState.windComponentKt),
       isaDeviationC: numberOrNull(flightState.isaDeviationC),
       fuelRemainingKg: numberOrNull(flightState.fuelRemainingKg),
+      fuelFlowKgH: numberOrNull(flightState.fuelFlowKgH),
+      fuelFlowSource: emptyToNull(flightState.fuelFlowSource),
       groundSpeedKt: numberOrNull(flightState.groundSpeedKt),
       paxCount: numberOrNull(flightState.paxCount),
     },
@@ -909,6 +949,8 @@ function OperationalApp() {
   const [simConnectStatus, setSimConnectStatus] = useState("unknown");
   const [liveTelemetry, setLiveTelemetry] = useState({
     patch: EMPTY_TELEMETRY_PATCH,
+    source: null,
+    rawSummary: null,
     collectorStatus: "warming_up",
     dataAgeMs: null,
     lastSampleUtc: null,
@@ -1022,6 +1064,8 @@ function OperationalApp() {
               ...prev.patch,
               ...removeEmptyValues(data.flightStatePatch),
             },
+            source: data.source ?? null,
+            rawSummary: data.rawSummary ?? null,
             collectorStatus: data.collectorStatus ?? "connected",
             dataAgeMs: data.dataAgeMs ?? null,
             lastSampleUtc: data.lastSampleUtc ?? null,
@@ -1037,6 +1081,8 @@ function OperationalApp() {
             if (patch.grossWeightKg      != null) updated.grossWeightKg      = String(Math.round(patch.grossWeightKg));
             if (patch.mach               != null) updated.mach               = String(patch.mach.toFixed(3));
             if (patch.fuelRemainingKg    != null) updated.fuelRemainingKg    = String(Math.round(patch.fuelRemainingKg));
+            if (patch.fuelFlowKgH        != null) updated.fuelFlowKgH        = String(Math.round(patch.fuelFlowKgH));
+            if (patch.fuelFlowSource     != null) updated.fuelFlowSource     = patch.fuelFlowSource;
             if (patch.groundSpeedKt      != null) updated.groundSpeedKt      = String(Math.round(patch.groundSpeedKt));
             if (patch.isaDeviationC      != null) updated.isaDeviationC      = String(patch.isaDeviationC.toFixed(1));
             if (patch.windComponentKt    != null) updated.windComponentKt    = String(Math.round(patch.windComponentKt));
@@ -1047,6 +1093,8 @@ function OperationalApp() {
           setSimConnectStatus("disconnected");
           setLiveTelemetry((prev) => ({
             ...prev,
+            source: data.source ?? prev.source ?? null,
+            rawSummary: data.rawSummary ?? prev.rawSummary ?? null,
             collectorStatus: data.collectorStatus ?? "disconnected",
             dataAgeMs: data.dataAgeMs ?? prev.dataAgeMs,
             lastSampleUtc: data.lastSampleUtc ?? prev.lastSampleUtc,
@@ -1126,6 +1174,7 @@ function OperationalApp() {
       const flightContextPatch = data.flightContextPatch ?? {};
       const aircraftInfo = data.aircraftInfo ?? {};
       const nextRemainingRouteProfile = data.remainingRouteProfile ?? null;
+      const nextSimbriefWarnings = Array.isArray(data.warnings) ? [...data.warnings] : [];
 
       const { destinationLat, destinationLon, ...restStatePatch } = flightStatePatch;
       setFlightState((p) => ({ ...p, ...removeEmptyValues(restStatePatch) }));
@@ -1137,17 +1186,30 @@ function OperationalApp() {
       }));
       setRemainingRouteProfile(nextRemainingRouteProfile);
 
-      if (destinationLat != null && destinationLon != null) {
-        fetch(`${API_BASE_URL}/api/simconnect/destination`, {
+      if (
+        nextRemainingRouteProfile != null ||
+        (destinationLat != null && destinationLon != null)
+      ) {
+        const routeSyncResponse = await fetch(`${API_BASE_URL}/api/simconnect/destination`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lat: destinationLat, lon: destinationLon }),
-        }).catch(() => {});
+          body: JSON.stringify({
+            lat: destinationLat ?? null,
+            lon: destinationLon ?? null,
+            remainingRouteProfile: nextRemainingRouteProfile,
+          }),
+        });
+        if (!routeSyncResponse.ok) {
+          const text = await routeSyncResponse.text();
+          nextSimbriefWarnings.push(
+            `Live route sync failed: ${text || `HTTP ${routeSyncResponse.status}`}`
+          );
+        }
       }
 
       if (aircraftInfo.aircraftConfig) setAircraftConfig(aircraftInfo.aircraftConfig);
 
-      setSimbriefWarnings(data.warnings ?? []);
+      setSimbriefWarnings(nextSimbriefWarnings);
       setSimbriefLastSync(new Date().toLocaleTimeString());
     } catch (err) {
       setSimbriefError(err instanceof Error ? err.message : String(err));
@@ -1283,6 +1345,18 @@ function OperationalApp() {
     liveTelemetry.collectorStatus,
     liveTelemetry.lastError ?? liveTelemetry.warnings?.[0],
   );
+  const remainingDistanceSource = liveTelemetry.rawSummary?.remaining_distance_source ?? null;
+  const remainingDistanceWaypoint = liveTelemetry.rawSummary?.route_profile_active_waypoint ?? null;
+  const remainingDistanceSub = [
+    formatRemainingDistanceSourceLabel(remainingDistanceSource),
+    remainingDistanceWaypoint ? `to ${remainingDistanceWaypoint}` : null,
+  ].filter(Boolean).join(" · ");
+  const fuelFlowSub = [
+    isFiniteNumber(telemetryPatch.fuelFlowKgH)
+      ? `${formatNumber(telemetryPatch.fuelFlowKgH)} kg/h`
+      : null,
+    formatFuelFlowSourceLabel(telemetryPatch.fuelFlowSource),
+  ].filter(Boolean).join(" · ");
   const plannedEtaLabel = plannedEta?.etaUtc ?? "—";
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1506,9 +1580,17 @@ function OperationalApp() {
                 />
                 <Tile label="Mach" value={isFiniteNumber(telemetryPatch.mach) ? `M${formatNumber(telemetryPatch.mach, 3)}` : "—"} />
                 <Tile label="Ground Speed" value={isFiniteNumber(telemetryPatch.groundSpeedKt) ? `${formatNumber(telemetryPatch.groundSpeedKt)} kt` : "—"} />
-                <Tile label="Remaining" value={isFiniteNumber(telemetryPatch.remainingDistanceNm) ? `${formatNumber(telemetryPatch.remainingDistanceNm)} nm` : "—"} />
+                <Tile
+                  label="Remaining"
+                  value={isFiniteNumber(telemetryPatch.remainingDistanceNm) ? `${formatNumber(telemetryPatch.remainingDistanceNm)} nm` : "—"}
+                  sub={remainingDistanceSub || undefined}
+                />
                 <Tile label="Gross Weight" value={isFiniteNumber(telemetryPatch.grossWeightKg) ? `${formatNumber(telemetryPatch.grossWeightKg)} kg` : "—"} />
-                <Tile label="Fuel" value={isFiniteNumber(telemetryPatch.fuelRemainingKg) ? `${formatNumber(telemetryPatch.fuelRemainingKg)} kg` : "—"} />
+                <Tile
+                  label="Fuel"
+                  value={isFiniteNumber(telemetryPatch.fuelRemainingKg) ? `${formatNumber(telemetryPatch.fuelRemainingKg)} kg` : "—"}
+                  sub={fuelFlowSub || undefined}
+                />
                 <Tile label="Wind" value={formatSigned(telemetryPatch.windComponentKt, 0, " kt")} />
                 <Tile label="ISA" value={formatSigned(telemetryPatch.isaDeviationC, 0, "°C")} />
               </div>

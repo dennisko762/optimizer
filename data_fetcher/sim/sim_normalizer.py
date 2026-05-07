@@ -40,6 +40,8 @@ def normalize_raw_sim_state(raw: RawSimState) -> LiveSimState:
 
         gross_weight_kg=round_optional(lb_to_kg(raw.gross_weight_lb)),
         fuel_remaining_kg=round_optional(lb_to_kg(fuel_remaining_lb)),
+        fuel_flow_kg_h=round_optional(raw.fuel_flow_kg_h),
+        fuel_flow_source=raw.fuel_flow_source,
 
         latitude=round_optional(raw.latitude, POSITION_ROUND_DIGITS),
         longitude=round_optional(raw.longitude, POSITION_ROUND_DIGITS),
@@ -56,6 +58,7 @@ def normalize_raw_sim_state(raw: RawSimState) -> LiveSimState:
 
         on_ground=raw.on_ground,
         wind_x_kt=round_optional(raw.wind_x_kt),
+        wind_z_kt=round_optional(raw.wind_z_kt),
 
         gps_is_active_flight_plan=raw.gps_is_active_flight_plan,
         gps_ete_seconds=round_optional(raw.gps_ete_seconds),

@@ -60,6 +60,7 @@ performance:
     normal_min_mach: 0.80
     normal_max_mach: 0.86
     recovery_max_mach: 0.87
+    cas_mach_crossover_fl: 280.0
     default_segment_distance_nm: 50.0
 
   calibration:
@@ -71,15 +72,53 @@ performance:
       - { mach: 0.86, factor: 1.00 }
       - { mach: 0.87, factor: 1.00 }
     high_mach_penalty:
-      enabled: false
+      enabled: true
       reference_mach: 0.84
-      coefficient_per_0_01_mach_sq: 0.0
+      coefficient_per_0_01_mach_sq: 0.01
       only_above_reference: true
 
 cost_index_mapping:
   min_ci: 0
   max_ci: 100
   kg_per_min_to_ci_factor: 1.0
+  optimizer_mode: boeing_777_fmc_like_ci
+  fmc_like_ci:
+    lrc_anchor_ci: 180
+    min_ci: 0
+    max_ci: 9999
+    high_speed_soft_anchor_ci: 5000
+    low_ci_shape: 0.85
+    high_ci_shape: 0.9
+    high_ci_soft_fraction: 0.88
+    fade_wind_and_isa_near_max_ci: true
+    candidate_ci_values: [0, 30, 60, 90, 120, 180, 300, 500, 1000, 2000]
+    recovery_candidate_ci_values: [3000, 5000, 7500, 9999]
+    cas_mach_crossover_fl: 280.0
+    mrc_min_cas_kt: 240.0
+    mrc_cas_offset_by_altitude_ft:
+      - { altitude_ft: 23000, offset_kt: 18.0 }
+      - { altitude_ft: 28000, offset_kt: 16.0 }
+      - { altitude_ft: 33000, offset_kt: 14.0 }
+      - { altitude_ft: 39000, offset_kt: 12.0 }
+    mrc_cas_offset_by_weight_kg:
+      - { weight_kg: 180000, offset_kt: 0.0 }
+      - { weight_kg: 240000, offset_kt: 2.0 }
+      - { weight_kg: 300000, offset_kt: 4.0 }
+    headwind_adjustment_kt_per_100kt: 6.0
+    tailwind_adjustment_kt_per_100kt: 4.0
+    max_headwind_adjustment_kt: 12.0
+    max_tailwind_adjustment_kt: 10.0
+    isa_adjustment_kt_per_c: 0.15
+    max_isa_adjustment_kt: 4.0
+    max_target_margin_kt: 5.0
+    max_target_margin_mach: 0.005
+  econ_mach_anchors:
+    - { ci: 0, mach: 0.819, label: max_range }
+    - { ci: 20, mach: 0.821, label: below_lrc }
+    - { ci: 55, mach: 0.832, label: lrc_like }
+    - { ci: 70, mach: 0.840, label: nominal_econ }
+    - { ci: 90, mach: 0.852, label: high_cost }
+    - { ci: 100, mach: 0.859, label: near_min_time }
 
 ff: 9500
 

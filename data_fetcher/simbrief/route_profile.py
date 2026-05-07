@@ -30,6 +30,7 @@ def build_remaining_route_profile_from_waypoints(
     segments: list[RemainingRouteSegment] = []
 
     for index, waypoint in enumerate(waypoints[1:], start=1):
+        previous_waypoint = waypoints[index - 1]
         distance_nm = waypoint.distance_from_previous_nm
         if distance_nm is None or distance_nm <= 0:
             continue
@@ -38,6 +39,8 @@ def build_remaining_route_profile_from_waypoints(
             RemainingRouteSegment(
                 sequence=index,
                 ident=waypoint.ident,
+                startLat=round(float(previous_waypoint.lat), 6),
+                startLon=round(float(previous_waypoint.lon), 6),
                 lat=round(float(waypoint.lat), 6),
                 lon=round(float(waypoint.lon), 6),
                 distanceNm=round(float(distance_nm), 2),
@@ -107,6 +110,8 @@ def _merge_bucket(bucket: list[RemainingRouteSegment]) -> RemainingRouteSegment:
     return RemainingRouteSegment(
         sequence=bucket[0].sequence,
         ident=tail.ident,
+        startLat=bucket[0].start_lat,
+        startLon=bucket[0].start_lon,
         lat=tail.lat,
         lon=tail.lon,
         distanceNm=round(distance, 2),
