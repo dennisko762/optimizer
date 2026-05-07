@@ -4,6 +4,7 @@ import math
 
 from pydantic import BaseModel, Field
 
+from data_fetcher.sim.fmc_models import FmcTelemetrySnapshotData
 from optimizer.route_profile_models import RemainingRouteProfile
 
 
@@ -56,6 +57,7 @@ class RawSimState(BaseModel):
 
 
 class LiveSimState(BaseModel):
+    aircraft_title: str | None = None
     # Primary altitude shown to the UI and passed into optimization.
     # This prefers the aircraft's indicated altitude so the displayed FL
     # matches what the crew sees in the cockpit.
@@ -97,6 +99,9 @@ class LiveSimState(BaseModel):
     gps_remaining_distance_nm: float | None = None
     gps_waypoint_distance_nm: float | None = None
     gps_ground_speed_kt: float | None = None
+    fmc_snapshot: FmcTelemetrySnapshotData | None = None
+    fmc_adapter_status: str | None = None
+    fmc_adapter_error: str | None = None
 
     def get_remaining_distance_nm(
         self,

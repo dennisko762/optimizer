@@ -49,6 +49,7 @@ class SimConnectFlightStatePatch(BaseModel):
     altitude_ft: float | None = Field(default=None, alias="altitudeFt")
     gross_weight_kg: float | None = Field(default=None, alias="grossWeightKg")
     mach: float | None = None
+    current_cost_index: int | None = Field(default=None, alias="currentCostIndex")
 
     # Wind component along track (positive = tailwind, negative = headwind).
     # Populated from AIRCRAFT_WIND_Z when available.
@@ -371,6 +372,11 @@ def _live_state_to_patch(
             altitudeFt=live.altitude_ft,
             grossWeightKg=live.gross_weight_kg,
             mach=live.mach,
+            currentCostIndex=(
+                live.fmc_snapshot.cost_index
+                if live.fmc_snapshot is not None
+                else None
+            ),
             fuelRemainingKg=live.fuel_remaining_kg,
             fuelFlowKgH=live.fuel_flow_kg_h,
             fuelFlowSource=live.fuel_flow_source,
@@ -391,6 +397,35 @@ def _resolve_remaining_distance(
     destination_lat: float | None = None,
     destination_lon: float | None = None,
 ) -> tuple[float | None, str | None, dict[str, Any] | None]:
+    fmc_snapshot = live.fmc_snapshot
+    fmc_remaining_nm = (
+        fmc_snapshot.destination_distance_nm()
+        if fmc_snapshot is not None
+        else None
+    )
+    if fmc_remaining_nm is not None:
+        return round(float(fmc_remaining_nm), 2), "FMC_ADAPTER", {
+            "destinationIdent": (
+                fmc_snapshot.destination.ident
+                if fmc_snapshot is not None and fmc_snapshot.destination is not None
+                else None
+            ),
+            "destinationEtaZulu": (
+                fmc_snapshot.destination.eta_zulu
+                if fmc_snapshot is not None and fmc_snapshot.destination is not None
+                else None
+            ),
+            "destinationFuel": (
+                fmc_snapshot.destination.fuel
+                if fmc_snapshot is not None and fmc_snapshot.destination is not None
+                else None
+            ),
+            "page": fmc_snapshot.page if fmc_snapshot is not None else None,
+            "adapterKey": (
+                fmc_snapshot.adapter_key if fmc_snapshot is not None else None
+            ),
+        }
+
     route_estimate = estimate_route_remaining_distance(
         current_lat=live.latitude,
         current_lon=live.longitude,
@@ -448,6 +483,18 @@ def _build_warnings(
             "SimConnect did not return usable fuel flow; optimization will fall back to the modeled burn baseline."
         )
 
+    if (
+        live.fmc_adapter_status not in {None, "inactive", "connected"}
+        and live.fmc_adapter_error
+        and live.aircraft_title
+    ):
+        warnings.append(live.fmc_adapter_error)
+    elif live.fmc_adapter_status == "starting" and live.aircraft_title:
+        warnings.append(
+            "Aircraft-specific FMC bridge is active but no supported FMC page has been parsed yet. "
+            "Open the relevant progress page to enable FMC-derived telemetry."
+        )
+
     if live.ground_speed_kt is None:
         warnings.append("SimConnect did not return ground speed.")
 
@@ -457,7 +504,7 @@ def _build_warnings(
     if live.wind_z_kt is None and live.wind_velocity_kt is None:
         warnings.append("SimConnect did not return wind data.")
 
-    if remaining_distance_source == "SIMBRIEF_ROUTE":
+    if remaining_distance_source in {"FMC_ADAPTER", "SIMBRIEF_ROUTE"}:
         pass
     elif _remaining_route_profile is not None and remaining_distance_nm is not None:
         warnings.append(
@@ -506,6 +553,7 @@ def _raw_summary(
     remaining_distance_details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = {
+        "aircraft_title": live.aircraft_title,
         "altitude_ft": live.altitude_ft,
         "pressure_altitude_ft": live.pressure_altitude_ft,
         "true_altitude_ft": live.true_altitude_ft,
@@ -534,6 +582,8 @@ def _raw_summary(
         "gps_remaining_distance_nm": live.gps_remaining_distance_nm,
         "gps_waypoint_distance_nm": live.gps_waypoint_distance_nm,
         "gps_ground_speed_kt": live.gps_ground_speed_kt,
+        "fmc_adapter_status": live.fmc_adapter_status,
+        "fmc_adapter_error": live.fmc_adapter_error,
         "remaining_distance_source": (
             remaining_distance_source.lower()
             if remaining_distance_source is not None
@@ -554,6 +604,17 @@ def _raw_summary(
     if remaining_distance_details is not None:
         summary.update(
             {
+                "fmc_destination_ident": remaining_distance_details.get(
+                    "destinationIdent"
+                ),
+                "fmc_destination_eta_zulu": remaining_distance_details.get(
+                    "destinationEtaZulu"
+                ),
+                "fmc_destination_fuel": remaining_distance_details.get(
+                    "destinationFuel"
+                ),
+                "fmc_page": remaining_distance_details.get("page"),
+                "fmc_adapter_key": remaining_distance_details.get("adapterKey"),
                 "route_profile_active_segment_index": remaining_distance_details.get(
                     "activeSegmentIndex"
                 ),
@@ -565,6 +626,64 @@ def _raw_summary(
                 ),
                 "route_profile_distance_to_next_waypoint_nm": remaining_distance_details.get(
                     "distanceToNextWaypointNm"
+                ),
+            }
+        )
+
+    if live.fmc_snapshot is not None:
+        summary.update(
+            {
+                "fmc_aircraft": live.fmc_snapshot.aircraft,
+                "fmc_source": live.fmc_snapshot.source,
+                "fmc_cdu_index": live.fmc_snapshot.cdu_index,
+                "fmc_flight_number": live.fmc_snapshot.flight_number,
+                "fmc_cost_index": live.fmc_snapshot.cost_index,
+                "fmc_cruise_flight_level": live.fmc_snapshot.cruise_flight_level,
+                "fmc_econ_speed_mach": live.fmc_snapshot.econ_speed_mach,
+                "fmc_destination_ident": (
+                    live.fmc_snapshot.destination.ident
+                    if live.fmc_snapshot.destination is not None
+                    else None
+                ),
+                "fmc_destination_eta_zulu": (
+                    live.fmc_snapshot.destination.eta_zulu
+                    if live.fmc_snapshot.destination is not None
+                    else None
+                ),
+                "fmc_destination_fuel": (
+                    live.fmc_snapshot.destination.fuel
+                    if live.fmc_snapshot.destination is not None
+                    else None
+                ),
+                "fmc_to_waypoint_ident": (
+                    live.fmc_snapshot.to_waypoint.ident
+                    if live.fmc_snapshot.to_waypoint is not None
+                    else None
+                ),
+                "fmc_to_waypoint_distance_nm": (
+                    live.fmc_snapshot.to_waypoint.dtg_nm
+                    if live.fmc_snapshot.to_waypoint is not None
+                    else None
+                ),
+                "fmc_next_waypoint_ident": (
+                    live.fmc_snapshot.next_waypoint.ident
+                    if live.fmc_snapshot.next_waypoint is not None
+                    else None
+                ),
+                "fmc_next_waypoint_distance_nm": (
+                    live.fmc_snapshot.next_waypoint.dtg_nm
+                    if live.fmc_snapshot.next_waypoint is not None
+                    else None
+                ),
+                "fmc_step_climb_time_zulu": (
+                    live.fmc_snapshot.step_climb.time_zulu
+                    if live.fmc_snapshot.step_climb is not None
+                    else None
+                ),
+                "fmc_step_climb_distance_nm": (
+                    live.fmc_snapshot.step_climb.distance_nm
+                    if live.fmc_snapshot.step_climb is not None
+                    else None
                 ),
             }
         )

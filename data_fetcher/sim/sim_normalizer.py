@@ -28,6 +28,7 @@ def normalize_raw_sim_state(raw: RawSimState) -> LiveSimState:
     )
 
     return LiveSimState(
+        aircraft_title=raw.aircraft_title,
         altitude_ft=round_optional(display_altitude_ft),
         pressure_altitude_ft=round_optional(pressure_altitude_ft),
         true_altitude_ft=round_optional(raw.true_altitude_ft),

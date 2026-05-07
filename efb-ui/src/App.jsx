@@ -113,6 +113,7 @@ const EMPTY_TELEMETRY_PATCH = {
   altitudeFt: null,
   grossWeightKg: null,
   mach: null,
+  currentCostIndex: null,
   windComponentKt: null,
   isaDeviationC: null,
   fuelRemainingKg: null,
@@ -388,6 +389,8 @@ function formatFlightLevelInput(altitudeFt) {
 function formatRemainingDistanceSourceLabel(source) {
   if (!source) return "";
   switch (String(source).toLowerCase()) {
+    case "fmc_adapter":
+      return "FMC progress";
     case "simbrief_route":
       return "SimBrief route";
     case "gps_flight_plan":
@@ -1080,6 +1083,7 @@ function OperationalApp() {
             if (patch.altitudeFt         != null) updated.altitudeFt         = String(patch.altitudeFt);
             if (patch.grossWeightKg      != null) updated.grossWeightKg      = String(Math.round(patch.grossWeightKg));
             if (patch.mach               != null) updated.mach               = String(patch.mach.toFixed(3));
+            if (patch.currentCostIndex   != null) updated.currentCostIndex   = String(patch.currentCostIndex);
             if (patch.fuelRemainingKg    != null) updated.fuelRemainingKg    = String(Math.round(patch.fuelRemainingKg));
             if (patch.fuelFlowKgH        != null) updated.fuelFlowKgH        = String(Math.round(patch.fuelFlowKgH));
             if (patch.fuelFlowSource     != null) updated.fuelFlowSource     = patch.fuelFlowSource;
@@ -1346,7 +1350,10 @@ function OperationalApp() {
     liveTelemetry.lastError ?? liveTelemetry.warnings?.[0],
   );
   const remainingDistanceSource = liveTelemetry.rawSummary?.remaining_distance_source ?? null;
-  const remainingDistanceWaypoint = liveTelemetry.rawSummary?.route_profile_active_waypoint ?? null;
+  const remainingDistanceWaypoint =
+    liveTelemetry.rawSummary?.route_profile_active_waypoint
+    ?? liveTelemetry.rawSummary?.fmc_destination_ident
+    ?? null;
   const remainingDistanceSub = [
     formatRemainingDistanceSourceLabel(remainingDistanceSource),
     remainingDistanceWaypoint ? `to ${remainingDistanceWaypoint}` : null,
