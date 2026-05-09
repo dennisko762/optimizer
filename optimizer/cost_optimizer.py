@@ -167,6 +167,7 @@ def optimize_cost(
     costed_strategies: list[CostedStrategy] = []
     points_by_flight_level: dict[int | None, dict[float, tuple[float, float]]] = {}
     candidate_generation_warnings: list[str] = []
+    current_level_strategy_cache: dict[float, RemainingCruiseResult] = {}
 
     for candidate_flight_level in candidate_flight_levels:
         candidate_state = _state_for_flight_level(
@@ -241,6 +242,30 @@ def optimize_cost(
                 aircraft_cfg=aircraft_cfg,
                 general_cfg=general_cfg,
             )
+            if (
+                candidate_flight_level is not None
+                and current_flight_level is not None
+                and candidate_flight_level > current_flight_level
+            ):
+                current_level_same_mach = current_level_strategy_cache.get(
+                    round(strategy.mach, 3)
+                )
+                if current_level_same_mach is None:
+                    current_level_same_mach = _simulate_strategy(
+                        current_state=current_state,
+                        mach=strategy.mach,
+                        aircraft_cfg=aircraft_cfg,
+                        general_cfg=general_cfg,
+                    )
+                    current_level_strategy_cache[round(strategy.mach, 3)] = (
+                        current_level_same_mach
+                    )
+                _apply_fmc_step_climb_deferral(
+                    performance=performance,
+                    current_level_performance=current_level_same_mach,
+                    remaining_distance_nm=current_state.remaining_distance_nm,
+                    step_climb_distance_nm=current_state.fmc_step_climb_distance_nm,
+                )
             _apply_flight_level_transition_penalty(
                 performance=performance,
                 current_altitude_ft=current_state.altitude_ft,
@@ -804,6 +829,60 @@ def _apply_flight_level_transition_penalty(
 
     performance.remaining_time_min = round(performance.remaining_time_min + time_penalty_min, 2)
     performance.remaining_fuel_kg = round(performance.remaining_fuel_kg + fuel_penalty_kg, 2)
+    _refresh_performance_aggregates(performance)
+
+
+def _apply_fmc_step_climb_deferral(
+    *,
+    performance: RemainingCruiseResult,
+    current_level_performance: RemainingCruiseResult,
+    remaining_distance_nm: float,
+    step_climb_distance_nm: float | None,
+) -> None:
+    if step_climb_distance_nm is None or remaining_distance_nm <= 0:
+        return
+
+    deferred_distance_nm = float(step_climb_distance_nm)
+    if deferred_distance_nm <= 0:
+        return
+
+    deferred_fraction = min(max(deferred_distance_nm / remaining_distance_nm, 0.0), 1.0)
+    if deferred_fraction < 0.01:
+        return
+
+    active_fraction = 1.0 - deferred_fraction
+    performance.remaining_time_min = round(
+        current_level_performance.remaining_time_min * deferred_fraction
+        + performance.remaining_time_min * active_fraction,
+        2,
+    )
+    performance.remaining_fuel_kg = round(
+        current_level_performance.remaining_fuel_kg * deferred_fraction
+        + performance.remaining_fuel_kg * active_fraction,
+        2,
+    )
+    performance.end_weight_kg = round(
+        current_level_performance.end_weight_kg * deferred_fraction
+        + performance.end_weight_kg * active_fraction,
+        2,
+    )
+    performance.tas_kt = round(
+        current_level_performance.tas_kt * deferred_fraction
+        + performance.tas_kt * active_fraction,
+        2,
+    )
+    performance.ground_speed_kt = round(
+        current_level_performance.ground_speed_kt * deferred_fraction
+        + performance.ground_speed_kt * active_fraction,
+        2,
+    )
+    performance.warnings.append(
+        f"FMC step-climb guidance defers higher-level benefit for about {deferred_distance_nm:.0f} NM, so climb savings are reduced until the planned step point."
+    )
+    _refresh_performance_aggregates(performance)
+
+
+def _refresh_performance_aggregates(performance: RemainingCruiseResult) -> None:
     performance.avg_fuel_flow_kg_h = round(
         performance.remaining_fuel_kg / max(performance.remaining_time_min / 60.0, 1e-9),
         2,

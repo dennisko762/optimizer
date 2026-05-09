@@ -6,7 +6,7 @@ type: p
 
 aircraft:
   key: b772
-  display_name: "Boeing 777-200ER GE90-94B FCOM baseline"
+  display_name: "Boeing 777-200ER multi-engine profile"
   icao_type: B772
   family: B777
 
@@ -16,6 +16,75 @@ engine:
   model: GE90-94B
   variant_key: GE90-94B
   selection_status: supported_fcom_variant
+  default_variant_key: GE90-94B
+  available_variants:
+    - manufacturer: GE Aerospace
+      family: GE90
+      model: GE90-90B
+      variant_key: GE90-90B
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: GE Aerospace
+      family: GE90
+      model: GE90-92B
+      variant_key: GE90-92B
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: GE Aerospace
+      family: GE90
+      model: GE90-94B
+      variant_key: GE90-94B
+      selection_status: supported_fcom_variant
+      fcom_variant: b772_ge90_94b_faa
+      performance_note: Curated Boeing FCOM hybrid LRC anchor is available.
+    - manufacturer: GE Aerospace
+      family: GE90
+      model: GE90-98B
+      variant_key: GE90-98B
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: Pratt & Whitney
+      family: PW4000-112
+      model: PW4084
+      variant_key: PW4084
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: Pratt & Whitney
+      family: PW4000-112
+      model: PW4090
+      variant_key: PW4090
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: Pratt & Whitney
+      family: PW4000-112
+      model: PW4098
+      variant_key: PW4098
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: Rolls-Royce
+      family: Trent 800
+      model: Trent 884
+      variant_key: TRENT884
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: Rolls-Royce
+      family: Trent 800
+      model: Trent 890
+      variant_key: TRENT890
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: Rolls-Royce
+      family: Trent 800
+      model: Trent 895
+      variant_key: TRENT895
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
+    - manufacturer: Rolls-Royce
+      family: Trent 800
+      model: Trent 898
+      variant_key: TRENT898
+      selection_status: metadata_only
+      performance_note: Uses generic OpenAP fallback until a dedicated FCOM dataset is registered.
 
 openap:
   enabled: true
@@ -136,6 +205,7 @@ data_quality:
   level: curated
   notes:
     - "Long-range cruise anchor comes from the hand-encoded Boeing 777-200ER GE90-94B FCOM dataset."
+    - "B772 engine metadata includes GE90, PW4000-112 and Trent 800 options; only GE90-94B has a registered FCOM performance dataset today."
     - "Holding and optimum-altitude tables are also encoded from the same FCOM block."
     - "Descent profile and wind-altitude trade are still pending in the structured dataset."
     - "Cruise Mach bounds remain profile data, not hard-coded simulator logic."
@@ -143,10 +213,11 @@ data_quality:
 notes:
   important:
     - This file is for simulator/VA optimization use, not real-world dispatch.
-    - This profile is aircraft-centric and uses the 777-200ER GE90-94B FCOM as the baseline truth.
+    - This profile lists the 777-200ER GE90, PW4000-112 and Trent 800 engine families.
+    - The curated FCOM path is currently available only for the 777-200ER GE90-94B baseline.
     - Off-LRC Mach points still rely on generic OpenAP scaling around the FCOM anchor.
     - Descent and wind-altitude-trade tables are not yet wired into runtime calculations.
   sources:
     crew_regulation: EASA ORO.CC.100 one-per-50-or-fraction installed passenger seats.
     cost_model: A320 baseline scaled by MTOW/seats; replace with VA/operator-provided cost data.
-    performance: Boeing 777-200ER GE90-94B FCOM PI.11.x tables plus OpenAP hybrid scaling.
+    performance: Boeing 777-200ER GE90-94B FCOM PI.11.x tables plus OpenAP hybrid scaling; Boeing 777-200/-200ER/-300 ACAPS engine-option table for GE90/PW4000/Trent 800 metadata.

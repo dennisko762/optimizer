@@ -212,6 +212,9 @@ class CurrentFlightState(BaseModel):
     fuel_flow_reference_gross_weight_kg: float | None = None
     fuel_flow_reference_mach: float | None = None
     fuel_flow_reference_isa_deviation_c: float | None = None
+    fmc_source: str | None = None
+    fmc_cruise_flight_level: int | None = None
+    fmc_step_climb_distance_nm: float | None = None
 
     # Current cost index selected in FMC / SimBrief / test UI.
     # This must NOT be derived from Mach.

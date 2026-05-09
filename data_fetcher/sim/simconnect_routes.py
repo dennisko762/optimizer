@@ -50,6 +50,15 @@ class SimConnectFlightStatePatch(BaseModel):
     gross_weight_kg: float | None = Field(default=None, alias="grossWeightKg")
     mach: float | None = None
     current_cost_index: int | None = Field(default=None, alias="currentCostIndex")
+    fmc_source: str | None = Field(default=None, alias="fmcSource")
+    fmc_cruise_flight_level: int | None = Field(
+        default=None,
+        alias="fmcCruiseFlightLevel",
+    )
+    fmc_step_climb_distance_nm: float | None = Field(
+        default=None,
+        alias="fmcStepClimbDistanceNm",
+    )
 
     # Wind component along track (positive = tailwind, negative = headwind).
     # Populated from AIRCRAFT_WIND_Z when available.
@@ -375,6 +384,21 @@ def _live_state_to_patch(
             currentCostIndex=(
                 live.fmc_snapshot.cost_index
                 if live.fmc_snapshot is not None
+                else None
+            ),
+            fmcSource=(
+                live.fmc_snapshot.source
+                if live.fmc_snapshot is not None
+                else None
+            ),
+            fmcCruiseFlightLevel=(
+                live.fmc_snapshot.cruise_flight_level
+                if live.fmc_snapshot is not None
+                else None
+            ),
+            fmcStepClimbDistanceNm=(
+                live.fmc_snapshot.step_climb.distance_nm
+                if live.fmc_snapshot is not None and live.fmc_snapshot.step_climb is not None
                 else None
             ),
             fuelRemainingKg=live.fuel_remaining_kg,

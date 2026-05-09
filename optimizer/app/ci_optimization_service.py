@@ -328,6 +328,9 @@ class CiOptimizationService:
             gross_weight_kg=fs.gross_weight_kg,
             mach=fs.mach,
             current_cost_index=fs.current_cost_index,
+            fmc_source=fs.fmc_source,
+            fmc_cruise_flight_level=fs.fmc_cruise_flight_level,
+            fmc_step_climb_distance_nm=fs.fmc_step_climb_distance_nm,
             remaining_distance_nm=fs.remaining_distance_nm,
             route_distance_nm=(
                 fs.route_distance_nm
@@ -555,6 +558,9 @@ class CiOptimizationService:
             remaining_distance_nm=current_state.remaining_distance_nm,
             fixed_flight_level=fixed_fl,
             assigned_flight_level=assigned_fl,
+            fmc_source=current_state.fmc_source,
+            fmc_cruise_flight_level=current_state.fmc_cruise_flight_level,
+            fmc_step_climb_distance_nm=current_state.fmc_step_climb_distance_nm,
         )
 
     def _base_optimizer_kwargs(

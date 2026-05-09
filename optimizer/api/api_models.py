@@ -41,6 +41,15 @@ class UiFlightState(BaseModel):
     gross_weight_kg: float = Field(alias="grossWeightKg")
     mach: float
     current_cost_index: int | None = Field(default=None, alias="currentCostIndex")
+    fmc_source: str | None = Field(default=None, alias="fmcSource")
+    fmc_cruise_flight_level: int | None = Field(
+        default=None,
+        alias="fmcCruiseFlightLevel",
+    )
+    fmc_step_climb_distance_nm: float | None = Field(
+        default=None,
+        alias="fmcStepClimbDistanceNm",
+    )
 
     remaining_distance_nm: float = Field(alias="remainingDistanceNm")
     route_distance_nm: float | None = Field(default=None, alias="routeDistanceNm")

@@ -30,6 +30,9 @@ def generate_flight_level_candidates(
     remaining_distance_nm: float,
     fixed_flight_level: int | None = None,
     assigned_flight_level: int | None = None,
+    fmc_source: str | None = None,
+    fmc_cruise_flight_level: int | None = None,
+    fmc_step_climb_distance_nm: float | None = None,
     min_flight_level: int = 200,
     max_flight_level: int = 430,
 ) -> list[int]:
@@ -48,10 +51,15 @@ def generate_flight_level_candidates(
         )
 
     candidates = [current_flight_level]
+    step_climb_distance_nm = _positive_float_or_none(fmc_step_climb_distance_nm)
 
     # Cruise-level search is intentionally conservative until climb/descent
     # transition costs and step points are modeled more explicitly.
-    if remaining_distance_nm >= 250:
+    if remaining_distance_nm >= 250 or (
+        step_climb_distance_nm is not None
+        and step_climb_distance_nm <= 60.0
+        and remaining_distance_nm >= 100
+    ):
         candidates.extend(
             [
                 current_flight_level + 20,
@@ -59,11 +67,89 @@ def generate_flight_level_candidates(
             ]
         )
 
-    return _normalized_flight_levels(
-        candidates,
+    return _apply_fmc_level_guidance(
+        candidates=candidates,
+        current_flight_level=current_flight_level,
+        remaining_distance_nm=remaining_distance_nm,
+        fmc_source=fmc_source,
+        fmc_cruise_flight_level=fmc_cruise_flight_level,
+        fmc_step_climb_distance_nm=step_climb_distance_nm,
         min_flight_level=min_flight_level,
         max_flight_level=max_flight_level,
     )
+
+
+def _apply_fmc_level_guidance(
+    *,
+    candidates: list[int],
+    current_flight_level: int,
+    remaining_distance_nm: float,
+    fmc_source: str | None,
+    fmc_cruise_flight_level: int | None,
+    fmc_step_climb_distance_nm: float | None,
+    min_flight_level: int,
+    max_flight_level: int,
+) -> list[int]:
+    guidance_active = bool((fmc_source or "").strip()) or (
+        fmc_cruise_flight_level is not None or fmc_step_climb_distance_nm is not None
+    )
+    if not guidance_active:
+        return _normalized_flight_levels(
+            candidates,
+            min_flight_level=min_flight_level,
+            max_flight_level=max_flight_level,
+        )
+
+    guided = list(candidates)
+    cruise_flight_level = _bounded_flight_level(
+        fmc_cruise_flight_level,
+        min_flight_level=min_flight_level,
+        max_flight_level=max_flight_level,
+    )
+
+    if cruise_flight_level is not None and cruise_flight_level > current_flight_level:
+        guided.append(min(current_flight_level + 20, cruise_flight_level))
+        if remaining_distance_nm >= 350 or (
+            fmc_step_climb_distance_nm is not None
+            and fmc_step_climb_distance_nm <= 40.0
+        ):
+            guided.append(min(current_flight_level + 40, cruise_flight_level))
+        guided = [level for level in guided if level <= cruise_flight_level]
+
+    if fmc_step_climb_distance_nm is not None:
+        if fmc_step_climb_distance_nm > 120.0:
+            guided = [level for level in guided if level <= current_flight_level]
+        elif fmc_step_climb_distance_nm > 40.0:
+            guided = [level for level in guided if level <= current_flight_level + 20]
+
+    return _normalized_flight_levels(
+        guided,
+        min_flight_level=min_flight_level,
+        max_flight_level=max_flight_level,
+    )
+
+
+def _positive_float_or_none(value: float | None) -> float | None:
+    if value is None:
+        return None
+    number = float(value)
+    if number <= 0:
+        return None
+    return number
+
+
+def _bounded_flight_level(
+    value: int | None,
+    *,
+    min_flight_level: int,
+    max_flight_level: int,
+) -> int | None:
+    if value is None:
+        return None
+    flight_level = int(value)
+    if flight_level < min_flight_level or flight_level > max_flight_level:
+        return None
+    return flight_level
 
 
 def generate_mach_strategies(

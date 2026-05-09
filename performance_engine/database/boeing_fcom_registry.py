@@ -30,9 +30,23 @@ _AIRCRAFT_ALIASES = {
 
 
 _ENGINE_ALIASES = {
+    "GE90": "GE90",
     "GE90115BL": "GE90-115BL",
     "GE90110B1": "GE90-110B1",
+    "GE9090B": "GE90-90B",
+    "GE9092B": "GE90-92B",
     "GE9094B": "GE90-94B",
+    "GE9098B": "GE90-98B",
+    "PW4000": "PW4000",
+    "PW4000112": "PW4000-112",
+    "PW4084": "PW4084",
+    "PW4090": "PW4090",
+    "PW4098": "PW4098",
+    "TRENT800": "TRENT800",
+    "TRENT884": "TRENT884",
+    "TRENT890": "TRENT890",
+    "TRENT895": "TRENT895",
+    "TRENT898": "TRENT898",
 }
 
 
@@ -51,11 +65,13 @@ def resolve_boeing_777_fcom_variant(
 ) -> str | None:
     cfg = aircraft_cfg or {}
 
+    requested_engine = normalize_boeing_engine_variant(engine_variant)
+
     explicit_variant = _string_or_none(
         _nested_value(cfg, "performance", "source", "fcom_variant")
         or _nested_value(cfg, "performance", "source", "fcomVariant")
     )
-    if explicit_variant is not None:
+    if explicit_variant is not None and requested_engine is None:
         key = explicit_variant.lower()
         if key in _VARIANT_BUILDERS:
             return key
@@ -66,9 +82,8 @@ def resolve_boeing_777_fcom_variant(
         or _string_or_none(_nested_value(cfg, "aircraft", "icao_type"))
         or _string_or_none(cfg.get("aircraft_type"))
     )
-    engine = normalize_boeing_engine_variant(
-        engine_variant
-        or _string_or_none(_nested_value(cfg, "engine", "model"))
+    engine = requested_engine or normalize_boeing_engine_variant(
+        _string_or_none(_nested_value(cfg, "engine", "model"))
         or _string_or_none(_nested_value(cfg, "engine", "variant_key"))
         or _string_or_none(cfg.get("engine_variant"))
     )
