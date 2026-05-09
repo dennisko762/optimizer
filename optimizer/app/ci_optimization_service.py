@@ -72,6 +72,11 @@ class CiOptimizationService:
         aircraft_cfg = load_aircraft_config(request.aircraft_config)
 
         current_state = self._to_current_flight_state(request)
+        if current_state.fuel_flow_kg_h is None or current_state.fuel_flow_kg_h <= 0:
+            raise ValueError(
+                "Live SimConnect fuel flow is required for optimization. "
+                "No static or modeled fuel-flow fallback is allowed."
+            )
         flight_context = self._to_flight_context(request)
         cost = CostScenarioInput()
 

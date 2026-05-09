@@ -46,6 +46,8 @@ def set_destination(body: DestinationPayload) -> None:
 
 
 class SimConnectFlightStatePatch(BaseModel):
+    aircraft: str | None = None
+    aircraft_config: str | None = Field(default=None, alias="aircraftConfig")
     altitude_ft: float | None = Field(default=None, alias="altitudeFt")
     gross_weight_kg: float | None = Field(default=None, alias="grossWeightKg")
     mach: float | None = None
@@ -378,6 +380,8 @@ def _live_state_to_patch(
 
     return (
         SimConnectFlightStatePatch(
+            aircraft=_live_aircraft_code(live),
+            aircraftConfig=_live_aircraft_config(live),
             altitudeFt=live.altitude_ft,
             grossWeightKg=live.gross_weight_kg,
             mach=live.mach,
@@ -414,6 +418,22 @@ def _live_state_to_patch(
         remaining_distance_source,
         remaining_distance_details,
     )
+
+
+def _live_aircraft_entry(live: LiveSimState):
+    from optimizer.configs.aircraft.aircraft_catalog import resolve_aircraft_from_title
+
+    return resolve_aircraft_from_title(live.aircraft_title)
+
+
+def _live_aircraft_code(live: LiveSimState) -> str | None:
+    entry = _live_aircraft_entry(live)
+    return entry.simbrief_code if entry is not None else None
+
+
+def _live_aircraft_config(live: LiveSimState) -> str | None:
+    entry = _live_aircraft_entry(live)
+    return entry.config_key if entry is not None else None
 
 def _resolve_remaining_distance(
     live: LiveSimState,
@@ -504,7 +524,7 @@ def _build_warnings(
 
     if live.fuel_flow_kg_h is None:
         warnings.append(
-            "SimConnect did not return usable fuel flow; optimization will fall back to the modeled burn baseline."
+            "SimConnect did not return usable fuel flow; optimization will not use a static fuel-flow fallback."
         )
 
     if (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import time
 from typing import Any
 
@@ -14,8 +15,27 @@ from data_fetcher.sim.sim_normalizer import normalize_raw_sim_state
 LB_TO_KG = 0.45359237
 DEFAULT_FUEL_WEIGHT_PER_GALLON_LB = 6.7
 MAX_FUEL_FLOW_ENGINE_COUNT = 4
+MAX_FUEL_SYSTEM_LINE_COUNT = 32
 MAX_REASONABLE_FUEL_FLOW_KG_H = 100000.0
+MIN_REASONABLE_ENGINE_FUEL_FLOW_KG_H = 1.0
 DELTA_FUEL_FLOW_SOURCE = "FUEL_TOTAL_QUANTITY_WEIGHT_DELTA"
+
+
+@dataclass(frozen=True)
+class FuelFlowSourceCandidate:
+    simvar_name: str
+    unit: str
+    indexed_by: str
+    priority: int
+
+
+@dataclass(frozen=True)
+class FuelFlowMeasurement:
+    fuel_flow_kg_h: float
+    source: str
+    positive_index_count: int
+    expected_index_count: int | None
+    priority: int
 
 
 class SimConnectClientError(SimClientError):
@@ -144,16 +164,27 @@ class SimConnectClient(SimClient):
             fuel_remaining_lb
         )
 
-        for simvar_name, unit in self._fuel_flow_source_candidates(engine_type):
-            fuel_flow_kg_h = self._indexed_fuel_flow_kg_h(
+        measurements: list[FuelFlowMeasurement] = []
+        for candidate in self._fuel_flow_source_candidates(engine_type):
+            measurement = self._indexed_fuel_flow_measurement(
                 aq,
-                simvar_name=simvar_name,
-                unit=unit,
+                candidate=candidate,
                 engine_count=engine_count,
                 fuel_weight_per_gallon_lb=fuel_weight_per_gallon_lb,
             )
-            if fuel_flow_kg_h is not None:
-                return fuel_flow_kg_h, simvar_name
+            if measurement is not None:
+                measurements.append(measurement)
+
+        if measurements:
+            best = sorted(
+                measurements,
+                key=lambda item: (
+                    item.priority,
+                    -item.positive_index_count,
+                    abs(item.fuel_flow_kg_h - (derived_fuel_flow_kg_h or item.fuel_flow_kg_h)),
+                ),
+            )[0]
+            return best.fuel_flow_kg_h, best.source
 
         if derived_fuel_flow_kg_h is not None:
             return derived_fuel_flow_kg_h, DELTA_FUEL_FLOW_SOURCE
@@ -163,27 +194,33 @@ class SimConnectClient(SimClient):
     @staticmethod
     def _fuel_flow_source_candidates(
         engine_type: int | None,
-    ) -> tuple[tuple[str, str], ...]:
+    ) -> tuple[FuelFlowSourceCandidate, ...]:
         piston_candidates = (
-            ("RECIP_ENG_FUEL_FLOW", "pph"),
-            ("ENG_FUEL_FLOW_PPH", "pph"),
-            ("ENG_FUEL_FLOW_GPH", "gph"),
-            ("TURB_ENG_FUEL_FLOW_PPH", "pph"),
-            ("TURB_ENG_CORRECTED_FF", "pph"),
+            FuelFlowSourceCandidate("RECIP_ENG_FUEL_FLOW", "lb_per_hour", "engine", 10),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_PPH", "lb_per_hour", "engine", 20),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_PPH_SSL", "lb_per_hour", "engine", 25),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_GPH", "gallon_per_hour", "engine", 30),
+            FuelFlowSourceCandidate("TURB_ENG_FUEL_FLOW_PPH", "lb_per_hour", "engine", 40),
+            FuelFlowSourceCandidate("TURB_ENG_CORRECTED_FF", "lb_per_hour", "engine", 50),
+            FuelFlowSourceCandidate("FUELSYSTEM_LINE_FUEL_FLOW", "gallon_per_hour", "line", 90),
         )
         turbine_candidates = (
-            ("TURB_ENG_FUEL_FLOW_PPH", "pph"),
-            ("ENG_FUEL_FLOW_PPH", "pph"),
-            ("ENG_FUEL_FLOW_GPH", "gph"),
-            ("TURB_ENG_CORRECTED_FF", "pph"),
-            ("RECIP_ENG_FUEL_FLOW", "pph"),
+            FuelFlowSourceCandidate("TURB_ENG_FUEL_FLOW_PPH", "lb_per_hour", "engine", 10),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_PPH", "lb_per_hour", "engine", 20),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_PPH_SSL", "lb_per_hour", "engine", 25),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_GPH", "gallon_per_hour", "engine", 30),
+            FuelFlowSourceCandidate("TURB_ENG_CORRECTED_FF", "lb_per_hour", "engine", 40),
+            FuelFlowSourceCandidate("RECIP_ENG_FUEL_FLOW", "lb_per_hour", "engine", 80),
+            FuelFlowSourceCandidate("FUELSYSTEM_LINE_FUEL_FLOW", "gallon_per_hour", "line", 90),
         )
         generic_candidates = (
-            ("TURB_ENG_FUEL_FLOW_PPH", "pph"),
-            ("ENG_FUEL_FLOW_PPH", "pph"),
-            ("RECIP_ENG_FUEL_FLOW", "pph"),
-            ("ENG_FUEL_FLOW_GPH", "gph"),
-            ("TURB_ENG_CORRECTED_FF", "pph"),
+            FuelFlowSourceCandidate("TURB_ENG_FUEL_FLOW_PPH", "lb_per_hour", "engine", 10),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_PPH", "lb_per_hour", "engine", 20),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_PPH_SSL", "lb_per_hour", "engine", 25),
+            FuelFlowSourceCandidate("ENG_FUEL_FLOW_GPH", "gallon_per_hour", "engine", 30),
+            FuelFlowSourceCandidate("TURB_ENG_CORRECTED_FF", "lb_per_hour", "engine", 40),
+            FuelFlowSourceCandidate("RECIP_ENG_FUEL_FLOW", "lb_per_hour", "engine", 70),
+            FuelFlowSourceCandidate("FUELSYSTEM_LINE_FUEL_FLOW", "gallon_per_hour", "line", 90),
         )
 
         if engine_type == 0:
@@ -201,33 +238,55 @@ class SimConnectClient(SimClient):
         engine_count: int | None,
         fuel_weight_per_gallon_lb: float | None,
     ) -> float | None:
-        if engine_count is None or engine_count <= 0:
-            engine_indices = range(1, MAX_FUEL_FLOW_ENGINE_COUNT + 1)
+        candidate = FuelFlowSourceCandidate(
+            simvar_name=simvar_name,
+            unit=_normalize_fuel_flow_unit(unit),
+            indexed_by="engine",
+            priority=999,
+        )
+        measurement = self._indexed_fuel_flow_measurement(
+            aq,
+            candidate=candidate,
+            engine_count=engine_count,
+            fuel_weight_per_gallon_lb=fuel_weight_per_gallon_lb,
+        )
+        return measurement.fuel_flow_kg_h if measurement is not None else None
+
+    def _indexed_fuel_flow_measurement(
+        self,
+        aq: AircraftRequests,
+        *,
+        candidate: FuelFlowSourceCandidate,
+        engine_count: int | None,
+        fuel_weight_per_gallon_lb: float | None,
+    ) -> FuelFlowMeasurement | None:
+        if candidate.indexed_by == "line":
+            expected_index_count = None
+            indices = range(1, MAX_FUEL_SYSTEM_LINE_COUNT + 1)
+        elif engine_count is None or engine_count <= 0:
+            expected_index_count = None
+            indices = range(1, MAX_FUEL_FLOW_ENGINE_COUNT + 1)
         else:
-            engine_indices = range(
+            expected_index_count = min(int(engine_count), MAX_FUEL_FLOW_ENGINE_COUNT)
+            indices = range(
                 1,
-                min(int(engine_count), MAX_FUEL_FLOW_ENGINE_COUNT) + 1,
+                expected_index_count + 1,
             )
         total_fuel_flow_kg_h = 0.0
         positive_engine_count = 0
 
-        for engine_index in engine_indices:
-            raw_value = self._safe_get_float(aq, f"{simvar_name}:{engine_index}")
+        for index in indices:
+            raw_value = self._safe_get_float(aq, f"{candidate.simvar_name}:{index}")
             if raw_value is None:
                 continue
 
-            if unit == "gph":
-                fuel_weight_lb = (
-                    fuel_weight_per_gallon_lb
-                    if fuel_weight_per_gallon_lb is not None
-                    and fuel_weight_per_gallon_lb > 0
-                    else DEFAULT_FUEL_WEIGHT_PER_GALLON_LB
-                )
-                fuel_flow_kg_h = raw_value * fuel_weight_lb * LB_TO_KG
-            else:
-                fuel_flow_kg_h = raw_value * LB_TO_KG
+            fuel_flow_kg_h = _convert_fuel_flow_to_kg_h(
+                raw_value,
+                unit=candidate.unit,
+                fuel_weight_per_gallon_lb=fuel_weight_per_gallon_lb,
+            )
 
-            fuel_flow_kg_h = self._sanitize_fuel_flow_kg_h(fuel_flow_kg_h)
+            fuel_flow_kg_h = self._sanitize_indexed_fuel_flow_kg_h(fuel_flow_kg_h)
             if fuel_flow_kg_h is None:
                 continue
 
@@ -237,8 +296,24 @@ class SimConnectClient(SimClient):
 
         if positive_engine_count <= 0:
             return None
+        if (
+            candidate.indexed_by == "engine"
+            and expected_index_count is not None
+            and positive_engine_count < expected_index_count
+        ):
+            return None
 
-        return round(total_fuel_flow_kg_h, 2)
+        total_fuel_flow_kg_h = self._sanitize_fuel_flow_kg_h(total_fuel_flow_kg_h)
+        if total_fuel_flow_kg_h is None:
+            return None
+
+        return FuelFlowMeasurement(
+            fuel_flow_kg_h=round(total_fuel_flow_kg_h, 2),
+            source=candidate.simvar_name,
+            positive_index_count=positive_engine_count,
+            expected_index_count=expected_index_count,
+            priority=candidate.priority,
+        )
 
     def _estimate_fuel_flow_from_total_fuel_lb(
         self,
@@ -272,6 +347,16 @@ class SimConnectClient(SimClient):
     @staticmethod
     def _sanitize_fuel_flow_kg_h(value: float | None) -> float | None:
         if value is None or value <= 0 or value > MAX_REASONABLE_FUEL_FLOW_KG_H:
+            return None
+        return float(value)
+
+    @staticmethod
+    def _sanitize_indexed_fuel_flow_kg_h(value: float | None) -> float | None:
+        if value is None:
+            return None
+        if value < MIN_REASONABLE_ENGINE_FUEL_FLOW_KG_H:
+            return None
+        if value > MAX_REASONABLE_FUEL_FLOW_KG_H:
             return None
         return float(value)
 
@@ -327,3 +412,82 @@ class SimConnectClient(SimClient):
             if value is not None:
                 return value
         return None
+
+
+def _normalize_fuel_flow_unit(unit: str) -> str:
+    text = str(unit).strip().lower().replace(" ", "_").replace("/", "_")
+    aliases = {
+        "pph": "lb_per_hour",
+        "pounds_per_hour": "lb_per_hour",
+        "pound_per_hour": "lb_per_hour",
+        "lb_hour": "lb_per_hour",
+        "lb_hr": "lb_per_hour",
+        "lbs_hour": "lb_per_hour",
+        "lbs_hr": "lb_per_hour",
+        "lb_per_hr": "lb_per_hour",
+        "lbs_per_hr": "lb_per_hour",
+        "ppm": "lb_per_minute",
+        "pounds_per_minute": "lb_per_minute",
+        "pound_per_minute": "lb_per_minute",
+        "lb_min": "lb_per_minute",
+        "lb_per_min": "lb_per_minute",
+        "kg_h": "kg_per_hour",
+        "kg_hr": "kg_per_hour",
+        "kg_per_h": "kg_per_hour",
+        "kg_per_hr": "kg_per_hour",
+        "kilogram_per_hour": "kg_per_hour",
+        "kilograms_per_hour": "kg_per_hour",
+        "kg_min": "kg_per_minute",
+        "kg_per_min": "kg_per_minute",
+        "kilogram_per_minute": "kg_per_minute",
+        "kilograms_per_minute": "kg_per_minute",
+        "gph": "gallon_per_hour",
+        "gallon_per_hour": "gallon_per_hour",
+        "gallons_per_hour": "gallon_per_hour",
+        "gal_per_hour": "gallon_per_hour",
+        "gal_per_hr": "gallon_per_hour",
+        "gpm": "gallon_per_minute",
+        "gallon_per_minute": "gallon_per_minute",
+        "gallons_per_minute": "gallon_per_minute",
+        "gal_per_minute": "gallon_per_minute",
+        "gal_per_min": "gallon_per_minute",
+        "gal_min": "gallon_per_minute",
+    }
+    return aliases.get(text, text)
+
+
+def _convert_fuel_flow_to_kg_h(
+    value: float,
+    *,
+    unit: str,
+    fuel_weight_per_gallon_lb: float | None,
+) -> float | None:
+    """
+    Convert a SimConnect fuel-flow reading to kg/h.
+
+    SimConnect fuel-flow SimVars are not unit-homogeneous: common engine vars
+    use lb/h, fuel-system line vars use gallons/h, and add-ons sometimes expose
+    minute-based values. Keep every conversion explicit here.
+    """
+
+    normalized_unit = _normalize_fuel_flow_unit(unit)
+    fuel_weight_lb = (
+        fuel_weight_per_gallon_lb
+        if fuel_weight_per_gallon_lb is not None and fuel_weight_per_gallon_lb > 0
+        else DEFAULT_FUEL_WEIGHT_PER_GALLON_LB
+    )
+
+    if normalized_unit == "lb_per_hour":
+        return value * LB_TO_KG
+    if normalized_unit == "lb_per_minute":
+        return value * 60.0 * LB_TO_KG
+    if normalized_unit == "kg_per_hour":
+        return value
+    if normalized_unit == "kg_per_minute":
+        return value * 60.0
+    if normalized_unit == "gallon_per_hour":
+        return value * fuel_weight_lb * LB_TO_KG
+    if normalized_unit == "gallon_per_minute":
+        return value * 60.0 * fuel_weight_lb * LB_TO_KG
+
+    return None

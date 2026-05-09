@@ -1,0 +1,29 @@
+aircraft_variant: B773
+display_name: Boeing 777-300 calibrated CI/Mach approximation
+engine_variants: [PW4090, PW4098, TRENT892, TRENT895, GE90-90B, GE90-92B]
+mass_reference_kg: 235000
+default_cruise_weight_kg: 225000
+min_mach: 0.76
+max_mach: 0.89
+mmo: 0.89
+drag_polar:
+  wing_area_m2: 427.8
+  cd0: 0.0208
+  induced_drag_factor: 0.044
+  compressibility_mach: 0.82
+  compressibility_drag_factor: 0.5
+fuel_model:
+  base_tsfc_kg_per_n_s: 0.0000188
+  mach_tsfc_factor_per_0_01: 0.0012
+  altitude_tsfc_factor_per_1000ft: -0.0025
+  temperature_tsfc_factor_per_c: 0.002
+cost_index_calibration:
+  boeing_ci_to_kg_per_min_scalar: 0.38
+  lrc_anchor_ci: 180
+  mrc_anchor_mach: 0.826
+  lrc_anchor_mach: 0.840
+  notes:
+    - "Approximate B773 coefficients; not a type-specific Boeing database."
+confidence: low
+source_notes:
+  - "No exact Boeing FMC equivalence is claimed."

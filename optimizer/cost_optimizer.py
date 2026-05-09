@@ -570,6 +570,7 @@ def _simulate_strategy(
         fuel_flow_reference_isa_deviation_c=(
             current_state.fuel_flow_reference_isa_deviation_c
         ),
+        require_live_fuel_flow=current_state.fuel_flow_kg_h is not None,
         segments=_to_cruise_segments(current_state.cruise_segments),
     )
     return simulate_remaining_cruise(

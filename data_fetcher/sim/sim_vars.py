@@ -98,6 +98,11 @@ STANDARD_SIM_VARS = {
         "python_simconnect_name": "ENG_FUEL_FLOW_PPH:index",
         "unit": "pounds per hour",
     },
+    "eng_fuel_flow_pph_ssl": {
+        "simvar": "ENG FUEL FLOW PPH SSL:index",
+        "python_simconnect_name": "ENG_FUEL_FLOW_PPH_SSL:index",
+        "unit": "pounds per hour",
+    },
     "recip_eng_fuel_flow_pph": {
         "simvar": "RECIP ENG FUEL FLOW:index",
         "python_simconnect_name": "RECIP_ENG_FUEL_FLOW:index",
@@ -106,6 +111,16 @@ STANDARD_SIM_VARS = {
     "eng_fuel_flow_gph": {
         "simvar": "ENG FUEL FLOW GPH:index",
         "python_simconnect_name": "ENG_FUEL_FLOW_GPH:index",
+        "unit": "gallons per hour",
+    },
+    "turb_eng_corrected_ff": {
+        "simvar": "TURB ENG CORRECTED FF:index",
+        "python_simconnect_name": "TURB_ENG_CORRECTED_FF:index",
+        "unit": "pounds per hour",
+    },
+    "fuelsystem_line_fuel_flow": {
+        "simvar": "FUELSYSTEM LINE FUEL FLOW:index",
+        "python_simconnect_name": "FUELSYSTEM_LINE_FUEL_FLOW:index",
         "unit": "gallons per hour",
     },
 

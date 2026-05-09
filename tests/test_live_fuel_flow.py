@@ -5,7 +5,12 @@ from unittest.mock import patch
 
 from data_fetcher.sim.sim_models import RawSimState
 from data_fetcher.sim.sim_normalizer import normalize_raw_sim_state
-from data_fetcher.sim.simconnect_client import LB_TO_KG, SimConnectClient
+from data_fetcher.sim.simconnect_client import (
+    LB_TO_KG,
+    SimConnectClient,
+    _convert_fuel_flow_to_kg_h,
+    _normalize_fuel_flow_unit,
+)
 from performance_engine.remaining_cruise_simulator import (
     RemainingCruiseInput,
     simulate_remaining_cruise,
@@ -65,6 +70,152 @@ class LiveFuelFlowTests(unittest.TestCase):
             fuel_flow_kg_h or 0.0,
             1000.0 * 6.7 * LB_TO_KG,
             places=2,
+        )
+
+    def test_uses_eng_fuel_flow_pph_when_turbine_var_is_absent(self) -> None:
+        client = SimConnectClient()
+        aq = _FakeAircraftRequests(
+            {
+                "ENG_FUEL_FLOW_PPH:1": 6100.0,
+                "ENG_FUEL_FLOW_PPH:2": 6200.0,
+            }
+        )
+
+        fuel_flow_kg_h, source = client._resolve_fuel_flow_measurement(
+            aq,
+            engine_count=2,
+            engine_type=1,
+            fuel_weight_per_gallon_lb=None,
+            fuel_remaining_lb=50000.0,
+        )
+
+        self.assertEqual(source, "ENG_FUEL_FLOW_PPH")
+        self.assertAlmostEqual(fuel_flow_kg_h or 0.0, 12300.0 * LB_TO_KG, places=2)
+
+    def test_uses_deprecated_ssl_pph_when_that_is_the_available_var(self) -> None:
+        client = SimConnectClient()
+        aq = _FakeAircraftRequests(
+            {
+                "ENG_FUEL_FLOW_PPH_SSL:1": 6000.0,
+                "ENG_FUEL_FLOW_PPH_SSL:2": 6000.0,
+            }
+        )
+
+        fuel_flow_kg_h, source = client._resolve_fuel_flow_measurement(
+            aq,
+            engine_count=2,
+            engine_type=1,
+            fuel_weight_per_gallon_lb=None,
+            fuel_remaining_lb=50000.0,
+        )
+
+        self.assertEqual(source, "ENG_FUEL_FLOW_PPH_SSL")
+        self.assertAlmostEqual(fuel_flow_kg_h or 0.0, 12000.0 * LB_TO_KG, places=2)
+
+    def test_ignores_partial_engine_index_data_for_known_engine_count(self) -> None:
+        client = SimConnectClient()
+        aq = _FakeAircraftRequests(
+            {
+                "TURB_ENG_FUEL_FLOW_PPH:1": 12000.0,
+                "ENG_FUEL_FLOW_PPH:1": 6100.0,
+                "ENG_FUEL_FLOW_PPH:2": 6200.0,
+            }
+        )
+
+        fuel_flow_kg_h, source = client._resolve_fuel_flow_measurement(
+            aq,
+            engine_count=2,
+            engine_type=1,
+            fuel_weight_per_gallon_lb=None,
+            fuel_remaining_lb=50000.0,
+        )
+
+        self.assertEqual(source, "ENG_FUEL_FLOW_PPH")
+        self.assertAlmostEqual(fuel_flow_kg_h or 0.0, 12300.0 * LB_TO_KG, places=2)
+
+    def test_ignores_implausibly_large_direct_var_and_uses_next_source(self) -> None:
+        client = SimConnectClient()
+        aq = _FakeAircraftRequests(
+            {
+                "TURB_ENG_FUEL_FLOW_PPH:1": 999999.0,
+                "TURB_ENG_FUEL_FLOW_PPH:2": 999999.0,
+                "ENG_FUEL_FLOW_PPH:1": 6100.0,
+                "ENG_FUEL_FLOW_PPH:2": 6200.0,
+            }
+        )
+
+        fuel_flow_kg_h, source = client._resolve_fuel_flow_measurement(
+            aq,
+            engine_count=2,
+            engine_type=1,
+            fuel_weight_per_gallon_lb=None,
+            fuel_remaining_lb=50000.0,
+        )
+
+        self.assertEqual(source, "ENG_FUEL_FLOW_PPH")
+        self.assertAlmostEqual(fuel_flow_kg_h or 0.0, 12300.0 * LB_TO_KG, places=2)
+
+    def test_uses_fuelsystem_line_flow_as_last_resort(self) -> None:
+        client = SimConnectClient()
+        aq = _FakeAircraftRequests(
+            {
+                "FUELSYSTEM_LINE_FUEL_FLOW:1": 400.0,
+                "FUELSYSTEM_LINE_FUEL_FLOW:2": 400.0,
+            }
+        )
+
+        fuel_flow_kg_h, source = client._resolve_fuel_flow_measurement(
+            aq,
+            engine_count=2,
+            engine_type=1,
+            fuel_weight_per_gallon_lb=6.7,
+            fuel_remaining_lb=50000.0,
+        )
+
+        self.assertEqual(source, "FUELSYSTEM_LINE_FUEL_FLOW")
+        self.assertAlmostEqual(
+            fuel_flow_kg_h or 0.0,
+            800.0 * 6.7 * LB_TO_KG,
+            places=2,
+        )
+
+    def test_fuel_flow_unit_conversions_are_explicit(self) -> None:
+        self.assertEqual(_normalize_fuel_flow_unit("pph"), "lb_per_hour")
+        self.assertEqual(_normalize_fuel_flow_unit("lb/min"), "lb_per_minute")
+        self.assertEqual(_normalize_fuel_flow_unit("kg/hr"), "kg_per_hour")
+        self.assertEqual(_normalize_fuel_flow_unit("kg/min"), "kg_per_minute")
+        self.assertEqual(_normalize_fuel_flow_unit("gph"), "gallon_per_hour")
+        self.assertEqual(_normalize_fuel_flow_unit("gal/min"), "gallon_per_minute")
+
+        self.assertAlmostEqual(
+            _convert_fuel_flow_to_kg_h(6000.0, unit="lb_per_hour", fuel_weight_per_gallon_lb=6.7) or 0.0,
+            6000.0 * LB_TO_KG,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            _convert_fuel_flow_to_kg_h(100.0, unit="lb_per_minute", fuel_weight_per_gallon_lb=6.7) or 0.0,
+            100.0 * 60.0 * LB_TO_KG,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            _convert_fuel_flow_to_kg_h(2800.0, unit="kg_per_hour", fuel_weight_per_gallon_lb=6.7) or 0.0,
+            2800.0,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            _convert_fuel_flow_to_kg_h(46.0, unit="kg_per_minute", fuel_weight_per_gallon_lb=6.7) or 0.0,
+            2760.0,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            _convert_fuel_flow_to_kg_h(400.0, unit="gallon_per_hour", fuel_weight_per_gallon_lb=6.7) or 0.0,
+            400.0 * 6.7 * LB_TO_KG,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            _convert_fuel_flow_to_kg_h(6.0, unit="gallon_per_minute", fuel_weight_per_gallon_lb=6.7) or 0.0,
+            6.0 * 60.0 * 6.7 * LB_TO_KG,
+            places=5,
         )
 
     def test_falls_back_to_fuel_total_burn_delta_when_no_engine_flow_simvar_exists(

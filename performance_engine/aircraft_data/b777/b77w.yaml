@@ -1,0 +1,30 @@
+aircraft_variant: B77W
+display_name: Boeing 777-300ER calibrated CI/Mach approximation
+engine_variants: [GE90-115BL]
+mass_reference_kg: 260000
+default_cruise_weight_kg: 240000
+min_mach: 0.76
+max_mach: 0.89
+mmo: 0.89
+drag_polar:
+  wing_area_m2: 436.8
+  cd0: 0.0208
+  induced_drag_factor: 0.0435
+  compressibility_mach: 0.82
+  compressibility_drag_factor: 0.5
+fuel_model:
+  base_tsfc_kg_per_n_s: 0.0000188
+  mach_tsfc_factor_per_0_01: 0.0012
+  altitude_tsfc_factor_per_1000ft: -0.0025
+  temperature_tsfc_factor_per_c: 0.002
+cost_index_calibration:
+  boeing_ci_to_kg_per_min_scalar: 0.4
+  lrc_anchor_ci: 180
+  mrc_anchor_mach: 0.826
+  lrc_anchor_mach: 0.840
+  notes:
+    - "Calibrated so B77W-like normal cruise CI 0 is near MRC and CI 180 is LRC-like; source anchors are public and representative, not exact Boeing tables."
+confidence: medium
+source_notes:
+  - "Internal point-mass drag polar and TSFC model; coefficients are calibration parameters."
+  - "No exact Boeing FMC equivalence is claimed."

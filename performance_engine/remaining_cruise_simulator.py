@@ -63,6 +63,7 @@ class RemainingCruiseInput:
     fuel_flow_reference_gross_weight_kg: float | None = None
     fuel_flow_reference_mach: float | None = None
     fuel_flow_reference_isa_deviation_c: float | None = None
+    require_live_fuel_flow: bool = False
 
     # Optional new API: when provided, these replace the legacy single average
     # distance/wind/temp/altitude assumptions.
@@ -170,6 +171,10 @@ def simulate_remaining_cruise(
         fcom_performance=fcom_performance,
         warnings=warnings,
     )
+    if request.require_live_fuel_flow and live_fuel_flow_scale_factor is None:
+        raise ValueError(
+            "Live SimConnect fuel flow is required. Refusing to use a static or purely modeled fuel-flow value."
+        )
     if live_fuel_flow_scale_factor is not None:
         performance_model = f"{performance_model}_simconnect_anchor"
 
@@ -361,6 +366,8 @@ def _resolve_live_fuel_flow_scale_factor(
     )
 
     if reference_modeled_fuel_flow_kg_h <= 1e-9:
+        if request.require_live_fuel_flow:
+            raise ValueError("Live SimConnect fuel flow could not be anchored to the performance model.")
         _append_unique_warnings(
             warnings,
             [
@@ -372,6 +379,10 @@ def _resolve_live_fuel_flow_scale_factor(
 
     scale_factor = request.live_fuel_flow_kg_h / reference_modeled_fuel_flow_kg_h
     if scale_factor <= 0.05 or scale_factor >= 20.0:
+        if request.require_live_fuel_flow:
+            raise ValueError(
+                f"Live SimConnect fuel flow scale factor {scale_factor:.2f} is implausible; refusing static fallback."
+            )
         _append_unique_warnings(
             warnings,
             [

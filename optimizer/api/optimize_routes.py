@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from optimizer.api.api_models import OptimizeRequest, OptimizeResponse
 
@@ -12,7 +12,10 @@ _service = None
 
 @router.post("/optimize", response_model=OptimizeResponse)
 def optimize(request: OptimizeRequest) -> OptimizeResponse:
-    return _get_service().optimize(request)
+    try:
+        return _get_service().optimize(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _get_service():

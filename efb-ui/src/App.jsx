@@ -91,6 +91,8 @@ const EMPTY_FLIGHT_STATE = {
   windComponentKt: "",
   isaDeviationC: "",
   fuelRemainingKg: "",
+  fuelFlowKgH: "",
+  fuelFlowSource: "",
   groundSpeedKt: "",
   paxCount: "",
 };
@@ -114,6 +116,8 @@ const EMPTY_TELEMETRY_PATCH = {
   windComponentKt: null,
   isaDeviationC: null,
   fuelRemainingKg: null,
+  fuelFlowKgH: null,
+  fuelFlowSource: null,
   groundSpeedKt: null,
   remainingDistanceNm: null,
   gpsEteSeconds: null,
@@ -650,6 +654,8 @@ function buildOptimizeRequest({
       windComponentKt: numberOrNull(flightState.windComponentKt),
       isaDeviationC: numberOrNull(flightState.isaDeviationC),
       fuelRemainingKg: numberOrNull(flightState.fuelRemainingKg),
+      fuelFlowKgH: numberOrNull(flightState.fuelFlowKgH),
+      fuelFlowSource: emptyToNull(flightState.fuelFlowSource),
       groundSpeedKt: numberOrNull(flightState.groundSpeedKt),
       paxCount: numberOrNull(flightState.paxCount),
     },
@@ -1016,12 +1022,15 @@ function OperationalApp() {
         if (!mounted) return;
 
         if (data.connected && data.flightStatePatch) {
+          const { aircraftConfig: liveAircraftConfig, ...flightStatePatch } = data.flightStatePatch;
+          if (liveAircraftConfig) setAircraftConfig(liveAircraftConfig);
+
           setSimConnectStatus("connected");
           setLiveTelemetry((prev) => ({
             ...prev,
             patch: {
               ...prev.patch,
-              ...removeEmptyValues(data.flightStatePatch),
+              ...removeEmptyValues(flightStatePatch),
             },
             collectorStatus: data.collectorStatus ?? "connected",
             dataAgeMs: data.dataAgeMs ?? null,
@@ -1031,13 +1040,16 @@ function OperationalApp() {
           }));
           // Merge live values into flightState — only overwrite non-null values
           setFlightState((prev) => {
-            const patch = data.flightStatePatch;
+            const patch = flightStatePatch;
             
             const updated = { ...prev };
+            if (patch.aircraft           != null) updated.aircraft           = String(patch.aircraft);
             if (patch.altitudeFt         != null) updated.altitudeFt         = String(patch.altitudeFt);
             if (patch.grossWeightKg      != null) updated.grossWeightKg      = String(Math.round(patch.grossWeightKg));
             if (patch.mach               != null) updated.mach               = String(patch.mach.toFixed(3));
             if (patch.fuelRemainingKg    != null) updated.fuelRemainingKg    = String(Math.round(patch.fuelRemainingKg));
+            if (patch.fuelFlowKgH        != null) updated.fuelFlowKgH        = String(Math.round(patch.fuelFlowKgH));
+            if (patch.fuelFlowSource     != null) updated.fuelFlowSource     = String(patch.fuelFlowSource);
             if (patch.groundSpeedKt      != null) updated.groundSpeedKt      = String(Math.round(patch.groundSpeedKt));
             if (patch.isaDeviationC      != null) updated.isaDeviationC      = String(patch.isaDeviationC.toFixed(1));
             if (patch.windComponentKt    != null) updated.windComponentKt    = String(Math.round(patch.windComponentKt));
