@@ -1,0 +1,547 @@
+/**
+ * Crew platform styles — PWA shell, airline selector, eDesk, themes.
+ */
+
+/* ─── Airline selector ─────────────────────────────────────── */
+
+.airline-selector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+  background: var(--airline-bg, #0a0e14);
+  color: var(--airline-text, #e8ecf0);
+}
+
+.airline-selector__header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.airline-selector__header h1 {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 12px 0 6px;
+  letter-spacing: -0.02em;
+}
+
+.airline-selector__header p {
+  font-size: 13px;
+  color: var(--airline-text-secondary, #a0a0a0);
+}
+
+.airline-selector__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  max-width: 700px;
+  width: 100%;
+  margin-bottom: 30px;
+}
+
+.airline-card {
+  background: var(--airline-surface, #111820);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 24px 20px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, transform 0.15s;
+  color: inherit;
+  font-family: inherit;
+}
+
+.airline-card:hover {
+  border-color: var(--card-primary, #334);
+  transform: translateY(-2px);
+}
+
+.airline-card--selected {
+  border-color: var(--card-accent, #64748b);
+  box-shadow: 0 0 20px var(--card-primary)33;
+}
+
+.airline-card__name {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.airline-card__code {
+  font-size: 11px;
+  color: var(--airline-text-secondary, #a0a0a0);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.airline-card__swatch {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  margin-top: 14px;
+}
+
+.airline-selector__auth {
+  text-align: center;
+  max-width: 400px;
+}
+
+.airline-selector__auth p {
+  font-size: 13px;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.airline-selector__auth small {
+  color: var(--airline-text-secondary);
+}
+
+.airline-auth-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border: 2px solid var(--airline-primary, #334);
+  background: var(--airline-primary, #334);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.airline-auth-btn:hover {
+  opacity: 0.9;
+}
+
+.airline-auth-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.airline-error {
+  margin-top: 16px;
+  color: #ef4444;
+  font-size: 12px;
+}
+
+/* ─── Crew shell (sidebar + main) ─────────────────────────── */
+
+.crew-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--airline-bg, #0a0e14);
+  color: var(--airline-text, #e8ecf0);
+}
+
+.crew-sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--airline-surface, #111820);
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.crew-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.crew-sidebar__airline {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.crew-sidebar__sub {
+  font-size: 10px;
+  color: var(--airline-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.crew-sidebar__tiles {
+  flex: 1;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crew-tile-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--airline-text);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+}
+
+.crew-tile-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.crew-tile-btn--active {
+  background: var(--provider-primary, #334)22;
+  color: var(--provider-accent, #64748b);
+  font-weight: 600;
+}
+
+.crew-tile-btn--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.crew-tile-roadmap {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--airline-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-left: auto;
+}
+
+.crew-tile-arrow {
+  margin-left: auto;
+  opacity: 0.3;
+}
+
+.crew-sidebar__session {
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.crew-sidebar__pilot {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.crew-sidebar__crew-id {
+  font-size: 11px;
+  color: var(--airline-text-secondary);
+  margin-bottom: 10px;
+}
+
+.crew-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: var(--airline-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.crew-main {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+/* ─── eDesk panel ─────────────────────────────────────── */
+
+.edesk-panel {
+  max-width: 700px;
+}
+
+.edesk-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.edesk-header h2 {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.edesk-provider-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--airline-primary, #334)33;
+  color: var(--airline-primary, #334);
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.edesk-identity {
+  background: var(--airline-surface, #111820);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.edesk-id-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+}
+
+.edesk-id-row:last-child {
+  border-bottom: none;
+}
+
+.edesk-id-row span {
+  color: var(--airline-text-secondary);
+}
+
+.edesk-notice {
+  padding: 16px;
+  background: var(--airline-surface, #111820);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--airline-text-secondary);
+  margin-bottom: 16px;
+}
+
+.edesk-flights {
+  margin-top: 16px;
+}
+
+.edesk-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.edesk-section-header h3 {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.edesk-btn-small {
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: var(--airline-text);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.edesk-flight-card {
+  background: var(--airline-surface, #111820);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr 1fr 80px 80px;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  transition: border-color 0.15s;
+}
+
+.edesk-flight-card:hover {
+  border-color: var(--airline-primary, #334);
+}
+
+.edesk-flight-card--selected {
+  border-color: var(--airline-accent, #64748b);
+}
+
+.edesk-flight-number {
+  font-weight: 700;
+}
+
+.edesk-flight-route {
+  color: var(--airline-text-secondary);
+}
+
+.edesk-flight-acft, .edesk-flight-status {
+  font-size: 11px;
+  color: var(--airline-text-secondary);
+  text-align: right;
+}
+
+.edesk-checkin {
+  margin-top: 20px;
+  background: var(--airline-surface, #111820);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.edesk-checkin h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.edesk-checkin-btn {
+  padding: 10px 24px;
+  border: 2px solid var(--airline-primary, #334);
+  background: var(--airline-primary, #334);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.edesk-checkin-result {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.edesk-checkin-result--ok {
+  background: #065f4620;
+  border: 1px solid #065f46;
+}
+
+.edesk-checkin-result--fail {
+  background: #7f1d1d20;
+  border: 1px solid #7f1d1d;
+}
+
+.edesk-error {
+  color: #ef4444;
+}
+
+.edesk-warning {
+  color: #eab308;
+}
+
+.edesk-remote-status {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--airline-text-secondary);
+  font-size: 11px;
+}
+
+/* ─── Setup panel ─────────────────────────────────────── */
+
+.setup-panel {
+  max-width: 500px;
+}
+
+.setup-panel h2 {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 24px;
+}
+
+.setup-section {
+  background: var(--airline-surface, #111820);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.setup-section h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.setup-config-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setup-config-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 6px 0;
+}
+
+.config-ok {
+  color: #22c55e;
+}
+
+.config-missing {
+  color: #ef4444;
+}
+
+.config-note {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--airline-text-secondary);
+}
+
+.setup-readiness {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.setup-readiness--ok {
+  background: #065f4620;
+  color: #22c55e;
+}
+
+.setup-readiness--warn {
+  background: #7f1d1d20;
+  color: #ef4444;
+}
+
+.setup-provider-info {
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+/* ─── Responsive (landscape tablet) ───────────────────── */
+
+@media (max-width: 768px) {
+  .crew-shell {
+    flex-direction: column;
+  }
+  .crew-sidebar {
+    width: 100%;
+    min-width: 100%;
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    overflow-x: auto;
+  }
+  .crew-sidebar__tiles {
+    flex-direction: row;
+    padding: 8px;
+  }
+  .crew-sidebar__brand {
+    border-bottom: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 12px;
+  }
+  .crew-tile-roadmap, .crew-tile-arrow {
+    display: none;
+  }
+}

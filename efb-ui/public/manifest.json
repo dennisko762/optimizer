@@ -1,0 +1,17 @@
+{
+  "name": "Crew Operations Platform",
+  "short_name": "CrewOps",
+  "description": "Airline-independent crew tablet for flight simulation",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0a0e14",
+  "theme_color": "#003366",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

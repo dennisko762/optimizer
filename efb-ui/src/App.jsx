@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import OptimizerShowcase from "./OptimizerShowcase";
+import AirlineSelector from "./crew/AirlineSelector.jsx";
+import CrewShell from "./crew/CrewShell.jsx";
+import { useCrewPlatform } from "./crew/useCrewPlatform.js";
 import {
   Activity,
   AlertTriangle,
@@ -1709,11 +1712,31 @@ function OperationalApp() {
   );
 }
 
+/**
+ * CrewPlatformView — shows airline selector when no provider is chosen,
+ * or the crew shell when a provider is active.
+ */
+function CrewPlatformView({ onOpenOptimizer }) {
+  const { selectedProvider } = useCrewPlatform();
+
+  if (!selectedProvider) {
+    return <AirlineSelector />;
+  }
+
+  return <CrewShell onOpenOptimizer={onOpenOptimizer} />;
+}
+
 export default function App() {
   const [showcaseMode, setShowcaseMode] = useState(() => isShowcaseView());
+  const [view, setView] = useState("crew"); // "crew" | "optimizer" | "showcase"
 
   useEffect(() => {
-    const syncShowcaseMode = () => setShowcaseMode(isShowcaseView());
+    const syncShowcaseMode = () => {
+      if (isShowcaseView()) {
+        setShowcaseMode(true);
+        setView("showcase");
+      }
+    };
 
     syncShowcaseMode();
     window.addEventListener("hashchange", syncShowcaseMode);
@@ -1731,7 +1754,34 @@ export default function App() {
     url.hash = "";
     window.history.replaceState(null, "", url);
     setShowcaseMode(false);
+    setView("crew");
   }
 
-  return showcaseMode ? <OptimizerShowcase onClose={closeShowcase} /> : <OperationalApp />;
+  if (showcaseMode || view === "showcase") {
+    return <OptimizerShowcase onClose={closeShowcase} />;
+  }
+
+  if (view === "optimizer") {
+    return (
+      <>
+        <button
+          className="back-to-crew-btn"
+          onClick={() => setView("crew")}
+          style={{
+            position: "fixed", top: 8, left: 8, zIndex: 9999,
+            padding: "6px 14px", border: "1px solid rgba(255,255,255,0.15)",
+            background: "rgba(0,0,0,0.7)", color: "#ccc", fontSize: 11,
+            fontWeight: 700, cursor: "pointer", borderRadius: 4,
+            fontFamily: "inherit", letterSpacing: "0.04em",
+          }}
+        >
+          ← Crew Platform
+        </button>
+        <OperationalApp />
+      </>
+    );
+  }
+
+  // Crew platform view
+  return <CrewPlatformView onOpenOptimizer={() => setView("optimizer")} />;
 }
