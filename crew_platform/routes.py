@@ -18,6 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from crew_platform.boarding import BoardingState, build_boarding_view_model
 from crew_platform.edesk import validate_checkin, create_checkin
 from crew_platform.providers import (
     get_provider,
@@ -383,3 +384,100 @@ def _session_out(session) -> SessionOut:
         rank=session.pilot.rank if session.pilot else None,
         display_name=session.pilot.display_name if session.pilot else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Boarding
+# ---------------------------------------------------------------------------
+
+
+class BoardingUpdateIn(BaseModel):
+    session_id: str
+    flight_id: str
+    pax_ate: Optional[int] = None
+    bags_loaded: Optional[int] = None
+    pax_planned: Optional[int] = None
+    bags_expected: Optional[int] = None
+    contacts: Optional[list[dict]] = None
+    groups: Optional[list[dict]] = None
+    oew_kg: Optional[float] = None
+    pax_kg_each: Optional[float] = None
+    bag_kg_each: Optional[float] = None
+    cargo_kg: Optional[float] = None
+    fuel_kg: Optional[float] = None
+
+
+@router.get("/boarding")
+async def get_boarding(
+    session_id: str = Query(...),
+    flight_id: str = Query(...),
+):
+    """Get the boarding view model for a flight."""
+    session = _session_store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Unknown session")
+
+    state = session.boarding if session.boarding and session.boarding.flight_id == flight_id else BoardingState(flight_id=flight_id)
+
+    # In a full integration, we'd fetch the flight + OFP here.
+    # For MVP, we pass empty dicts and rely on session state.
+    flight_data = None
+    ofp_data = None
+
+    vm = build_boarding_view_model(flight_data, ofp_data, state)
+    return vm
+
+
+@router.post("/boarding/update")
+async def update_boarding(body: BoardingUpdateIn):
+    """Update boarding state and return the refreshed view model."""
+    session = _session_store.get(body.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Unknown session")
+
+    # Validate non-negative counts
+    for field_name, value in [
+        ("pax_ate", body.pax_ate),
+        ("bags_loaded", body.bags_loaded),
+        ("pax_planned", body.pax_planned),
+        ("bags_expected", body.bags_expected),
+    ]:
+        if value is not None and value < 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{field_name} must not be negative",
+            )
+
+    # Get or create boarding state
+    state = session.boarding
+    if state is None or state.flight_id != body.flight_id:
+        state = BoardingState(flight_id=body.flight_id)
+
+    # Apply updates
+    if body.pax_ate is not None:
+        state.pax_ate = body.pax_ate
+    if body.bags_loaded is not None:
+        state.bags_loaded = body.bags_loaded
+    if body.pax_planned is not None:
+        state.pax_planned = body.pax_planned
+    if body.bags_expected is not None:
+        state.bags_expected = body.bags_expected
+    if body.contacts is not None:
+        state.contacts = body.contacts
+    if body.groups is not None:
+        state.groups = body.groups
+    if body.oew_kg is not None:
+        state.oew_kg = body.oew_kg
+    if body.pax_kg_each is not None:
+        state.pax_kg_each = body.pax_kg_each
+    if body.bag_kg_each is not None:
+        state.bag_kg_each = body.bag_kg_each
+    if body.cargo_kg is not None:
+        state.cargo_kg = body.cargo_kg
+    if body.fuel_kg is not None:
+        state.fuel_kg = body.fuel_kg
+
+    session.boarding = state
+
+    vm = build_boarding_view_model(None, None, state)
+    return vm

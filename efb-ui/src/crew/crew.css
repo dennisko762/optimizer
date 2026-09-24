@@ -545,3 +545,219 @@
     display: none;
   }
 }
+
+/* ──────────────── Boarding Panel ──────────────── */
+
+.boarding-panel {
+  background: var(--airline-surface, #111820);
+  border-radius: 12px;
+  padding: 20px;
+  color: var(--airline-text, #e8ecf0);
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.boarding-loading {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--airline-text-secondary);
+}
+
+.boarding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.boarding-header-flight {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.boarding-flight-number {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--airline-accent, #64748b);
+}
+
+.boarding-route {
+  font-size: 14px;
+  color: var(--airline-text-secondary);
+}
+
+.boarding-header-times {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--airline-text-secondary);
+}
+
+.boarding-close-btn {
+  background: none;
+  border: none;
+  color: var(--airline-text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.boarding-conflicts {
+  margin-bottom: 12px;
+}
+
+.boarding-conflict-badge {
+  background: rgba(220, 38, 38, 0.15);
+  color: #fca5a5;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+/* Progress Rings */
+.boarding-rings {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin: 20px 0;
+}
+
+.boarding-ring {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.boarding-ring-svg {
+  width: 120px;
+  height: 120px;
+}
+
+.boarding-ring-label {
+  font-size: 13px;
+  color: var(--airline-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Inputs */
+.boarding-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.boarding-input-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--airline-text-secondary);
+}
+
+.boarding-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: var(--airline-text);
+  padding: 8px 10px;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.boarding-input:focus {
+  outline: none;
+  border-color: var(--airline-accent);
+}
+
+/* Groups */
+.boarding-groups {
+  margin: 16px 0;
+}
+
+.boarding-groups h4 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--airline-text-secondary);
+  margin-bottom: 8px;
+}
+
+.boarding-group {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--airline-text-secondary);
+}
+
+.boarding-group-active {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--airline-text);
+  border-left: 3px solid var(--airline-accent);
+}
+
+/* Weight Grid */
+.boarding-weights {
+  margin-top: 16px;
+}
+
+.boarding-weights h4 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--airline-text-secondary);
+  margin-bottom: 8px;
+}
+
+.boarding-weight-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.boarding-weight-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.boarding-weight-item span:first-child {
+  color: var(--airline-text-secondary);
+}
+
+.boarding-error {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(220, 38, 38, 0.1);
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+/* Responsive: stack rings vertically on phone */
+@media (max-width: 480px) {
+  .boarding-rings {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .boarding-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .boarding-weight-grid {
+    grid-template-columns: 1fr;
+  }
+}

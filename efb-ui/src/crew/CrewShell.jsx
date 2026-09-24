@@ -32,6 +32,7 @@ import {
   LogOut,
   ChevronRight,
 } from "lucide-react";
+import BoardingPanel from "./BoardingPanel.jsx";
 
 const TILES = [
   { id: "edesk", label: "eDesk", icon: ClipboardCheck, active: true },
@@ -40,7 +41,7 @@ const TILES = [
   { id: "setup", label: "Setup", icon: Settings, active: true },
   // Roadmap — disabled
   { id: "mail", label: "Mail & Notifications", icon: Mail, active: true },
-  { id: "boarding", label: "Boarding", icon: Users, active: false, roadmap: true },
+  { id: "boarding", label: "Boarding", icon: Users, active: true },
   { id: "charts", label: "Charts", icon: Map, active: false, roadmap: true },
   { id: "flysmart", label: "FlySmart / Map", icon: Plane, active: false, roadmap: true },
   { id: "flightlog", label: "Flight Log", icon: FileText, active: false, roadmap: true },
@@ -125,6 +126,12 @@ export default function CrewShell({ onOpenOptimizer }) {
         )}
         {currentTile === "setup" && <SetupPanel />}
         {currentTile === "mail" && <NotificationPanel />}
+        {currentTile === "boarding" && (
+          <BoardingPanel
+            flightId={selectedFlight?.flight_id || "default"}
+            onClose={() => setCurrentTile("edesk")}
+          />
+        )}
       </main>
     </div>
   );

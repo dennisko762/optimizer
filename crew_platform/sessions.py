@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from crew_platform.boarding import BoardingState
 from crew_platform.edesk import CheckInRecord
 from crew_platform.vamsys_pilot_auth import PilotIdentity, PilotTokens
 
@@ -26,6 +27,7 @@ class CrewSession:
     tokens: Optional[PilotTokens] = None
     checkin: Optional[CheckInRecord] = None
     selected_flight_id: Optional[str] = None
+    boarding: Optional[BoardingState] = None
     created_at: float = field(default_factory=time.time)
     last_activity: float = field(default_factory=time.time)
 
