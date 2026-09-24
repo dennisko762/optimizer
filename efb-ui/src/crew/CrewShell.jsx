@@ -39,7 +39,7 @@ const TILES = [
   { id: "optimizer", label: "CI Optimizer", icon: Gauge, active: true },
   { id: "setup", label: "Setup", icon: Settings, active: true },
   // Roadmap — disabled
-  { id: "mail", label: "Mail & Notifications", icon: Mail, active: false, roadmap: true },
+  { id: "mail", label: "Mail & Notifications", icon: Mail, active: true },
   { id: "boarding", label: "Boarding", icon: Users, active: false, roadmap: true },
   { id: "charts", label: "Charts", icon: Map, active: false, roadmap: true },
   { id: "flysmart", label: "FlySmart / Map", icon: Plane, active: false, roadmap: true },
@@ -124,6 +124,7 @@ export default function CrewShell({ onOpenOptimizer }) {
           <EDeskPanel selectedFlight={selectedFlight} onSelectFlight={setSelectedFlight} />
         )}
         {currentTile === "setup" && <SetupPanel />}
+        {currentTile === "mail" && <NotificationPanel />}
       </main>
     </div>
   );
@@ -304,4 +305,88 @@ function ConfigItem({ label, set }) {
       <span className="config-note">{set ? "Set (value hidden)" : "Not configured"}</span>
     </div>
   );
+}
+
+/* ─── Notification Panel ──────────────────────────────────────────── */
+
+function NotificationPanel() {
+  const { session, apiBase } = useCrewPlatform();
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  async function loadNotifications() {
+    if (!session?.session_id) return;
+    setLoading(true);
+    try {
+      const resp = await fetch(
+        `${apiBase}/api/crew/notifications?session_id=${session.session_id}`
+      );
+      if (resp.ok) setNotifications(await resp.json());
+    } catch {
+      // pass
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function clearAll() {
+    if (!session?.session_id) return;
+    try {
+      await fetch(
+        `${apiBase}/api/crew/notifications/clear?session_id=${session.session_id}`,
+        { method: "POST" }
+      );
+      setNotifications([]);
+    } catch {
+      // pass
+    }
+  }
+
+  return (
+    <div className="edesk-panel">
+      <div className="edesk-header">
+        <h2>Mail & Notifications</h2>
+      </div>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+        <button className="edesk-btn-small" onClick={loadNotifications} disabled={loading}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+        {notifications.length > 0 && (
+          <button className="edesk-btn-small" onClick={clearAll}>Clear All</button>
+        )}
+      </div>
+
+      {notifications.length === 0 && !loading && (
+        <div className="edesk-notice">No operations notifications yet. Weather changes for your selected flight will appear here.</div>
+      )}
+
+      {notifications.map((n) => {
+        const icon = n.type === "visibility" ? "👁" : n.type === "wind_direction" ? "🧭" : n.type === "wind_speed" ? "💨" : n.type === "temperature" ? "🌡" : "📋";
+        const relTime = formatRelativeTimestamp(n.timestamp);
+        return (
+          <div key={n.id} className="edesk-flight-card" style={{ marginBottom: "0.5rem" }}>
+            <div className="edesk-flight-number">
+              <span>{icon}</span>{" "}
+              <span>{n.icao}</span>
+              <span className="edesk-flight-status" style={{ marginLeft: "auto" }}>{relTime}</span>
+            </div>
+            <div className="edesk-flight-route">{n.summary}</div>
+            <div className="edesk-flight-acft" style={{ opacity: 0.6 }}>
+              {n.provenance}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Format a unix timestamp (seconds) as a relative time string. */
+function formatRelativeTimestamp(timestamp) {
+  if (typeof timestamp !== "number") return "";
+  const diff = Math.max(0, Date.now() / 1000 - timestamp);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }

@@ -7,6 +7,7 @@ Provides endpoints for:
 - eDesk check-in validation
 - Session management
 - Configuration readiness (without exposing credential values)
+- Operations notifications (weather-change events)
 """
 
 from __future__ import annotations
@@ -325,6 +326,50 @@ async def checkin(body: CheckInRequest):
             "vAMSYS Pilot API write endpoint exists for flight check-in."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Notifications endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/notifications")
+async def get_notifications(session_id: str = Query(...)):
+    """Get the notification feed for a session (newest first)."""
+    session = _session_store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Unknown session")
+
+    from crew_platform.notifications import get_or_create_feed
+
+    feed = get_or_create_feed(session_id)
+    events = feed.get_events()
+    return [
+        {
+            "id": e.id,
+            "type": e.type,
+            "icao": e.icao,
+            "summary": e.summary,
+            "provenance": e.provenance,
+            "timestamp": e.timestamp,
+            "observed": e.observed,
+        }
+        for e in events
+    ]
+
+
+@router.post("/notifications/clear")
+async def clear_notifications(session_id: str = Query(...)):
+    """Clear the notification feed for a session."""
+    session = _session_store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Unknown session")
+
+    from crew_platform.notifications import get_or_create_feed
+
+    feed = get_or_create_feed(session_id)
+    feed.clear()
+    return {"ok": True}
 
 
 def _session_out(session) -> SessionOut:
