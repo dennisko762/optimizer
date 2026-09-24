@@ -50,13 +50,16 @@ const TILES = [
 export default function CrewShell({ onOpenOptimizer }) {
   const { selectedProvider, session, logout } = useCrewPlatform();
   const [currentTile, setCurrentTile] = useState("edesk");
+  const [selectedFlight, setSelectedFlight] = useState(null);
 
   if (!selectedProvider) return null;
 
   function handleTileClick(tile) {
     if (!tile.active) return;
     if (tile.id === "optimizer" || tile.id === "flight") {
-      onOpenOptimizer?.();
+      // Hand the eDesk-selected flight to the optimizer so it opens with
+      // the OFP context (route, number, aircraft, airline) pre-filled.
+      onOpenOptimizer?.(selectedFlight);
       return;
     }
     setCurrentTile(tile.id);
@@ -117,7 +120,9 @@ export default function CrewShell({ onOpenOptimizer }) {
 
       {/* Main content area */}
       <main className="crew-main">
-        {currentTile === "edesk" && <EDeskPanel />}
+        {currentTile === "edesk" && (
+          <EDeskPanel selectedFlight={selectedFlight} onSelectFlight={setSelectedFlight} />
+        )}
         {currentTile === "setup" && <SetupPanel />}
       </main>
     </div>
@@ -126,10 +131,9 @@ export default function CrewShell({ onOpenOptimizer }) {
 
 /* ─── eDesk Panel ─────────────────────────────────────────────────── */
 
-function EDeskPanel() {
+function EDeskPanel({ selectedFlight, onSelectFlight }) {
   const { session, selectedProvider, apiBase } = useCrewPlatform();
   const [flights, setFlights] = useState([]);
-  const [selectedFlight, setSelectedFlight] = useState(null);
   const [checkinResult, setCheckinResult] = useState(null);
   const [loadingFlights, setLoadingFlights] = useState(false);
 
@@ -212,7 +216,7 @@ function EDeskPanel() {
             <div
               key={f.flight_id}
               className={`edesk-flight-card ${selectedFlight?.flight_id === f.flight_id ? "edesk-flight-card--selected" : ""}`}
-              onClick={() => setSelectedFlight(f)}
+              onClick={() => onSelectFlight?.(f)}
             >
               <div className="edesk-flight-number">{f.flight_number || f.callsign || "—"}</div>
               <div className="edesk-flight-route">

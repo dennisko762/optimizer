@@ -5,6 +5,11 @@ import AirlineSelector from "./crew/AirlineSelector.jsx";
 import CrewShell from "./crew/CrewShell.jsx";
 import { useCrewPlatform } from "./crew/useCrewPlatform.js";
 import {
+  flightToOptimizerContext,
+  applyHandoffContext,
+  applyHandoffState,
+} from "./crew/flightHandoff.js";
+import {
   Activity,
   AlertTriangle,
   CheckCircle2,
@@ -891,12 +896,20 @@ function CruiseCiInput({ flightState, updateFlightState, payload, updatePayload,
   );
 }
 
-function OperationalApp() {
+function OperationalApp({ handoffFlight = null }) {
+  const { selectedProvider } = useCrewPlatform();
   const [page, setPage] = useState("data");
   const [selectedAction, setSelectedAction] = useState("NORMAL_RECALC");
   const [aircraftConfig, setAircraftConfig] = useState("");
-  const [flightState, setFlightState] = useState(EMPTY_FLIGHT_STATE);
-  const [flightContext, setFlightContext] = useState(EMPTY_FLIGHT_CONTEXT);
+  // eDesk handoff: when opened from the crew shell with a roster flight,
+  // seed the flight context/state once at mount (the optimizer view mounts
+  // fresh each time it is opened, so the initializer captures the right flight).
+  const [flightState, setFlightState] = useState(() =>
+    applyHandoffState(EMPTY_FLIGHT_STATE, flightToOptimizerContext(handoffFlight, selectedProvider))
+  );
+  const [flightContext, setFlightContext] = useState(() =>
+    applyHandoffContext(EMPTY_FLIGHT_CONTEXT, flightToOptimizerContext(handoffFlight, selectedProvider))
+  );
   const [remainingRouteProfile, setRemainingRouteProfile] = useState(null);
   const [payload, setPayload] = useState(getInitialPayload("NORMAL_RECALC"));
   const [simbriefUsername, setSimbriefUsername] = useState(
@@ -1729,6 +1742,7 @@ function CrewPlatformView({ onOpenOptimizer }) {
 export default function App() {
   const [showcaseMode, setShowcaseMode] = useState(() => isShowcaseView());
   const [view, setView] = useState("crew"); // "crew" | "optimizer" | "showcase"
+  const [handoffFlight, setHandoffFlight] = useState(null);
 
   useEffect(() => {
     const syncShowcaseMode = () => {
@@ -1766,7 +1780,7 @@ export default function App() {
       <>
         <button
           className="back-to-crew-btn"
-          onClick={() => setView("crew")}
+          onClick={() => { setHandoffFlight(null); setView("crew"); }}
           style={{
             position: "fixed", top: 8, left: 8, zIndex: 9999,
             padding: "6px 14px", border: "1px solid rgba(255,255,255,0.15)",
@@ -1777,11 +1791,18 @@ export default function App() {
         >
           ← Crew Platform
         </button>
-        <OperationalApp />
+        <OperationalApp handoffFlight={handoffFlight} />
       </>
     );
   }
 
   // Crew platform view
-  return <CrewPlatformView onOpenOptimizer={() => setView("optimizer")} />;
+  return (
+    <CrewPlatformView
+      onOpenOptimizer={(flight) => {
+        setHandoffFlight(flight);
+        setView("optimizer");
+      }}
+    />
+  );
 }
