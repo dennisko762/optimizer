@@ -30,7 +30,9 @@ import {
   FileText,
   MonitorSmartphone,
   LogOut,
+  LogIn,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import BoardingPanel from "./BoardingPanel.jsx";
 
@@ -49,7 +51,8 @@ const TILES = [
 ];
 
 export default function CrewShell({ onOpenOptimizer }) {
-  const { selectedProvider, session, logout } = useCrewPlatform();
+  const { selectedProvider, session, configReady, loading, error, startAuth, logout } =
+    useCrewPlatform();
   const [currentTile, setCurrentTile] = useState("edesk");
   const [selectedFlight, setSelectedFlight] = useState(null);
 
@@ -57,9 +60,9 @@ export default function CrewShell({ onOpenOptimizer }) {
 
   function handleTileClick(tile) {
     if (!tile.active) return;
-    if (tile.id === "optimizer" || tile.id === "flight") {
-      // Hand the eDesk-selected flight to the optimizer so it opens with
-      // the OFP context (route, number, aircraft, airline) pre-filled.
+    // Only the CI Optimizer tile opens the optimizer. Flight / OFP shows the
+    // pilot's SimBrief OFP for the selected flight — not the optimizer.
+    if (tile.id === "optimizer") {
       onOpenOptimizer?.(selectedFlight);
       return;
     }
@@ -103,26 +106,40 @@ export default function CrewShell({ onOpenOptimizer }) {
           })}
         </div>
 
-        {session?.authenticated && (
+        {session?.authenticated ? (
           <div className="crew-sidebar__session">
             <div className="crew-sidebar__pilot">
               {session.display_name || session.callsign || "Pilot"}
             </div>
             <div className="crew-sidebar__crew-id">
-              {session.crew_id ? `ID: ${session.crew_id}` : ""}
+              {session.crew_id ? `ID: ${session.crew_id}` : session.local ? "Local session" : ""}
             </div>
             <button className="crew-logout-btn" onClick={logout}>
               <LogOut size={14} />
               Sign Out
             </button>
           </div>
-        )}
+        ) : configReady?.ready ? (
+          <div className="crew-sidebar__session">
+            <button className="crew-signin-btn" onClick={startAuth} disabled={loading}>
+              <LogIn size={14} />
+              {loading ? "Connecting…" : "Sign in with vAMSYS"}
+            </button>
+            {error && <div className="crew-sidebar__error">{error}</div>}
+          </div>
+        ) : null}
       </nav>
 
       {/* Main content area */}
       <main className="crew-main">
         {currentTile === "edesk" && (
           <EDeskPanel selectedFlight={selectedFlight} onSelectFlight={setSelectedFlight} />
+        )}
+        {currentTile === "flight" && (
+          <FlightOFPPanel
+            selectedFlight={selectedFlight}
+            onOpenOptimizer={onOpenOptimizer}
+          />
         )}
         {currentTile === "setup" && <SetupPanel />}
         {currentTile === "mail" && <NotificationPanel />}
@@ -144,6 +161,8 @@ function EDeskPanel({ selectedFlight, onSelectFlight }) {
   const [flights, setFlights] = useState([]);
   const [checkinResult, setCheckinResult] = useState(null);
   const [loadingFlights, setLoadingFlights] = useState(false);
+  const [remoteCheckinLoading, setRemoteCheckinLoading] = useState(false);
+  const [remoteCheckinError, setRemoteCheckinError] = useState(null);
   const [manual, setManual] = useState({
     flight_number: "",
     departure_icao: "",
@@ -226,6 +245,32 @@ function EDeskPanel({ selectedFlight, onSelectFlight }) {
 
   function setManualField(field, value) {
     setManual((prev) => ({ ...prev, [field]: value }));
+  }
+
+  // Remote check-in via the documented v3 write path (POST /dispatch-url).
+  // Opens the Phoenix dispatch URL in a new tab; the pilot completes the
+  // dispatch form there. Requires the flights:write scope on the client.
+  async function doRemoteCheckin(flight) {
+    if (!session?.authenticated) return;
+    setRemoteCheckinLoading(true);
+    setRemoteCheckinError(null);
+    try {
+      const resp = await fetch(
+        `${apiBase}/api/crew/session/${session.session_id}/flights/${flight.flight_id}/dispatch`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.dispatch_url) window.open(data.dispatch_url, "_blank", "noopener");
+      } else {
+        const body = await resp.text();
+        setRemoteCheckinError(`Remote check-in failed: ${body}`);
+      }
+    } catch (e) {
+      setRemoteCheckinError(`Remote check-in failed: ${e.message || e}`);
+    } finally {
+      setRemoteCheckinLoading(false);
+    }
   }
 
   return (
@@ -354,9 +399,21 @@ function EDeskPanel({ selectedFlight, onSelectFlight }) {
       {selectedFlight && (
         <div className="edesk-checkin">
           <h3>Check-In: {selectedFlight.flight_number || selectedFlight.callsign}</h3>
-          <button className="edesk-checkin-btn" onClick={() => doCheckin(selectedFlight)}>
-            Validate & Check In
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
+            <button className="edesk-checkin-btn" onClick={() => doCheckin(selectedFlight)}>
+              Validate &amp; Check In
+            </button>
+            {session?.authenticated && !session.local && (
+              <button
+                className="edesk-checkin-btn edesk-checkin-btn--secondary"
+                onClick={() => doRemoteCheckin(selectedFlight)}
+                disabled={remoteCheckinLoading}
+              >
+                {remoteCheckinLoading ? "Opening dispatch…" : "Remote Check-In (Phoenix)"}
+              </button>
+            )}
+          </div>
+          {remoteCheckinError && <div className="edesk-error">{remoteCheckinError}</div>}
 
           {checkinResult && (
             <div className={`edesk-checkin-result ${checkinResult.valid ? "edesk-checkin-result--ok" : "edesk-checkin-result--fail"}`}>
@@ -380,6 +437,139 @@ function EDeskPanel({ selectedFlight, onSelectFlight }) {
   );
 }
 
+/* ─── Flight / OFP Panel ──────────────────────────────────────────── */
+
+/**
+ * Shows the SimBrief OFP for the eDesk-selected flight (not the optimizer).
+ * For vAMSYS sessions the OFP is fetched from the booking's linked
+ * SimbriefOfpData; for local sessions the manually entered flight data is
+ * shown. The CI Optimizer remains reachable via an explicit button.
+ */
+function FlightOFPPanel({ selectedFlight, onOpenOptimizer }) {
+  const { session, apiBase } = useCrewPlatform();
+  const [ofp, setOfp] = useState(null);
+  const [ofpError, setOfpError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const flightId = selectedFlight?.flight_id;
+  const isLocal = Boolean(session?.local);
+
+  async function loadOfp() {
+    if (!session?.authenticated || !flightId || isLocal) return;
+    setLoading(true);
+    setOfpError(null);
+    try {
+      const resp = await fetch(
+        `${apiBase}/api/crew/session/${session.session_id}/flights/${flightId}/ofp`
+      );
+      if (resp.status === 404) {
+        setOfp(null);
+        setOfpError("No SimBrief OFP is linked to this booking yet.");
+      } else if (resp.ok) {
+        setOfp(await resp.json());
+      } else {
+        setOfp(null);
+        setOfpError(await resp.text());
+      }
+    } catch (e) {
+      setOfp(null);
+      setOfpError(String(e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!selectedFlight) {
+    return (
+      <div className="edesk-panel">
+        <div className="edesk-header">
+          <h2>Flight / OFP</h2>
+        </div>
+        <div className="edesk-notice">
+          Select a flight in eDesk to see its SimBrief OFP.
+        </div>
+      </div>
+    );
+  }
+
+  const ofpData = ofp?.ofp_data || {};
+  const general = ofpData.general || {};
+
+  return (
+    <div className="edesk-panel">
+      <div className="edesk-header">
+        <h2>Flight / OFP</h2>
+        <span className="edesk-provider-badge">
+          {selectedFlight.flight_number || selectedFlight.callsign || "—"}
+        </span>
+      </div>
+
+      <div className="ofp-route">
+        <div className="ofp-route__ap">
+          <span className="ofp-route__icao">{selectedFlight.departure_icao || "—"}</span>
+          <span className="ofp-route__label">Departure</span>
+        </div>
+        <div className="ofp-route__leg">
+          <span className="ofp-route__dist">{general.route_distance_nm ? `${general.route_distance_nm} nm` : ""}</span>
+        </div>
+        <div className="ofp-route__ap">
+          <span className="ofp-route__icao">{selectedFlight.arrival_icao || "—"}</span>
+          <span className="ofp-route__label">Arrival</span>
+        </div>
+      </div>
+
+      {!isLocal && session?.authenticated && (
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+          <button className="edesk-btn-small" onClick={loadOfp} disabled={loading}>
+            {loading ? "Loading…" : "Load SimBrief OFP"}
+          </button>
+        </div>
+      )}
+
+      {ofpError && <div className="edesk-notice">{ofpError}</div>}
+
+      <div className="ofp-grid">
+        <OfpItem label="Aircraft" value={general.aircraft_icao || selectedFlight.aircraft_icao} />
+        <OfpItem label="Callsign" value={selectedFlight.callsign} />
+        <OfpItem label="Pax" value={selectedFlight.passengers ?? general.passengers} />
+        <OfpItem label="Cargo" value={selectedFlight.cargo ?? general.cargo} />
+        <OfpItem label="Altitude" value={selectedFlight.altitude ? `${selectedFlight.altitude} ft` : general.altitude} />
+        <OfpItem label="Cost Index" value={selectedFlight.cost_index} />
+        <OfpItem label="Network" value={selectedFlight.network} />
+        <OfpItem label="SIBT" value={general.sibt || selectedFlight.scheduled_departure_utc} />
+        {general.icao_airline && <OfpItem label="OFP Airline" value={general.icao_airline} />}
+        {general.flight_no && <OfpItem label="OFP Flight" value={general.flight_no} />}
+      </div>
+
+      {ofp?.pdf_url && (
+        <a className="ofp-pdf-link" href={ofp.pdf_url} target="_blank" rel="noopener noreferrer">
+          <ExternalLink size={14} /> OFP PDF ({ofp.created_at})
+        </a>
+      )}
+
+      <div className="ofp-actions">
+        <button className="edesk-checkin-btn" onClick={() => onOpenOptimizer?.(selectedFlight)}>
+          Open in CI Optimizer
+        </button>
+        <span className="edesk-notice">
+          {isLocal
+            ? "Local session — showing the manually entered flight data."
+            : "OFP data comes from the SimBrief file linked to the vAMSYS booking."}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function OfpItem({ label, value }) {
+  return (
+    <div className="ofp-item">
+      <span className="ofp-item__label">{label}</span>
+      <strong className="ofp-item__value">{value ?? "—"}</strong>
+    </div>
+  );
+}
+
 /* ─── Setup Panel ─────────────────────────────────────────────────── */
 
 function SetupPanel() {
@@ -395,6 +585,7 @@ function SetupPanel() {
           <div className="setup-config-grid">
             <ConfigItem label="vAMSYS Client ID" set={configReady.vamsys_client_id_set} />
             <ConfigItem label="vAMSYS Redirect URI" set={configReady.vamsys_redirect_uri_set} />
+            <ConfigItem label="Redirect URI is HTTPS (v3 spec)" set={configReady.vamsys_redirect_uri_https} />
             <ConfigItem label="Session Secret" set={configReady.session_secret_set} />
             <div className={`setup-readiness ${configReady.ready ? "setup-readiness--ok" : "setup-readiness--warn"}`}>
               {configReady.ready ? "✓ All configured" : "⚠ Missing configuration"}

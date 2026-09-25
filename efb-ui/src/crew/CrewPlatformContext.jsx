@@ -58,6 +58,37 @@ export function CrewPlatformProvider({ children }) {
       .catch(() => setConfigReady(null));
   }, []);
 
+  // On OAuth return, the app is reloaded at /?crew_session=<id>&provider=<id>.
+  // Re-adopt that session (and the provider, for theme) instead of the
+  // auto-local fallback.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("crew_session");
+    const providerId = params.get("provider");
+    if (!sessionId) return;
+    let cancelled = false;
+    if (providerId) {
+      fetch(`${API_BASE}/api/crew/providers`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((list) => {
+          if (cancelled) return;
+          const provider = list.find((p) => p.id === providerId);
+          if (provider) setSelectedProvider(provider);
+        })
+        .catch(() => {});
+    }
+    fetch(`${API_BASE}/api/crew/session/${sessionId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setSession(data);
+      })
+      .catch(() => {});
+    window.history.replaceState({}, "", "/");
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Apply theme when provider changes (no reload)
   useEffect(() => {
     if (selectedProvider?.theme) {
@@ -117,12 +148,13 @@ export function CrewPlatformProvider({ children }) {
       );
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
-      // Open vAMSYS consent in new tab (no password collected)
-      window.open(data.authorize_url, "_blank", "noopener");
-      setSession({ session_id: data.session_id, authenticated: false });
+      // Same-tab redirect to the vAMSYS consent page. The pilot signs in
+      // there; vAMSYS redirects back to VAMSYS_REDIRECT_URI, where the server
+      // exchanges the code and bounces to /?crew_session=… which the app
+      // re-adopts (no session id survives a page navigation).
+      window.location.assign(data.authorize_url);
     } catch (e) {
       setError(e.message);
-    } finally {
       setLoading(false);
     }
   }, [selectedProvider]);

@@ -6,9 +6,9 @@ The eDesk handles:
 - SimBrief OFP pairing with the selected flight
 - Local check-in validation (airline, callsign, route, date)
 
-IMPORTANT: No remote check-in or write operations are performed.
-Any remote write requires an explicitly documented Pilot API method.
-Unsupported remote writes remain disabled with a precise explanation.
+Remote check-in uses the documented vAMSYS Pilot API v3 write path
+(POST /dispatch-url, Phoenix dispatch) — see the dispatch endpoint in
+crew_platform.routes. Local validation always happens here first.
 """
 
 from __future__ import annotations
@@ -50,13 +50,14 @@ class CheckInRecord:
     provider_id: str
     checked_in_at_utc: str
     validation: CheckInValidationResult
-    # Remote check-in is NOT supported
-    remote_checkin_status: str = "unsupported"
+    # Remote check-in uses the documented v3 write path (POST /dispatch-url)
+    remote_checkin_status: str = "dispatch_url"
     remote_checkin_reason: str = (
-        "Remote check-in is disabled. No explicitly documented "
-        "vAMSYS Pilot API write endpoint exists for flight check-in. "
-        "This operation would require a documented write method to be "
-        "added to the Pilot API specification."
+        "Remote check-in uses the documented vAMSYS Pilot API v3 write path "
+        "(POST /dispatch-url, Phoenix dispatch). The pilot opens the returned "
+        "URL to complete the dispatch form. Local validation still happens "
+        "here in eDesk; the 'Remote Check-In (Phoenix)' button triggers the "
+        "dispatch flow for authenticated vAMSYS sessions."
     )
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import urllib.parse
 
 import pytest
 
@@ -22,6 +23,7 @@ from crew_platform.vamsys_pilot_auth import (
     PilotIdentity,
     PilotTokens,
     VamsysPilotAuth,
+    VamsysPilotClient,
     generate_code_challenge,
     generate_code_verifier,
     generate_state,
@@ -210,18 +212,35 @@ class TestPilotTokens:
 class TestAuthorizeURL:
     def test_build_authorize_url_contains_pkce_params(self):
         auth = VamsysPilotAuth(
-            client_id="my_client",
+            client_id="12345",
             redirect_uri="https://localhost/callback",
-            scopes=["pilot:profile"],
+            scopes=["identity:basic"],
         )
         url, flow = auth.build_authorize_url()
         assert "code_challenge=" in url
         assert "code_challenge_method=S256" in url
         assert "state=" in url
-        assert "client_id=my_client" in url
+        assert "client_id=12345" in url
         assert "response_type=code" in url
         assert flow.code_verifier
         assert flow.state
+
+    def test_default_scopes_are_v3_spec_scopes(self):
+        auth = VamsysPilotAuth(
+            client_id="12345",
+            redirect_uri="https://localhost/callback",
+        )
+        url, _ = auth.build_authorize_url()
+        # v3 spec requires identity:basic at minimum; our default adds
+        # the read scopes the crew platform needs.
+        parsed = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        scopes = parsed["scope"][0].split()
+        assert "identity:basic" in scopes
+        assert "pilot:read" in scopes
+        assert "flights:read" in scopes
+        # v1-era invented scopes must not leak into the request
+        assert "pilot:profile" not in scopes
+        assert "pilot:flights" not in scopes
 
     def test_no_password_in_authorize_url(self):
         auth = VamsysPilotAuth(
@@ -231,6 +250,38 @@ class TestAuthorizeURL:
         url, _ = auth.build_authorize_url()
         assert "password" not in url.lower()
         assert "secret" not in url.lower()
+
+
+class TestV3ClientContract:
+    def test_base_url_is_v3(self):
+        assert VamsysPilotClient.BASE_URL == "https://vamsys.io/api/v3/pilot"
+
+    def test_replace_flight_icaos_from_ofp(self):
+        from crew_platform.vamsys_pilot_auth import _replace_flight_icaos
+
+        flight = PilotFlight(flight_id="1", callsign="DLH2024")
+        ofp = {
+            "ofp_data": {
+                "departure": {"icao": "EDDF"},
+                "arrival": {"icao": "KJFK"},
+                "aircraft": {"icao": "B77W"},
+            },
+            "pdf_url": None,
+            "created_at": "2026-09-25T08:00:00Z",
+        }
+        out = _replace_flight_icaos(flight, ofp)
+        assert out.departure_icao == "EDDF"
+        assert out.arrival_icao == "KJFK"
+        assert out.aircraft_icao == "B77W"
+        assert out.has_ofp is True
+
+    def test_replace_flight_icaos_tolerates_missing_ofp(self):
+        from crew_platform.vamsys_pilot_auth import _replace_flight_icaos
+
+        flight = PilotFlight(flight_id="1", callsign="DLH2024")
+        out = _replace_flight_icaos(flight, {})
+        assert out.departure_icao is None
+        assert out.has_ofp is True
 
 
 # ======================================================================
@@ -361,8 +412,8 @@ class TestCheckInValidation:
         assert record.flight_id == "100"
         assert record.pilot_id == "42"
         assert record.provider_id == "lhvirtual"
-        assert record.remote_checkin_status == "unsupported"
-        assert "disabled" in record.remote_checkin_reason.lower()
+        assert record.remote_checkin_status == "dispatch_url"
+        assert "dispatch-url" in record.remote_checkin_reason.lower()
 
     def test_create_checkin_with_errors_raises(self, pilot, flight):
         validation = CheckInValidationResult(
@@ -378,8 +429,13 @@ class TestCheckInValidation:
             )
 
 
-class TestRemoteCheckinDisabled:
-    """Verify that unsupported remote writes remain disabled."""
+class TestRemoteCheckinPath:
+    """Remote check-in uses the documented vAMSYS Pilot API v3 write path.
+
+    v3 documents POST /dispatch-url (Phoenix dispatch) — the pilot opens the
+    returned URL to complete the dispatch form. Local validation still
+    happens in eDesk; the remote write is the dispatch flow.
+    """
 
     def test_checkin_record_remote_status(self):
         record = CheckInRecord(
@@ -394,13 +450,15 @@ class TestRemoteCheckinDisabled:
             checked_in_at_utc="2025-01-01T00:00:00+00:00",
             validation=CheckInValidationResult(valid=True),
         )
-        assert record.remote_checkin_status == "unsupported"
-        assert "no explicitly documented" in record.remote_checkin_reason.lower()
+        assert record.remote_checkin_status == "dispatch_url"
+        assert "dispatch-url" in record.remote_checkin_reason.lower()
 
-    def test_no_provider_supports_remote_checkin(self):
+    def test_no_provider_has_provider_level_remote_checkin(self):
+        """Provider-level flag stays False: dispatch-url is a vAMSYS
+        platform endpoint, not a per-provider integration."""
         for p in list_providers():
             assert p.supports_remote_checkin is False, (
-                f"Provider {p.id} should not support remote check-in"
+                f"Provider {p.id} should not claim provider-level remote check-in"
             )
 
 

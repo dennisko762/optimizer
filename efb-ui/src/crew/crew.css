@@ -252,6 +252,135 @@
   font-family: inherit;
 }
 
+.crew-signin-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 1px solid var(--airline-accent, #60a5fa);
+  background: var(--airline-accent, #60a5fa);
+  color: #0a0e14;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+  font-family: inherit;
+}
+
+.crew-signin-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.crew-sidebar__error {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #f87171;
+}
+
+/* ─── Flight / OFP panel ──────────────────────────────── */
+
+.ofp-route {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: var(--airline-surface, #111820);
+  margin-bottom: 16px;
+}
+
+.ofp-route__ap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ofp-route__icao {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.ofp-route__label {
+  font-size: 10px;
+  color: var(--airline-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.ofp-route__leg {
+  flex: 1;
+  text-align: center;
+  color: var(--airline-text-secondary);
+  font-size: 12px;
+}
+
+.ofp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.ofp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ofp-item__label {
+  font-size: 10px;
+  color: var(--airline-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ofp-item__value {
+  font-size: 14px;
+}
+
+.ofp-pdf-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--airline-accent, #60a5fa);
+  font-size: 13px;
+  text-decoration: none;
+  margin-bottom: 12px;
+}
+
+.ofp-pdf-link:hover {
+  text-decoration: underline;
+}
+
+.ofp-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.edesk-checkin-btn--secondary {
+  background: transparent;
+  color: var(--airline-text, #e8ecf0);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.edesk-checkin-btn--secondary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .crew-main {
   flex: 1;
   padding: 24px;

@@ -15,10 +15,39 @@ from optimizer.api.optimize_routes import router as optimize_router
 from optimizer.api.simbrief_routes import router as simbrief_router
 from optimizer.api.trajectory_routes import router as trajectory_router
 
-from crew_platform.routes import router as crew_router
+from crew_platform.routes import router as crew_router, callback_router as crew_callback_router
+
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from a .env file into os.environ (stdlib only).
+
+    Used for VAMSYS_PILOT_CLIENT_ID / VAMSYS_REDIRECT_URI /
+    CREW_PLATFORM_SESSION_SECRET. Existing environment variables always
+    win; values are never logged. The file is gitignored.
+    """
+    for candidate in (
+        Path(__file__).parent.parent.parent / ".env",
+        Path(os.environ.get("EFB_ENV_FILE", "")) if os.environ.get("EFB_ENV_FILE") else None,
+    ):
+        if not candidate or not candidate.is_file():
+            continue
+        try:
+            for line in candidate.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        except OSError:
+            pass
 
 
 def create_app() -> FastAPI:
+    _load_dotenv()
+
     app = FastAPI(
         title="Dynamic CI Assistant API",
         version="0.1.0",
@@ -44,6 +73,9 @@ def create_app() -> FastAPI:
     app.include_router(simconnect_router)
     app.include_router(trajectory_router)
     app.include_router(crew_router)
+    # Browser OAuth callback — must be registered before the catch-all
+    # static-file mount below so the redirect URL is not swallowed.
+    app.include_router(crew_callback_router)
 
     @app.on_event("startup")
     async def startup_telemetry() -> None:
