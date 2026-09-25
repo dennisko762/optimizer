@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crew EFB Platform — Privacy Policy</title>
+  <style>
+    :root {
+      --bg: #0e1420; --card: #161f30; --text: #e8edf5; --muted: #93a0b4;
+      --accent: #4d8dff; --border: #24304a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 48px 24px 80px; }
+    h1 { font-size: 1.7rem; margin: 0 0 4px; }
+    .updated { color: var(--muted); font-size: 0.9rem; margin-bottom: 32px; }
+    h2 { font-size: 1.15rem; margin-top: 36px; color: var(--accent); }
+    p, li { color: #c4cede; font-size: 0.98rem; }
+    ul { padding-left: 22px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 20px; margin: 18px 0;
+    }
+    code { background: #0a0f18; border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-size: 0.88em; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Crew EFB Platform — Privacy Policy</h1>
+    <div class="updated">Last updated: 25 September 2026 · Applies to the "Crew EFB Platform" crew application</div>
+
+    <p>
+      This policy describes how the <strong>Crew EFB Platform</strong> ("the App") handles personal
+      data when a pilot signs in via the vAMSYS Pilot API
+      (<a href="https://vamsys.io/docs/pilot">vAMSYS Pilot API</a>, OAuth 2.0 Authorization Code + PKCE).
+    </p>
+
+    <h2>1. Data we process</h2>
+    <p>
+      When you authorise the App through vAMSYS, we receive — scoped strictly to the permissions you
+      consent to:
+    </p>
+    <ul>
+      <li><strong>Identity</strong> (<code>identity:basic</code>): your name and email address.</li>
+      <li><strong>Pilot profile</strong> (<code>pilot:read</code>): your pilot profile, rank, statistics and badges within your Virtual Airline.</li>
+      <li><strong>Flights</strong> (<code>flights:read</code>): your bookings/roster and the SimBrief OFP linked to each booking.</li>
+    </ul>
+    <p>
+      We additionally store flight plan details you enter in the App (route, weight, fuel, check-in data)
+      locally on your device to support local check-in, boarding and CI/Mach optimization.
+    </p>
+
+    <h2>2. What we use it for</h2>
+    <ul>
+      <li>Showing you your pilot identity, rank and current flight roster in the App.</li>
+      <li>Displaying the operational flight plan (OFP) for your booked flights.</li>
+      <li>Local check-in, boarding and cost-index/Mach planning for the selected flight.</li>
+      <li>(Only if you grant <code>flights:write</code>) opening your vAMSYS dispatch / remote check-in link.</li>
+    </ul>
+
+    <h2>3. What we do NOT do</h2>
+    <div class="card">
+      <ul>
+        <li>We do <strong>not</strong> collect your vAMSYS username or password — sign-in happens on vAMSYS's own consent page.</li>
+        <li>We do <strong>not</strong> share, sell or transmit your data to any third party (vAMSYS itself excepted, as the data source).</li>
+        <li>We do <strong>not</strong> store vAMSYS tokens longer than needed for your session; tokens are refreshed automatically and can be revoked at any time from your vAMSYS account.</li>
+        <li>We do <strong>not</strong> log or display sensitive credential material.</li>
+      </ul>
+    </div>
+
+    <h2>4. Storage</h2>
+    <p>
+      Auth tokens and flight data are held in the App's local, in-memory session store on the machine
+      running the App. Nothing is uploaded to a public server or third-party analytics.
+    </p>
+
+    <h2>5. Your rights &amp; revocation</h2>
+    <p>
+      You may revoke the App's access to your data at any time in vAMSYS (your pilot settings), or ask
+      your Virtual Airline to deactivate the App's OAuth client. After revocation the App no longer
+      receives your data.
+    </p>
+
+    <h2>6. Contact</h2>
+    <p>
+      For privacy questions about this App, contact the App's operator (the pilot who registered it
+      with your Virtual Airline). For questions about how vAMSYS handles your data, see
+      <a href="https://vamsys.co.uk/legal/privacy-policy">vAMSYS's privacy policy</a>.
+    </p>
+
+    <p class="updated">
+      This App is a non-commercial hobby project and is not affiliated with vAMSYS, Lufthansa, Etihad
+      or Emirates.
+    </p>
+  </div>
+</body>
+</html>

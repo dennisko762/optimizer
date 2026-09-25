@@ -89,13 +89,24 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Serve the built Vite frontend if dist/ exists.
-    # Must be mounted last — catches all unmatched routes.
-    # sys._MEIPASS is set by PyInstaller when running as a frozen exe.
+    # Dist path (built Vite frontend) — shared by /privacy and the catch-all mount.
     if getattr(sys, "frozen", False):
         _dist = Path(sys._MEIPASS) / "efb-ui" / "dist"
     else:
         _dist = Path(__file__).parent.parent.parent / "efb-ui" / "dist"
+
+    # /privacy — public privacy policy required by vAMSYS for Pilot API
+    # clients. Served explicitly (StaticFiles would only serve /privacy.html).
+    from fastapi.responses import FileResponse
+
+    if _dist.exists():
+
+        @app.get("/privacy", include_in_schema=False)
+        async def privacy_page():
+            return FileResponse(str(_dist / "privacy.html"))
+
+    # Serve the built Vite frontend if dist/ exists.
+    # Must be mounted last — catches all unmatched routes.
     if _dist.exists():
         app.mount("/", StaticFiles(directory=_dist, html=True), name="ui")
 
