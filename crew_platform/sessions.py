@@ -28,11 +28,14 @@ class CrewSession:
     checkin: Optional[CheckInRecord] = None
     selected_flight_id: Optional[str] = None
     boarding: Optional[BoardingState] = None
+    local: bool = False  # local (offline) session: no vAMSYS OAuth
     created_at: float = field(default_factory=time.time)
     last_activity: float = field(default_factory=time.time)
 
     @property
     def is_authenticated(self) -> bool:
+        if self.local:
+            return True
         return self.tokens is not None and not self.tokens.expired
 
     def touch(self) -> None:

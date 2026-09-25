@@ -64,11 +64,18 @@ class SessionOut(BaseModel):
     session_id: str
     provider_id: str
     authenticated: bool
+    local: bool = False
     pilot_id: Optional[str] = None
     crew_id: Optional[str] = None
     callsign: Optional[str] = None
     rank: Optional[str] = None
     display_name: Optional[str] = None
+
+
+class LocalSessionIn(BaseModel):
+    provider_id: str
+    display_name: Optional[str] = None
+    pilot_id: Optional[str] = None
 
 
 class AuthStartOut(BaseModel):
@@ -85,6 +92,7 @@ class AuthCallbackIn(BaseModel):
 class CheckInRequest(BaseModel):
     session_id: str
     flight_id: str
+    flight_number: Optional[str] = None
     simbrief_departure: Optional[str] = None
     simbrief_arrival: Optional[str] = None
     simbrief_callsign: Optional[str] = None
@@ -244,6 +252,12 @@ async def get_flights(session_id: str):
     session = _session_store.get(session_id)
     if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
+    if session.local:
+        raise HTTPException(
+            status_code=400,
+            detail="Local sessions have no vAMSYS flight list. "
+                   "Use the check-in form to enter flight data manually.",
+        )
     if not session.is_authenticated:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -286,7 +300,7 @@ async def checkin(body: CheckInRequest):
     # For MVP, construct a PilotFlight from the request
     flight = PilotFlight(
         flight_id=body.flight_id,
-        flight_number=None,
+        flight_number=body.flight_number or body.simbrief_callsign,
         departure_icao=body.simbrief_departure,
         arrival_icao=body.simbrief_arrival,
         aircraft_icao=body.simbrief_aircraft,
@@ -378,12 +392,35 @@ def _session_out(session) -> SessionOut:
         session_id=session.session_id,
         provider_id=session.provider_id,
         authenticated=session.is_authenticated,
+        local=session.local,
         pilot_id=session.pilot.pilot_id if session.pilot else None,
         crew_id=session.pilot.crew_id if session.pilot else None,
         callsign=session.pilot.callsign if session.pilot else None,
         rank=session.pilot.rank if session.pilot else None,
         display_name=session.pilot.display_name if session.pilot else None,
     )
+
+
+@router.post("/session/local", response_model=SessionOut)
+async def create_local_session(body: LocalSessionIn):
+    """Create an offline local session without vAMSYS OAuth.
+
+    Used when no vAMSYS pilot client is configured: the crew works with
+    manually entered / SimBrief flight data. Check-in is local-only;
+    the flight list endpoint is unavailable.
+    """
+    try:
+        get_provider(body.provider_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    session = _session_store.create(body.provider_id)
+    session.local = True
+    session.pilot = PilotIdentity(
+        pilot_id=body.pilot_id or f"local-{body.provider_id}",
+        display_name=body.display_name or "Local Pilot",
+    )
+    return _session_out(session)
 
 
 # ---------------------------------------------------------------------------
@@ -419,9 +456,23 @@ async def get_boarding(
 
     state = session.boarding if session.boarding and session.boarding.flight_id == flight_id else BoardingState(flight_id=flight_id)
 
-    # In a full integration, we'd fetch the flight + OFP here.
-    # For MVP, we pass empty dicts and rely on session state.
+    # Seed the header from the session's check-in record when it matches
+    # the requested flight. OFP data (pax/bag/fuel) requires the live
+    # SimBrief integration and is left to crew entry for now — see
+    # crew_platform/boarding.py (no fabricated OFP values).
     flight_data = None
+    if session.checkin and session.checkin.flight_id == flight_id:
+        ci = session.checkin
+        flight_data = {
+            "flight_number": ci.flight_number or ci.callsign or "",
+            "departure_icao": ci.departure_icao or "",
+            "arrival_icao": ci.arrival_icao or "",
+            "aircraft_icao": ci.aircraft_icao or "",
+            "callsign": ci.callsign or "",
+            "sibt": "",
+            "sobt": "",
+            "block_time": "",
+        }
     ofp_data = None
 
     vm = build_boarding_view_model(flight_data, ofp_data, state)

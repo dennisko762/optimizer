@@ -319,6 +319,53 @@
   margin-bottom: 16px;
 }
 
+.edesk-manual {
+  margin-top: 8px;
+  padding: 16px;
+  background: var(--airline-surface, #111820);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.edesk-manual h3 {
+  font-size: 14px;
+  color: var(--airline-text);
+  margin-bottom: 12px;
+}
+
+.edesk-manual-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.edesk-manual-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--airline-text-secondary);
+}
+
+.edesk-manual-grid input {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--airline-surface, #111820);
+  background: var(--airline-bg, #0a0e14);
+  color: var(--airline-text);
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+.edesk-manual-grid input:focus {
+  outline: 2px solid var(--airline-accent);
+}
+
+.edesk-manual .edesk-checkin-btn {
+  width: 100%;
+}
+
 .edesk-flights {
   margin-top: 16px;
 }
@@ -561,6 +608,14 @@
   text-align: center;
   padding: 40px 0;
   color: var(--airline-text-secondary);
+}
+
+.boarding-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--airline-text-secondary);
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .boarding-header {

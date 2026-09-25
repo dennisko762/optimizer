@@ -231,6 +231,123 @@ class TestBoardingRoutes:
         assert data2["pax_ring"]["current"] == 118
         _session_store.remove(session.session_id)
 
+    def test_local_session_created(self, app):
+        """A local session is created without vAMSYS and is authenticated."""
+        from httpx import AsyncClient, ASGITransport
+        from crew_platform.routes import _session_store
+
+        async def _do():
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                return await c.post(
+                    "/api/crew/session/local",
+                    json={"provider_id": "lhvirtual", "display_name": "Captain Test"},
+                )
+
+        resp = _run(_do())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_id"]
+        assert data["authenticated"] is True
+        assert data["local"] is True
+        assert data["display_name"] == "Captain Test"
+        _session_store.remove(data["session_id"])
+
+    def test_local_checkin_flows_to_boarding_header(self, app):
+        """Local check-in data becomes the boarding flight header."""
+        from httpx import AsyncClient, ASGITransport
+        from crew_platform.routes import _session_store
+
+        async def _do():
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                s = (await c.post(
+                    "/api/crew/session/local",
+                    json={"provider_id": "lhvirtual"},
+                )).json()
+                ci = await c.post(
+                    "/api/crew/checkin",
+                    json={
+                        "session_id": s["session_id"],
+                        "flight_id": "EDDE-EDDF-DLH2024",
+                        "flight_number": "LH2024",
+                        "simbrief_departure": "EDDE",
+                        "simbrief_arrival": "EDDF",
+                        "simbrief_callsign": "DLH2024",
+                        "simbrief_aircraft": "A345",
+                    },
+                )
+                b = await c.get(
+                    "/api/crew/boarding",
+                    params={
+                        "session_id": s["session_id"],
+                        "flight_id": "EDDE-EDDF-DLH2024",
+                    },
+                )
+                return s, ci, b
+
+        s, ci, b = _run(_do())
+        ci_data = ci.json()
+        assert ci_data["valid"] is True, ci_data["errors"]
+        assert ci_data["checked_in"] is True
+        b_data = b.json()
+        assert b_data["header"]["flight_number"] == "LH2024"
+        assert b_data["header"]["route"] == "EDDE → EDDF"
+        _session_store.remove(s["session_id"])
+
+    def test_flights_rejected_for_local_session(self, app):
+        """Local sessions have no vAMSYS flight list."""
+        from httpx import AsyncClient, ASGITransport
+        from crew_platform.routes import _session_store
+
+        session = _session_store.create(provider_id="lhvirtual")
+        session.local = True
+
+        async def _do():
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                return await c.get(f"/api/crew/session/{session.session_id}/flights")
+
+        resp = _run(_do())
+        assert resp.status_code == 400
+        _session_store.remove(session.session_id)
+
+    def test_get_with_checkin_populates_header(self, app):
+        """AC: header shows flight number + route from the session's check-in."""
+        from httpx import AsyncClient, ASGITransport
+        from crew_platform.routes import _session_store
+        from crew_platform.edesk import CheckInRecord, CheckInValidationResult
+
+        session = _session_store.create(provider_id="lhvirtual")
+        session.checkin = CheckInRecord(
+            flight_id="EDDF-LEPA-20260925",
+            flight_number="LH2024",
+            departure_icao="EDDF",
+            arrival_icao="LEPA",
+            aircraft_icao="A345",
+            callsign="DLH2024",
+            pilot_id="P1",
+            provider_id="lhvirtual",
+            checked_in_at_utc="2026-09-25T08:00:00Z",
+            validation=CheckInValidationResult(valid=True),
+        )
+
+        async def _do():
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                return await c.get(
+                    "/api/crew/boarding",
+                    params={"session_id": session.session_id,
+                            "flight_id": "EDDF-LEPA-20260925"},
+                )
+
+        resp = _run(_do())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["header"]["flight_number"] == "LH2024"
+        assert data["header"]["route"] == "EDDF → LEPA"
+        _session_store.remove(session.session_id)
+
     def test_negative_count_rejected_422(self, app):
         from httpx import AsyncClient, ASGITransport
         from crew_platform.routes import _session_store

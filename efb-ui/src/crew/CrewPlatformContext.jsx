@@ -79,6 +79,33 @@ export function CrewPlatformProvider({ children }) {
     [providers]
   );
 
+  // When vAMSYS is not configured, automatically create a local (offline)
+  // session for the selected provider so boarding / local check-in works
+  // without OAuth. When vAMSYS IS configured, keep the OAuth flow.
+  useEffect(() => {
+    if (!selectedProvider) return;
+    if (configReady?.ready) return; // vAMSYS available → OAuth flow
+    let cancelled = false;
+    fetch(`${API_BASE}/api/crew/session/local`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider_id: selectedProvider.id,
+        display_name: "Local Pilot",
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) {
+          setSession({ ...data, authenticated: true });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProvider, configReady?.ready]);
+
   const startAuth = useCallback(async () => {
     if (!selectedProvider) return;
     setLoading(true);

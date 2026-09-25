@@ -144,6 +144,13 @@ function EDeskPanel({ selectedFlight, onSelectFlight }) {
   const [flights, setFlights] = useState([]);
   const [checkinResult, setCheckinResult] = useState(null);
   const [loadingFlights, setLoadingFlights] = useState(false);
+  const [manual, setManual] = useState({
+    flight_number: "",
+    departure_icao: "",
+    arrival_icao: "",
+    aircraft_icao: "",
+    callsign: "",
+  });
 
   async function loadFlights() {
     if (!session?.authenticated) return;
@@ -179,6 +186,48 @@ function EDeskPanel({ selectedFlight, onSelectFlight }) {
     }
   }
 
+  async function doManualCheckin() {
+    if (!session?.authenticated) return;
+    const flightId =
+      `${(manual.departure_icao || "").toUpperCase()}`.trim() +
+      "-" +
+      `${(manual.arrival_icao || "").toUpperCase()}`.trim() +
+      "-" +
+      (manual.callsign || manual.flight_number || "LOCAL").trim();
+    const flight = {
+      flight_id: flightId,
+      flight_number: manual.flight_number || null,
+      departure_icao: manual.departure_icao,
+      arrival_icao: manual.arrival_icao,
+      aircraft_icao: manual.aircraft_icao,
+      callsign: manual.callsign,
+    };
+    onSelectFlight(flight);
+    setCheckinResult(null);
+    try {
+      const resp = await fetch(`${apiBase}/api/crew/checkin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: session.session_id,
+          flight_id: flightId,
+          flight_number: flight.flight_number,
+          simbrief_departure: flight.departure_icao,
+          simbrief_arrival: flight.arrival_icao,
+          simbrief_callsign: flight.callsign,
+          simbrief_aircraft: flight.aircraft_icao,
+        }),
+      });
+      if (resp.ok) setCheckinResult(await resp.json());
+    } catch {
+      // pass
+    }
+  }
+
+  function setManualField(field, value) {
+    setManual((prev) => ({ ...prev, [field]: value }));
+  }
+
   return (
     <div className="edesk-panel">
       <div className="edesk-header">
@@ -210,8 +259,72 @@ function EDeskPanel({ selectedFlight, onSelectFlight }) {
         </div>
       )}
 
+      {/* Local mode: manual flight entry (no vAMSYS flight list) */}
+      {session?.authenticated && session.local && (
+        <div className="edesk-manual">
+          <h3>Local Mode — Enter Flight</h3>
+          <div className="edesk-manual-grid">
+            <label>
+              <span>Flight No.</span>
+              <input
+                value={manual.flight_number}
+                onChange={(e) => setManualField("flight_number", e.target.value)}
+                placeholder="LH2024"
+              />
+            </label>
+            <label>
+              <span>Dep ICAO</span>
+              <input
+                value={manual.departure_icao}
+                onChange={(e) => setManualField("departure_icao", e.target.value.toUpperCase())}
+                placeholder="EDDF"
+                maxLength={4}
+              />
+            </label>
+            <label>
+              <span>Arr ICAO</span>
+              <input
+                value={manual.arrival_icao}
+                onChange={(e) => setManualField("arrival_icao", e.target.value.toUpperCase())}
+                placeholder="LEPA"
+                maxLength={4}
+              />
+            </label>
+            <label>
+              <span>Aircraft</span>
+              <input
+                value={manual.aircraft_icao}
+                onChange={(e) => setManualField("aircraft_icao", e.target.value.toUpperCase())}
+                placeholder="A345"
+              />
+            </label>
+            <label>
+              <span>Callsign</span>
+              <input
+                value={manual.callsign}
+                onChange={(e) => setManualField("callsign", e.target.value.toUpperCase())}
+                placeholder="DLH2024"
+              />
+            </label>
+          </div>
+          <button
+            className="edesk-checkin-btn"
+            onClick={doManualCheckin}
+            disabled={
+              !manual.departure_icao || !manual.arrival_icao
+            }
+          >
+            Validate &amp; Check In (Local)
+          </button>
+          <p className="edesk-notice">
+            vAMSYS pilot login is not configured — flights are entered manually.
+            Boarding and weights work with this session.
+          </p>
+        </div>
+      )}
+
       {/* Flights */}
-      {session?.authenticated && (
+      {session?.authenticated && !session.local && (
         <div className="edesk-flights">
           <div className="edesk-section-header">
             <h3>Flights</h3>

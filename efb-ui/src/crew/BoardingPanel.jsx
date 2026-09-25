@@ -72,7 +72,7 @@ function ProgressRing({ label, current, planned, percent, color }) {
 /**
  * Editable number input for boarding fields.
  */
-function BoardingInput({ label, value, onChange, min = 0 }) {
+function BoardingInput({ label, value, onChange, min = 0, step = 1 }) {
   return (
     <label className="boarding-input-label">
       <span>{label}</span>
@@ -80,8 +80,9 @@ function BoardingInput({ label, value, onChange, min = 0 }) {
         type="number"
         className="boarding-input"
         value={value}
-        onChange={(e) => onChange(Math.max(min, parseInt(e.target.value) || 0))}
+        onChange={(e) => onChange(Math.max(min, parseFloat(e.target.value) || 0))}
         min={min}
+        step={step}
       />
     </label>
   );
@@ -91,12 +92,17 @@ export default function BoardingPanel({ flightId, onClose }) {
   const { session, apiBase } = useCrewPlatform();
   const [state, setState] = useState({
     paxAte: 0,
-    paxPlanned: 142,
+    paxPlanned: 0,
     bagsLoaded: 0,
-    bagsExpected: 120,
+    bagsExpected: 0,
     contacts: [],
     updates: [],
     groups: [],
+    oewKg: 0,
+    paxKgEach: 84,
+    bagKgEach: 15,
+    cargoKg: 0,
+    fuelKg: 0,
   });
   const [loading] = useState(false);
   const [error, setError] = useState(null);
@@ -114,6 +120,7 @@ export default function BoardingPanel({ flightId, onClose }) {
       })
       .then((data) => {
         if (cancelled) return;
+        const w = data.weights ?? {};
         setState((prev) => ({
           ...prev,
           paxAte: data.pax_ring?.current ?? 0,
@@ -124,8 +131,13 @@ export default function BoardingPanel({ flightId, onClose }) {
           updates: data.updates ?? [],
           groups: data.groups ?? [],
           header: data.header ?? {},
-          weights: data.weights ?? {},
+          weights: w,
           conflicts: data.conflicts ?? [],
+          oewKg: w.oew_kg ?? prev.oewKg,
+          paxKgEach: w.pax_kg_each ?? prev.paxKgEach,
+          bagKgEach: w.bag_kg_each ?? prev.bagKgEach,
+          cargoKg: w.cargo_kg ?? prev.cargoKg,
+          fuelKg: w.fuel_kg ?? prev.fuelKg,
         }));
       })
       .catch((e) => { if (!cancelled) setError(e.message); });
@@ -146,6 +158,11 @@ export default function BoardingPanel({ flightId, onClose }) {
           pax_planned: newState.paxPlanned,
           bags_loaded: newState.bagsLoaded,
           bags_expected: newState.bagsExpected,
+          oew_kg: newState.oewKg,
+          pax_kg_each: newState.paxKgEach,
+          bag_kg_each: newState.bagKgEach,
+          cargo_kg: newState.cargoKg,
+          fuel_kg: newState.fuelKg,
         }),
       })
         .then((r) => r.json())
@@ -172,6 +189,20 @@ export default function BoardingPanel({ flightId, onClose }) {
     return (
       <div className="boarding-panel">
         <div className="boarding-loading">Loading boarding data…</div>
+      </div>
+    );
+  }
+
+  if (!session?.session_id) {
+    return (
+      <div className="boarding-panel">
+        <div className="boarding-empty">
+          <p>No crew session active.</p>
+          <p>
+            Sign in through vAMSYS from the eDesk tile to load your flight,
+            then enter boarding actuals here.
+          </p>
+        </div>
       </div>
     );
   }
@@ -273,39 +304,45 @@ export default function BoardingPanel({ flightId, onClose }) {
 
       {/* Weight & Fuel Grid */}
       <div className="boarding-weights">
-        <h4>Weight &amp; Fuel</h4>
+        <h4>Weight &amp; Fuel (kg)</h4>
         <div className="boarding-weight-grid">
-          <div className="boarding-weight-item">
-            <span>Pax</span>
-            <span>{state.paxAte}</span>
-          </div>
-          <div className="boarding-weight-item">
-            <span>Pax Weight</span>
-            <span>{weights.pax_kg ?? weights.paxKg ?? 0} kg</span>
-          </div>
-          <div className="boarding-weight-item">
-            <span>Bags</span>
-            <span>{state.bagsLoaded}</span>
-          </div>
-          <div className="boarding-weight-item">
-            <span>Bag Weight</span>
-            <span>{weights.bag_kg ?? weights.bagKg ?? 0} kg</span>
-          </div>
-          <div className="boarding-weight-item">
-            <span>Cargo</span>
-            <span>{weights.cargo_kg ?? weights.cargoKg ?? 0} kg</span>
-          </div>
-          <div className="boarding-weight-item">
+          <BoardingInput
+            label="OEW (empty weight)"
+            value={state.oewKg}
+            step={50}
+            onChange={(v) => pushUpdate({ oewKg: v })}
+          />
+          <BoardingInput
+            label="Pax Weight (each)"
+            value={state.paxKgEach}
+            step={1}
+            onChange={(v) => pushUpdate({ paxKgEach: v })}
+          />
+          <BoardingInput
+            label="Bag Weight (each)"
+            value={state.bagKgEach}
+            step={1}
+            onChange={(v) => pushUpdate({ bagKgEach: v })}
+          />
+          <BoardingInput
+            label="Cargo"
+            value={state.cargoKg}
+            step={50}
+            onChange={(v) => pushUpdate({ cargoKg: v })}
+          />
+          <BoardingInput
+            label="Fuel"
+            value={state.fuelKg}
+            step={50}
+            onChange={(v) => pushUpdate({ fuelKg: v })}
+          />
+          <div className="boarding-weight-item boarding-weight-item--derived">
             <span>ZFW</span>
-            <span>{weights.zfw_kg ?? weights.zfwKg ?? 0} kg</span>
+            <span>{Math.round(weights.zfw_kg ?? 0)} kg</span>
           </div>
-          <div className="boarding-weight-item">
+          <div className="boarding-weight-item boarding-weight-item--derived">
             <span>TOW</span>
-            <span>{weights.tow_kg ?? weights.towKg ?? 0} kg</span>
-          </div>
-          <div className="boarding-weight-item">
-            <span>Fuel</span>
-            <span>{weights.fuel_kg ?? weights.fuelKg ?? 0} kg</span>
+            <span>{Math.round(weights.tow_kg ?? 0)} kg</span>
           </div>
         </div>
       </div>
