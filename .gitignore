@@ -62,6 +62,14 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# TechLog / crew platform SQLite data (runtime data — never committed).
+# Location is env-configurable (EFB_DATA_DIR / TECHLOG_DB_PATH), so ignore
+# the database file and its WAL sidecar files wherever they are created.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Flask stuff:
 instance/
 .webassets-cache
