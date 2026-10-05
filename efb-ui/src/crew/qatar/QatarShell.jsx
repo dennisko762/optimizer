@@ -153,7 +153,7 @@ const SMARTOPS_TABS = [
 ];
 
 export default function QatarShell({ onOpenOptimizer }) {
-  const { selectedProvider, session, apiBase } = useCrewPlatform();
+  const { selectedProvider, apiBase } = useCrewPlatform();
   const utc = useUtcClock();
 
   const [screen, setScreen] = useState("crewdesk"); // crewdesk | myflights | profile
@@ -161,33 +161,90 @@ export default function QatarShell({ onOpenOptimizer }) {
   const [flight, setFlight] = useState(null);
   const [ofp, setOfp] = useState(null);
   const [ofpError, setOfpError] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [boarding, setBoarding] = useState(false);
+  const [lastPlan, setLastPlan] = useState(null);
   const ofpFlightRef = useRef(null);
 
-  // OFP load is triggered by the explicit flight pick (no mount effect):
-  // the click handler owns the fetch + cancellation guard.
-  async function openFlight(f) {
-    setFlight(f);
-    setScreen("smartops");
-    setOfp(null);
+  // The last saved SimBrief plan is loaded at app start (spec 4/4): the
+  // first flight the crew opens then shows that plan instead of re-fetching.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${apiBase}/api/simbrief/flightplans`);
+        if (!resp.ok) return;
+        const body = await resp.json();
+        const key = body?.last_plan;
+        if (!key) return;
+        const planResp = await fetch(`${apiBase}/api/simbrief/flightplans/${encodeURIComponent(key)}`);
+        if (!planResp.ok) return;
+        const plan = await planResp.json();
+        if (!cancelled && plan?.flightplan) setLastPlan(plan.flightplan);
+      } catch {
+        /* no saved plans yet — live fetch remains the source */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase]);
+
+  // OFP load: the live SimBrief OFP is fetched once per session (it is a
+  // single "current flight" document). The first flight open triggers it;
+  // later picks reuse the cached plan.
+  async function loadLiveFlightplan() {
     setOfpError(null);
-    if (!session?.authenticated || session.local) return;
-    ofpFlightRef.current = f.flight_id;
     try {
-      const resp = await fetch(
-        `${apiBase}/api/crew/session/${session.session_id}/flights/${f.flight_id}/ofp`
-      );
-      if (ofpFlightRef.current !== f.flight_id) return;
-      if (resp.status === 404) {
-        setOfpError("No SimBrief OFP is linked to this booking yet.");
-      } else if (resp.ok) {
-        setOfp(await resp.json());
+      const resp = await fetch(`${apiBase}/api/simbrief/flightplan/live`);
+      if (resp.ok) {
+        setOfp({ ofp_data: await resp.json() });
+      } else if (resp.status === 503) {
+        // No SIMBRIEF_USER on the bridge — local demo mode keeps working.
+        setOfpError("SimBrief bridge not configured (SIMBRIEF_USER) — local flight demo only.");
       } else {
-        setOfpError(await resp.text());
+        setOfpError(`SimBrief OFP unavailable (HTTP ${resp.status}).`);
       }
     } catch (e) {
-      if (ofpFlightRef.current === f.flight_id) {
-        setOfpError(String(e.message || e));
+      setOfpError(String(e.message || e));
+    }
+  }
+
+  async function doImportNewPlan() {
+    setImporting(true);
+    try {
+      const resp = await fetch(`${apiBase}/api/simbrief/flightplan/import`, { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      if (resp.ok) {
+        setOfp({ ofp_data: body.flightplan });
+        setOfpError(null);
+      } else {
+        setOfpError(body?.detail || `SimBrief import failed (HTTP ${resp.status}).`);
+      }
+    } catch (e) {
+      setOfpError(String(e.message || e));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // Opening a flight loads a plan: an explicitly passed saved plan wins,
+  // then the last saved plan (loaded at app start), then the live SimBrief
+  // OFP (a single "current flight" document, fetched once per session).
+  async function openFlight(f, savedPlan) {
+    setFlight(f);
+    setScreen("smartops");
+    setOfpError(null);
+    ofpFlightRef.current = f.flight_id;
+    if (savedPlan) {
+      setOfp({ ofp_data: savedPlan });
+      return;
+    }
+    if (!ofp) {
+      if (lastPlan) {
+        setOfp({ ofp_data: lastPlan });
+      } else {
+        await loadLiveFlightplan();
       }
     }
   }
@@ -205,8 +262,8 @@ export default function QatarShell({ onOpenOptimizer }) {
           utc={utc}
           onBack={() => setScreen("crewdesk")}
           flight={flight}
-          onPick={(f) => {
-            openFlight(f);
+          onPick={(f, savedPlan) => {
+            openFlight(f, savedPlan);
           }}
           onBoarding={(f) => {
             setFlight(f);
@@ -229,9 +286,10 @@ export default function QatarShell({ onOpenOptimizer }) {
           flight={flight}
           ofp={ofp}
           ofpError={ofpError}
+          importing={importing}
           tab={tab}
           setTab={setTab}
-          onOpenOptimizer={onOpenOptimizer}
+          onImportNewPlan={doImportNewPlan}
         />
       )}
 
@@ -433,6 +491,8 @@ function WeatherBriefing() {
 function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
   const { session, configReady, loading, error, startAuth, apiBase } = useCrewPlatform();
   const [flights, setFlights] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [plansTick, setPlansTick] = useState(0);
   const [manual, setManual] = useState({
     flight_number: "QR815",
     departure_icao: "DOH",
@@ -455,7 +515,38 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
     }
   }
 
-  // Roster: fetch when the authenticated session becomes available
+  // Saved flightplans: subscription-style fetch (setState only in the async
+  // callback); REFRESH / delete bump the tick to re-run it.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${apiBase}/api/simbrief/flightplans`);
+        if (!cancelled && resp.ok) {
+          const body = await resp.json();
+          setPlans(Array.isArray(body?.plans) ? body.plans : []);
+        }
+      } catch {
+        /* pass */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, plansTick]);
+
+  async function deletePlan(key) {
+    try {
+      await fetch(`${apiBase}/api/simbrief/flightplans/${encodeURIComponent(key)}`, {
+        method: "DELETE",
+      });
+      setPlansTick((t) => t + 1);
+    } catch {
+      /* pass */
+    }
+  }
+
+  // Roster + saved flightplans: fetch when the screen mounts / session is up
   // (subscription-style — setState only in the async callback).
   useEffect(() => {
     if (!session?.authenticated) return;
@@ -474,6 +565,7 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
       cancelled = true;
     };
   }, [session?.authenticated, session?.session_id, apiBase]);
+
   async function doCheckin(f) {
     if (!session?.authenticated) return;
     setResult(null);
@@ -576,6 +668,60 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
                 </button>
               ))}
             </>
+          )}
+
+          <div className="qr-section-head qr-section-head--mt">
+            <h3>SAVED FLIGHTPLANS</h3>
+            <button className="qr-linkbtn" onClick={() => setPlansTick((t) => t + 1)}>
+              REFRESH
+            </button>
+          </div>
+          {plans.length === 0 ? (
+            <div className="qr-notice">
+              No saved SimBrief plans yet — use “Import New Plan” on the Flightplan screen to pull your current OFP.
+            </div>
+          ) : (
+            plans.map((p) => {
+              const plan = p.flightplan || {};
+              return (
+                <button
+                  key={p.key}
+                  className={`qr-flight-row ${flight?.flight_id === p.key ? "qr-flight-row--selected" : ""}`}
+                  onClick={() =>
+                    onPick(
+                      {
+                        flight_id: p.key,
+                        flight_number: plan.flight_number || null,
+                        departure_icao: plan.origin || null,
+                        arrival_icao: plan.destination || null,
+                        aircraft_icao: plan.aircraft_icao || plan.aircraft || null,
+                        callsign: plan.callsign || null,
+                        status: "SAVED",
+                      },
+                      plan
+                    )
+                  }
+                >
+                  <span className="mono qr-flight-row__no">{plan.flight_number || "—"}</span>
+                  <span className="qr-flight-row__route mono">
+                    {plan.origin || "?"} <ArrowRight size={12} /> {plan.destination || "?"}
+                  </span>
+                  <span className="qr-flight-row__type">{plan.aircraft_icao || plan.aircraft || "—"}</span>
+                  <span className="qr-flight-row__status">SAVED</span>
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <span
+                      className="qr-chip qr-chip--ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deletePlan(p.key);
+                      }}
+                    >
+                      <Trash2 size={12} />
+                    </span>
+                  </span>
+                </button>
+              );
+            })
           )}
 
           {(session?.local || !session?.authenticated) && (
@@ -698,7 +844,7 @@ function ProfileScreen({ utc, onBack, onOpenOptimizer }) {
 
 /* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
 
-function SmartOpsScreen({ utc, flight, ofp, ofpError, tab, setTab, onOpenOptimizer }) {
+function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan }) {
   const ofpData = ofp?.ofp_data || null;
   const hero = useMemo(() => mapOfpHero(flight, ofpData), [flight, ofpData]);
   const simPlan = useMemo(
@@ -712,7 +858,8 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, tab, setTab, onOpenOptimiz
   const fuel = (ofpData ? hero.fuel : simPlan?.fuel) || {};
   const weights = (ofpData ? hero.weights : simPlan?.weights) || {};
   const distanceNm =
-    (ofpData?.general?.route_distance ? Number(String(ofpData.general.route_distance).replace(/[,\s]/g, "")) : null) ??
+    (ofpData?.route_distance_nm ??
+      (ofpData?.general?.route_distance ? Number(String(ofpData.general.route_distance).replace(/[,\\s]/g, "")) : null)) ??
     simPlan?.distance_nm ??
     null;
 
@@ -774,19 +921,19 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, tab, setTab, onOpenOptimiz
               </strong>
               <span className="qr-ofp-banner__sub">
                 {ofpData
-                  ? `Generated ${ofp?.created_at ? new Date(ofp.created_at).toISOString().slice(11, 16) + " Z" : "—"} · NAV data AIRAC —`
+                  ? `Generated ${ofpData.generated_at ? new Date(ofpData.generated_at).toISOString().slice(5, 16).replace("T", " ") + " Z" : ofp?.created_at ? new Date(ofp.created_at).toISOString().slice(11, 16) + " Z" : "—"} · NAV data AIRAC ${ofpData.airac || "—"}`
                   : simPlan
                     ? "Derived from entered ICAOs + a light fuel model — for display only, never presented as real OFP values."
-                    : "Select a flight with a linked SimBrief OFP."}
+                    : "Select a flight with a linked SimBrief OFP, or import one below."}
               </span>
               {ofpError && <span className="qr-ofp-banner__err">{ofpError}</span>}
             </div>
             <div className="qr-ofp-banner__actions">
-              <button className="qr-goldbtn" onClick={() => onOpenOptimizer?.(flight)}>
-                Import New Plan
+              <button className="qr-goldbtn" onClick={onImportNewPlan} disabled={importing}>
+                {importing ? "Importing…" : "Import New Plan"}
               </button>
-              {ofp?.pdf_url && (
-                <a className="qr-linkbtn" href={ofp.pdf_url} target="_blank" rel="noopener noreferrer">
+              {ofpData?.pdf_url && (
+                <a className="qr-linkbtn" href={ofpData.pdf_url} target="_blank" rel="noopener noreferrer">
                   <ExternalLink size={13} /> OFP PDF
                 </a>
               )}

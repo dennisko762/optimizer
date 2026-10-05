@@ -50,17 +50,37 @@ export function kgToT(kg, digits = 1) {
 
 export function hhmm(value) {
   if (value == null) return null;
-  if (typeof value === "string" && /^\d{1,2}:\d{2}$/.test(value.trim())) {
-    return value.trim().padStart(5, "0");
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (/^\d{1,2}:\d{2}$/.test(text)) return text.padStart(5, "0");
+    if (/^\d{1,2}:\d{2}:\d{2}$/.test(text)) return text.slice(0, 5).padStart(5, "0");
+    // ISO 8601 ("2026-10-05T13:20:00Z" / with offset) → UTC time.
+    // Without a zone designator the wall-clock time IS the value (no Date
+    // round-trip — that would apply the browser's local offset).
+    if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+      if (/(Z|[+-]\d{2}:?\d{2})$/.test(text)) {
+        const d = new Date(text);
+        if (!Number.isNaN(d.getTime())) {
+          const h = String(d.getUTCHours()).padStart(2, "0");
+          const m = String(d.getUTCMinutes()).padStart(2, "0");
+          return `${h}:${m}`;
+        }
+      } else {
+        return text.slice(11, 16).padStart(5, "0");
+      }
+    }
   }
   const n = parseNumber(value);
   if (n == null) return null;
   if (n > 86400) {
-    // Unix timestamp (seconds).
+    // Unix timestamp (seconds) or HH:MM:SS seconds — ambiguous; treat large
+    // values as unix timestamps.
     const d = new Date(n * 1000);
-    const h = String(d.getUTCHours()).padStart(2, "0");
-    const m = String(d.getUTCMinutes()).padStart(2, "0");
-    return `${h}:${m}`;
+    if (!Number.isNaN(d.getTime())) {
+      const h = String(d.getUTCHours()).padStart(2, "0");
+      const m = String(d.getUTCMinutes()).padStart(2, "0");
+      return `${h}:${m}`;
+    }
   }
   // Seconds since midnight.
   const h = Math.floor(n / 3600);
@@ -190,73 +210,105 @@ function flightNum(v) {
 }
 
 /**
- * Map a SimBrief OFP payload (any known v1/v2 shape) + booking flight into
- * the Qatar flight-plan view: hero block + fuel row + OFP banner facts.
+ * Map a SimBrief OFP payload + booking flight into the Qatar flight-plan
+ * view: hero block + fuel row + OFP banner facts.
+ *
+ * Accepts BOTH shapes:
+ * - raw SimBrief JSON v2 (nested `general`/`times`/`fuel`/`weights` sections),
+ *   as returned by the vAMSYS-linked OFP endpoint;
+ * - the flat flightplan view produced by the EFB flightplan service
+ *   (`/api/simbrief/flightplan/latest|live|/flightplans/<key>`), whose
+ *   fuel/weights are already in tonnes.
  */
 export function mapOfpHero(flight, ofpData) {
   const d = ofpData || {};
+  const flat = d.source === "SimBrief" && !d.general && !d.times;
+  const sectionFlat = (key) =>
+    flat && d[key] != null && typeof d[key] === "object" && !Array.isArray(d[key])
+      ? d[key]
+      : null;
   const general = section(d, "general");
   const times = section(d, "times");
   const aircraft = section(d, "aircraft");
   const origin = section(d, "origin");
   const destination = section(d, "destination");
-  const alternate = section(d, "alternate");
-  const weights = section(d, "weights");
-  const fuel = section(d, "fuel");
+  let alternateRaw = section(d, "alternate");
+  if (Array.isArray(d.alternate) && d.alternate.length && typeof d.alternate[0] === "object") {
+    alternateRaw = d.alternate[0];
+  }
+  const weights = sectionFlat("weights") || section(d, "weights");
+  const fuel = sectionFlat("fuel") || section(d, "fuel");
+  const unitsFactor = flat ? 1 : kgFactor(d);
 
-  const departure = firstPresent(origin, "icao_code", "icao") || flight?.departure_icao || null;
+  const departure =
+    (flat ? d.origin : firstPresent(origin, "icao_code", "icao")) || flight?.departure_icao || null;
   const arrival =
-    firstPresent(destination, "icao_code", "icao") || flight?.arrival_icao || null;
-  const alternateIcao = firstPresent(alternate, "icao_code", "icao") || null;
+    (flat ? d.destination : firstPresent(destination, "icao_code", "icao")) || flight?.arrival_icao || null;
+  const alternateIcao = flat
+    ? d.alternate || null
+    : firstPresent(alternateRaw, "icao_code", "icao") || null;
 
   const flightNumber =
     flightNum(flight?.flight_number) ||
-    flightNum(firstPresent(general, "flight_number", "fltno", "flight_no", "flightnum"));
+    flightNum(flat ? d.flight_number : firstPresent(general, "flight_number", "fltno", "flight_no", "flightnum")) ||
+    flightNumberFromCallsign(flat ? d.callsign : null);
   const airline =
-    firstPresent(general, "airline_name", "airline", "name_airline") ||
+    (flat ? null : firstPresent(general, "airline_name", "airline", "name_airline")) ||
     "Qatar Airways";
   const aircraftType =
-    firstPresent(aircraft, "icaocode", "icao_code", "type", "aircraft") ||
+    (flat ? d.aircraft : firstPresent(aircraft, "icaocode", "icao_code", "type", "aircraft")) ||
     flight?.aircraft_icao ||
     null;
+  const aircraftReg = flat ? d.registration : null;
 
   const std = hhmm(
-    firstPresent(times, "sched_out", "schedout", "est_out", "estout") ||
+    (flat ? d.std_utc : null) ||
+      firstPresent(times, "sched_out", "schedout", "est_out", "estout") ||
       firstPresent(general, "sched_out", "est_out")
   );
   const sta = hhmm(
-    firstPresent(times, "sched_in", "schedin", "est_in", "estin") ||
+    (flat ? d.sta_utc : null) ||
+      firstPresent(times, "sched_in", "schedin", "est_in", "estin") ||
       firstPresent(general, "sched_in", "est_in")
   );
-  const blockMin = toMinutes(
-    firstPresent(times, "est_block", "sched_block", "block_time") ||
-      firstPresent(general, "est_block", "block_time")
-  );
+  const blockMin = flat
+    ? d.ete_min
+    : toMinutes(
+        firstPresent(times, "est_block", "sched_block", "block_time") ||
+          firstPresent(general, "est_block", "block_time")
+      );
 
   const fuelKg = {
-    block: firstNum(fuel, "plan_ramp", "block_fuel_kg", "ramp"),
-    takeoff: firstNum(fuel, "est_takeoff", "takeoff_fuel_kg", "takeoff"),
-    trip: firstNum(fuel, "enroute_burn", "trip_fuel_kg", "enroute", "trip"),
-    landing: firstNum(fuel, "est_ldg", "landing_fuel_kg", "ldg_fuel"),
-    reserve: firstNum(fuel, "reserve", "reserve_fuel_kg", "total_reserve"),
-    taxi: firstNum(fuel, "taxi_fuel", "taxi"),
+    block: flat ? d.fuel?.block : firstNum(fuel, "plan_ramp", "block_fuel_kg", "ramp"),
+    takeoff: flat ? d.fuel?.takeoff : firstNum(fuel, "est_takeoff", "plan_takeoff", "takeoff_fuel_kg", "takeoff"),
+    trip: flat ? d.fuel?.trip : firstNum(fuel, "enroute_burn", "trip_fuel_kg", "enroute", "trip"),
+    landing: flat ? d.fuel?.landing : firstNum(fuel, "est_ldg", "plan_landing", "landing_fuel_kg", "ldg_fuel"),
+    reserve: flat ? d.fuel?.reserve : firstNum(fuel, "reserve", "reserve_fuel_kg", "total_reserve"),
+    taxi: flat ? d.fuel?.taxi : firstNum(fuel, "taxi_fuel", "taxi"),
   };
 
   const weightsKg = {
-    tow: firstNum(weights, "est_tow", "tow_kg"),
-    zfw: firstNum(weights, "est_zfw", "zfw_kg"),
-    ldw: firstNum(weights, "est_ldw", "ldw_kg", "landing_weight_kg"),
+    tow: flat ? d.weights?.tow : firstNum(weights, "est_tow", "tow_kg"),
+    zfw: flat ? d.weights?.zfw : firstNum(weights, "est_zfw", "zfw_kg"),
+    ldw: flat ? d.weights?.ldw : firstNum(weights, "est_ldw", "ldw_kg", "landing_weight_kg"),
   };
+
+  const toT = (v) => (v == null ? null : flat ? Number(v) : kgToT(v * unitsFactor));
 
   return {
     flight_number: flightNumber,
     departure: departure ? String(departure).toUpperCase() : null,
     arrival: arrival ? String(arrival).toUpperCase() : null,
-    departure_name: departure ? ICAO_NAMES[String(departure).toUpperCase()] || null : null,
-    arrival_name: arrival ? ICAO_NAMES[String(arrival).toUpperCase()] || null : null,
+    departure_name:
+      (flat ? d.origin_name : null) ||
+      (departure ? ICAO_NAMES[String(departure).toUpperCase()] || null : null),
+    arrival_name:
+      (flat ? d.destination_name : null) ||
+      (arrival ? ICAO_NAMES[String(arrival).toUpperCase()] || null : null),
     alternate: alternateIcao ? String(alternateIcao).toUpperCase() : null,
     airline,
     aircraft_type: aircraftType,
+    aircraft_reg: aircraftReg,
     date_label: null, // filled by the caller (today) — mappers stay time-free
     std,
     sta,
@@ -264,23 +316,38 @@ export function mapOfpHero(flight, ofpData) {
     eet: durHhmm(blockMin),
     // Fuel, tonnes (null when the source had no value).
     fuel: {
-      block: kgToT(fuelKg.block),
-      takeoff: kgToT(fuelKg.takeoff),
-      trip: kgToT(fuelKg.trip),
-      landing: kgToT(fuelKg.landing),
-      reserve_alt: kgToT(fuelKg.reserve),
-      taxi: kgToT(fuelKg.taxi),
+      block: toT(fuelKg.block),
+      takeoff: toT(fuelKg.takeoff),
+      trip: toT(fuelKg.trip),
+      landing: toT(fuelKg.landing),
+      reserve_alt: toT(flat ? d.fuel?.reserve_alt : fuelKg.reserve),
+      taxi: toT(fuelKg.taxi),
       extra: null, // not modelled; UI shows "—"
       deviation: null, // no live SimConnect check yet
     },
     weights: {
-      tow: kgToT(weightsKg.tow),
-      zfw: kgToT(weightsKg.zfw),
-      ldw: kgToT(weightsKg.ldw),
+      tow: toT(weightsKg.tow),
+      zfw: toT(weightsKg.zfw),
+      ldw: toT(weightsKg.ldw),
     },
-    pax: firstNum(weights, "pax_count", "passenger_count") ?? flight?.passengers ?? null,
-    cargo_t: kgToT(firstNum(weights, "cargo_weight", "cargo_kg") ?? flight?.cargo ?? null),
+    pax: (flat ? d.pax_count : firstNum(weights, "pax_count", "passenger_count")) ?? flight?.passengers ?? null,
+    // cargo is kg in BOTH shapes (view `cargo_kg` / weights `cargo`) → /1000.
+    cargo_t: (() => {
+      const kg = flat ? d.cargo_kg : firstNum(weights, "cargo_weight", "cargo_kg", "cargo") ?? flight?.cargo ?? null;
+      return kg == null ? null : Number((kg * unitsFactor / 1000).toFixed(1));
+    })(),
   };
+}
+
+function kgFactor(d) {
+  const units = firstPresent(d, "params") && String((d.params && d.params.units) || "").trim().toUpperCase();
+  return units && units.startsWith("LB") ? 0.45359237 : 1;
+}
+
+function flightNumberFromCallsign(callsign) {
+  if (!callsign) return null;
+  const m = String(callsign).trim().toUpperCase().match(/^([A-Z]{3})(\d+)$/);
+  return m ? m[2] : null;
 }
 
 /* ── OFP view: waypoint table ───────────────────────────────────────── */
@@ -325,12 +392,21 @@ function windCell(row) {
  * Columns: wpt, awy, fir, legNm, remNm, ete, legEte, alt, wind, burn, planFuel,
  * ato, act. ATO/ACT are live columns — always null until SimConnect provides
  * actuals. Missing navlog rows leave the leg cells null.
+ *
+ * The real v2 payload carries `navlog` as a *list* of per-waypoint rows with
+ * `distance` (leg NM), `time_total` / `time_leg` ("HH:MM:SS"),
+ * `fuel_leg` (kg) and `fuel_plan_onboard` (kg); when those are absent the
+ * legacy `navlog.fix` shape is still accepted.
  */
 export function mapOfpWaypoints(ofpData) {
   const d = ofpData || {};
+  // Flat flightplan view (from /api/simbrief/flightplan/*): fuel fields are
+  // already in tonnes (plan_fuel_t); raw v2 navlog rows are in kg.
+  const flat = d.source === "SimBrief" && !d.general && !d.times;
   let rows = [];
   const navlog = d.navlog;
-  if (Array.isArray(navlog)) rows = navlog;
+  if (flat && Array.isArray(d.waypoints)) rows = d.waypoints;
+  else if (Array.isArray(navlog)) rows = navlog;
   else if (navlog && typeof navlog === "object") {
     for (const key of ["fix", "fixes", "waypoints", "waypoint"]) {
       if (Array.isArray(navlog[key])) {
@@ -352,29 +428,51 @@ export function mapOfpWaypoints(ofpData) {
     if (!r || typeof r !== "object") continue;
     const ident = firstPresent(r, "ident", "id", "fix", "name", "waypoint", "wp", "via");
     const fl = altToFl(
-      firstPresent(r, "fl", "flight_level") ||
+      firstPresent(r, "fl", "flight_level", "alt") ||
         firstNum(r, "altitude_ft", "altitude_feet", "altitude", "alt")
     );
+    const legNm = firstNum(r, "leg_nm", "leg_dist", "distance", "dist", "dist_nm");
     parsed.push({
       ident: ident ? String(ident).toUpperCase() : null,
-      name: firstPresent(r, "name_city", "city", "airport") || null,
-      airway: firstPresent(r, "airway", "awy", "route") || null,
+      // In v2 navlog rows `name` is the fix name itself (identical to ident);
+      // the mockup's sub-label is only used for airport names.
+      name: firstPresent(r, "name_city", "city", "airport") || (r.name != null && r.ident ? null : r.name) || null,
+      airway: firstPresent(r, "airway", "awy", "via_airway", "route") || null,
       fir: firstPresent(r, "fir", "flight_information_region") || null,
-      legNm: firstNum(r, "leg_nm", "leg_dist", "distance", "dist", "dist_nm"),
+      legNm,
       remNm: firstNum(r, "rem_nm", "remaining_nm", "dist_remaining"),
-      ete: firstPresent(r, "ete", "elapsed_time"),
-      legEte: firstPresent(r, "leg_ete", "leg_time"),
+      ete: hhmm(firstPresent(r, "ete", "elapsed_time", "time_total")),
+      legEte: hhmm(firstPresent(r, "leg_ete", "leg_time", "time_leg")),
       alt: fl,
       wind: windCell(r),
-      burn: firstNum(r, "burn", "fuel_burn", "burn_kg"),
-      planFuel: firstNum(r, "pln_fuel", "planned_fuel", "fuel"),
+      burn: firstNum(r, "burn", "fuel_burn", "burn_kg", "fuel_leg"),
+      // PLN FUEL renders in tonnes: *_t / pln_fuel / planned_fuel fields are
+      // already tonnes (flat view + mockup navlog); the raw v2
+      // `fuel_plan_onboard` and generic `fuel` are kg → divide.
+      planFuel: (() => {
+        const tonnes = firstNum(r, "pln_fuel_t", "plan_fuel_t", "planned_fuel_t", "pln_fuel", "planned_fuel");
+        if (tonnes != null) return tonnes;
+        const kg = firstNum(r, "fuel", "fuel_plan_onboard");
+        return kg == null ? null : Number((kg / 1000).toFixed(1));
+      })(),
     });
   }
 
-  // Fill REM NM from the last known remaining distance when a row omits it.
-  let lastRem = null;
-  const hasRem = parsed.some((p) => p.remNm != null);
-  if (hasRem) {
+  // Fill REM NM by counting leg distances back from the end.
+  let hasRem = parsed.some((p) => p.remNm != null);
+  if (!hasRem) {
+    let remaining = 0;
+    for (let i = parsed.length - 1; i >= 0; i--) {
+      if (i === parsed.length - 1) {
+        parsed[i].remNm = 0;
+      } else {
+        parsed[i].remNm = remaining > 0 ? Math.round(remaining) : null;
+      }
+      const leg = parsed[i].legNm;
+      if (leg != null) remaining += leg;
+    }
+  } else {
+    let lastRem = null;
     for (const p of parsed) {
       if (p.remNm != null) lastRem = p.remNm;
       else p.remNm = lastRem;
@@ -489,13 +587,15 @@ export function modelSimPlan(flight) {
 export function mapRouteView(flight, ofpData) {
   const hero = mapOfpHero(flight, ofpData);
   const wps = (ofpData?.route_waypoints ||
-    (Array.isArray(ofpData?.navlog) ? ofpData.navlog : []))
+    (Array.isArray(ofpData?.navlog) ? ofpData.navlog :
+      Array.isArray(ofpData?.waypoints) ? ofpData.waypoints : []))
     .map((w) => ({
       ident: w.ident || null,
-      lat: w.lat ?? null,
-      lon: w.lon ?? null,
-      fl: w.flight_level ?? null,
+      lat: w.lat ?? w.pos_lat ?? null,
+      lon: w.lon ?? w.pos_long ?? null,
+      fl: w.flight_level ?? w.fl ?? null,
     }))
+    .map((w) => ({ ...w, lat: parseNumber(w.lat), lon: parseNumber(w.lon), fl: parseNumber(w.fl) }))
     .filter((w) => w.lat != null && w.lon != null);
 
   const depPos = hero.departure ? icaoLatlon(hero.departure) : null;
@@ -516,7 +616,7 @@ export function mapRouteView(flight, ofpData) {
   return {
     hero,
     points,
-    route_string: flight?.route || null,
+    route_string: ofpData?.route || flight?.route || null,
     distance_nm: distanceNm,
     block_label: hero.eet ? `Block ${hero.eet}` : null,
   };
@@ -534,7 +634,7 @@ export function mapEdtoView(flight, ofpData) {
     hero,
     distance_nm: distance,
     block_label: hero.eet ? `Block ${hero.eet}` : null,
-    route_string: flight?.route || null,
+    route_string: ofpData?.route || flight?.route || null,
     official_notices: [
       {
         region: "PERSIAN GULF & GULF OF OMAN",

@@ -49,6 +49,13 @@ test("hhmm handles HH:MM strings and unix seconds", () => {
   assert.equal(hhmm(1717400000 + 8 * 3600 + 10 * 60 - 1717400000), "08:10"); // 29500 s since midnight
 });
 
+test("hhmm handles ISO 8601 and HH:MM:SS strings", () => {
+  assert.equal(hhmm("2026-10-05T08:10:00Z"), "08:10");
+  assert.equal(hhmm("2026-10-05T08:10:00"), "08:10");
+  assert.equal(hhmm("08:10:00"), "08:10");
+  assert.equal(hhmm("13:20:00"), "13:20");
+});
+
 test("durHhmm formats minutes as H:MM", () => {
   assert.equal(durHhmm(430), "7:10");
   assert.equal(durHhmm(60), "1:00");
@@ -153,6 +160,48 @@ test("mapOfpHero accepts v1-shaped keys (flight_no, fltno, est_out)", () => {
   assert.equal(hero.fuel.block, 200);
 });
 
+test("mapOfpHero maps the flat EFB flightplan view (tonnes, ISO times)", () => {
+  const flat = {
+    source: "SimBrief",
+    origin: "EDDF",
+    origin_name: "Frankfurt am Main",
+    destination: "RJAA",
+    destination_name: "Tokyo Haneda",
+    alternate: "RJTT",
+    flight_number: "1234",
+    callsign: "TST1234",
+    airline_icao: "TST",
+    aircraft: "Boeing 777-300ER",
+    aircraft_icao: "B77L",
+    registration: "D-XXXX",
+    route_distance_nm: 7100,
+    std_utc: "2026-10-05T13:20:00Z",
+    sta_utc: "2026-10-05T22:40:00Z",
+    ete_min: 560,
+    generated_at: "2026-10-05T09:12:00",
+    airac: "2610",
+    fuel: { block: 48.5, takeoff: 47.4, trip: 42.1, landing: 5.3, taxi: 1.1, reserve: 9.8, reserve_alt: 12.4 },
+    weights: { tow: 212.6, zfw: 193.0, ldw: 65.5 },
+    pax_count: 320,
+    cargo_kg: 4000,
+  };
+  const hero = mapOfpHero({}, flat);
+  assert.equal(hero.flight_number, "1234");
+  assert.equal(hero.departure, "EDDF");
+  assert.equal(hero.arrival, "RJAA");
+  assert.equal(hero.alternate, "RJTT");
+  assert.equal(hero.departure_name, "Frankfurt am Main");
+  assert.equal(hero.aircraft_type, "Boeing 777-300ER");
+  assert.equal(hero.aircraft_reg, "D-XXXX");
+  assert.equal(hero.std, "13:20");
+  assert.equal(hero.sta, "22:40");
+  assert.equal(hero.eet, "9:20");
+  assert.equal(hero.fuel.block, 48.5); // already tonnes — NOT re-divided
+  assert.equal(hero.fuel.reserve_alt, 12.4);
+  assert.equal(hero.weights.tow, 212.6);
+  assert.equal(hero.pax, 320);
+});
+
 /* ── waypoint table ─────────────────────────────────────────────────── */
 
 const NAVLOG = [
@@ -183,6 +232,57 @@ test("mapOfpWaypoints returns null without a navlog", () => {
 test("mapOfpWaypoints handles P/M wind components", () => {
   const rows = mapOfpWaypoints({ navlog: [{ ident: "XYZ", wind_comp: "M025" }] });
   assert.equal(rows[0].wind, "HW 25");
+});
+
+test("mapOfpWaypoints maps real SimBrief v2 navlog rows (string values, kg fuel)", () => {
+  const rows = mapOfpWaypoints({
+    navlog: [
+      {
+        ident: "DF174", name: "DF174", type: "wpt", via_airway: "CIND8S", fir: "",
+        pos_lat: "49.884892", pos_long: "8.753469", distance: "4",
+        altitude_feet: "9200", time_total: "00:11:00", time_leg: "00:11:00",
+        fuel_leg: "950", fuel_plan_onboard: "70000",
+        wind_dir: "235", wind_spd: "18",
+      },
+      {
+        ident: "LIPOT", name: "LIPOT", type: "wpt", distance: "61",
+        altitude_feet: "29000", time_total: "00:42:00", time_leg: "00:31:00",
+        fuel_leg: "4200", fuel_plan_onboard: "69050",
+        wind_dir: "250", wind_spd: "35",
+      },
+    ],
+  });
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].ident, "DF174");
+  assert.equal(rows[0].airway, "CIND8S");
+  assert.equal(rows[0].legNm, 4);
+  assert.equal(rows[0].ete, "00:11");
+  assert.equal(rows[0].legEte, "00:11");
+  assert.equal(rows[0].alt, 92); // 9200 ft → FL092
+  assert.equal(rows[0].wind, "235/18");
+  assert.equal(rows[0].burn, 950); // kg — UI divides by 1000 for display
+  assert.equal(rows[0].planFuel, 70); // 70000 kg → 70 t
+  // REM NM filled from the end when absent: DF174 has the 61 NM final leg ahead.
+  assert.equal(rows[1].remNm, 0);
+  assert.equal(rows[0].remNm, 61);
+});
+
+test("mapOfpWaypoints maps the flat EFB flightplan view rows (tonnes, alt key)", () => {
+  const rows = mapOfpWaypoints({
+    source: "SimBrief",
+    waypoints: [
+      { ident: "EDDF", name: "Frankfurt", leg_nm: null, rem_nm: 7100, ete: null, leg_ete: null, alt: null, wind: null, burn: null, plan_fuel_t: null, stage: "DEP" },
+      { ident: "DF174", via_airway: "CIND8S", fir: "EDGG", leg_nm: 4, rem_nm: 7096, ete: "00:11", leg_ete: "00:11", alt: 92, wind: "235/18", burn: 950, plan_fuel_t: 70.0, stage: "CLB" },
+      { ident: "RJAA", name: "Tokyo", leg_nm: 61, rem_nm: 0, ete: "09:20", leg_ete: "09:09", alt: 140, wind: null, burn: 3300, plan_fuel_t: 5.3, stage: "ARR" },
+    ],
+  });
+  assert.equal(rows.length, 3);
+  assert.equal(rows[1].airway, "CIND8S");
+  assert.equal(rows[1].alt, 92); // flat view `alt` is already FL
+  assert.equal(rows[1].burn, 950); // flat view burn is kg (kgFactor=1)
+  assert.equal(rows[1].planFuel, 70.0); // plan_fuel_t already tonnes
+  assert.equal(rows[0].remNm, 7100);
+  assert.equal(rows[2].remNm, 0);
 });
 
 /* ── sim plan fallback ──────────────────────────────────────────────── */
