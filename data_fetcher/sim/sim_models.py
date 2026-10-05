@@ -4,6 +4,9 @@ import math
 
 from pydantic import BaseModel, Field
 
+from data_fetcher.sim.fmc_models import FmcTelemetrySnapshotData
+from optimizer.route_profile_models import RemainingRouteProfile
+
 
 class RawSimState(BaseModel):
     aircraft_title: str | None = None
@@ -28,13 +31,20 @@ class RawSimState(BaseModel):
     gross_weight_lb: float | None = None
     fuel_remaining_lb: float | None = None
     fuel_remaining_lb_ex1: float | None = None
+    fuel_weight_per_gallon_lb: float | None = None
+    fuel_flow_kg_h: float | None = None
+    fuel_flow_source: str | None = None
+    engine_count: int | None = None
+    engine_type: int | None = None
 
     wind_velocity_kt: float | None = None
     wind_direction_deg: float | None = None
     ambient_temperature_c: float | None = None
 
-    # AIRCRAFT WIND X: longitudinal wind component (positive = tailwind).
+    # AIRCRAFT WIND X: lateral wind component in aircraft body axes.
     wind_x_kt: float | None = None
+    # AIRCRAFT WIND Z: longitudinal wind component along aircraft axis.
+    wind_z_kt: float | None = None
 
     on_ground: bool | None = None
 
@@ -47,6 +57,7 @@ class RawSimState(BaseModel):
 
 
 class LiveSimState(BaseModel):
+    aircraft_title: str | None = None
     # Primary altitude shown to the UI and passed into optimization.
     # This prefers the aircraft's indicated altitude so the displayed FL
     # matches what the crew sees in the cockpit.
@@ -64,6 +75,8 @@ class LiveSimState(BaseModel):
 
     gross_weight_kg: float | None = None
     fuel_remaining_kg: float | None = None
+    fuel_flow_kg_h: float | None = None
+    fuel_flow_source: str | None = None
 
     latitude: float | None = None
     longitude: float | None = None
@@ -75,9 +88,10 @@ class LiveSimState(BaseModel):
 
     on_ground: bool | None = None
 
-    # Wind component along aircraft track (positive = tailwind).
-    # Populated from AIRCRAFT_WIND_X SimVar when available.
+    # Lateral wind component in aircraft body axes, useful for debug only.
     wind_x_kt: float | None = None
+    # Wind component along aircraft axis (positive/negative per SimConnect).
+    wind_z_kt: float | None = None
 
     gps_is_active_flight_plan: bool | None = None
     gps_ete_seconds: float | None = None
@@ -85,6 +99,9 @@ class LiveSimState(BaseModel):
     gps_remaining_distance_nm: float | None = None
     gps_waypoint_distance_nm: float | None = None
     gps_ground_speed_kt: float | None = None
+    fmc_snapshot: FmcTelemetrySnapshotData | None = None
+    fmc_adapter_status: str | None = None
+    fmc_adapter_error: str | None = None
 
     def get_remaining_distance_nm(
         self,
@@ -120,15 +137,15 @@ class LiveSimState(BaseModel):
         """
         Wind component along the flight path (tailwind positive, headwind negative).
 
-        Prefers AIRCRAFT_WIND_X SimVar (direct longitudinal component from MSFS).
+        Prefers AIRCRAFT_WIND_Z SimVar (direct longitudinal component from MSFS).
         Falls back to trigonometric calculation from wind velocity/direction and
         the provided true track if both are available.
 
         Returns None if insufficient data.
         """
-        # MSFS AIRCRAFT WIND X = longitudinal axis, positive = tailwind.
-        if self.wind_x_kt is not None:
-            return self.wind_x_kt
+        # MSFS AIRCRAFT WIND Z = longitudinal axis.
+        if self.wind_z_kt is not None:
+            return self.wind_z_kt
 
         if (
             self.wind_velocity_kt is not None
@@ -136,10 +153,10 @@ class LiveSimState(BaseModel):
             and track_deg_true is not None
         ):
             # Wind direction is the direction wind comes FROM (met convention).
-            # Component along track = velocity * cos(wind_dir_from - track)
+            # Tailwind is positive, headwind negative.
             wind_from_rad = math.radians(self.wind_direction_deg)
             track_rad = math.radians(track_deg_true)
-            return self.wind_velocity_kt * math.cos(wind_from_rad - track_rad)
+            return -self.wind_velocity_kt * math.cos(wind_from_rad - track_rad)
 
         return None
 
@@ -186,8 +203,18 @@ class CurrentFlightState(BaseModel):
     isa_deviation_c: float = 0.0
 
     fuel_remaining_kg: float | None = None
+    fuel_flow_kg_h: float | None = None
+    fuel_flow_source: str | None = None
     ground_speed_kt: float | None = None
     cruise_segments: list[dict[str, float]] = Field(default_factory=list)
+    remaining_route_profile: RemainingRouteProfile | None = None
+    fuel_flow_reference_altitude_ft: float | None = None
+    fuel_flow_reference_gross_weight_kg: float | None = None
+    fuel_flow_reference_mach: float | None = None
+    fuel_flow_reference_isa_deviation_c: float | None = None
+    fmc_source: str | None = None
+    fmc_cruise_flight_level: int | None = None
+    fmc_step_climb_distance_nm: float | None = None
 
     # Current cost index selected in FMC / SimBrief / test UI.
     # This must NOT be derived from Mach.

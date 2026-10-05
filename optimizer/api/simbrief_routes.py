@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from optimizer.configs.aircraft.aircraft_catalog import AircraftCatalogEntry, get_catalog_entry, normalize_aircraft_code
 from optimizer.number_utils import parse_number
+from optimizer.route_profile_models import RemainingRouteProfile
 
 
 router = APIRouter(prefix="/api/simbrief", tags=["simbrief"])
@@ -79,6 +80,10 @@ class SimBriefSyncResponse(BaseModel):
 
     flight_state_patch: SimBriefFlightStatePatch = Field(alias="flightStatePatch")
     flight_context_patch: SimBriefFlightContextPatch = Field(alias="flightContextPatch")
+    remaining_route_profile: RemainingRouteProfile | None = Field(
+        default=None,
+        alias="remainingRouteProfile",
+    )
 
     raw_summary: dict[str, Any] = Field(default_factory=dict, alias="rawSummary")
     warnings: list[str] = Field(default_factory=list)
@@ -294,14 +299,12 @@ async def sync_simbrief(
     if destination_lat is None or destination_lon is None:
         warnings.append("Destination coordinates not found in SimBrief seed or airport fallback.")
 
-    from data_fetcher.simbrief.route_profile import build_cruise_segments_from_waypoints
-    from optimizer.api.route_profile_cache import set_latest_cruise_segments
+    from data_fetcher.simbrief.route_profile import build_remaining_route_profile_from_waypoints
 
     route_waypoints = getattr(seed, "route_waypoints", []) or []
-    cruise_segments = build_cruise_segments_from_waypoints(route_waypoints)
-    set_latest_cruise_segments(cruise_segments)
+    remaining_route_profile = build_remaining_route_profile_from_waypoints(route_waypoints)
 
-    if route_waypoints and not cruise_segments:
+    if route_waypoints and not remaining_route_profile.segments:
         warnings.append("SimBrief route waypoints were found, but no usable cruise segment distances were parsed.")
 
     return SimBriefSyncResponse(
@@ -332,6 +335,7 @@ async def sync_simbrief(
             sibtUtc=sibt_utc,
             sobtUtc=sobt_utc,
         ),
+        remainingRouteProfile=remaining_route_profile,
         rawSummary={
             "aircraft_raw": aircraft_raw,
             "aircraft_icao": aircraft_info.aircraft_icao,
@@ -362,11 +366,8 @@ async def sync_simbrief(
             "destination_lat": destination_lat,
             "destination_lon": destination_lon,
             "route_waypoint_count": len(route_waypoints),
-            "cruise_segment_count": len(cruise_segments),
-            "cruise_segment_distance_nm": round(
-                sum(segment["distanceNm"] for segment in cruise_segments),
-                2,
-            ) if cruise_segments else None,
+            "cruise_segment_count": remaining_route_profile.segment_count,
+            "cruise_segment_distance_nm": remaining_route_profile.total_distance_nm,
             "simbrief_taxi_out_min": simbrief_taxi_out_min,
             "simbrief_taxi_in_min": simbrief_taxi_in_min,
             "resolved_taxi_out_min": resolved_taxi_out_min,

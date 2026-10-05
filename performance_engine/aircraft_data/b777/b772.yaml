@@ -1,0 +1,30 @@
+aircraft_variant: B772
+display_name: Boeing 777-200ER calibrated CI/Mach approximation
+engine_variants: [GE90-90B, GE90-92B, GE90-94B, GE90-98B, PW4084, PW4090, PW4098, TRENT884, TRENT890, TRENT895, TRENT898]
+mass_reference_kg: 220000
+default_cruise_weight_kg: 210000
+min_mach: 0.76
+max_mach: 0.89
+mmo: 0.89
+drag_polar:
+  wing_area_m2: 427.8
+  cd0: 0.0205
+  induced_drag_factor: 0.044
+  compressibility_mach: 0.82
+  compressibility_drag_factor: 0.5
+fuel_model:
+  base_tsfc_kg_per_n_s: 0.0000186
+  mach_tsfc_factor_per_0_01: 0.0012
+  altitude_tsfc_factor_per_1000ft: -0.0025
+  temperature_tsfc_factor_per_c: 0.002
+cost_index_calibration:
+  boeing_ci_to_kg_per_min_scalar: 0.36
+  lrc_anchor_ci: 180
+  mrc_anchor_mach: 0.826
+  lrc_anchor_mach: 0.840
+  notes:
+    - "B772/B77E family coefficients are approximate and engine-family agnostic until variant-specific calibration data is added."
+confidence: medium
+source_notes:
+  - "Uses public 777 MRC/LRC anchors plus generic point-mass aerodynamics."
+  - "No exact Boeing FMC equivalence is claimed."

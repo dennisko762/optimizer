@@ -5,40 +5,71 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
+from data_fetcher.sim.remaining_distance import estimate_route_remaining_distance
 from data_fetcher.sim.sim_models import LiveSimState
 from data_fetcher.sim.telemetry_hub import TelemetrySnapshot, get_telemetry_hub
 from delay_module.eta_calculator import DelayTriggerConfig, compute_eta_if_possible
+from optimizer.route_profile_models import (
+    RemainingRouteProfile,
+    finalize_remaining_route_profile,
+)
 
 
 router = APIRouter(prefix="/api/simconnect", tags=["simconnect"])
 
 _destination_lat: float | None = None
 _destination_lon: float | None = None
+_remaining_route_profile: RemainingRouteProfile | None = None
 
 
 class DestinationPayload(BaseModel):
-    lat: float
-    lon: float
+    lat: float | None = None
+    lon: float | None = None
+    remaining_route_profile: RemainingRouteProfile | None = Field(
+        default=None,
+        alias="remainingRouteProfile",
+    )
+
+    model_config = {
+        "populate_by_name": True,
+    }
 
 
 @router.post("/destination", status_code=204)
 def set_destination(body: DestinationPayload) -> None:
-    global _destination_lat, _destination_lon
+    global _destination_lat, _destination_lon, _remaining_route_profile
     _destination_lat = body.lat
     _destination_lon = body.lon
+    _remaining_route_profile = finalize_remaining_route_profile(
+        body.remaining_route_profile
+    )
 
 
 class SimConnectFlightStatePatch(BaseModel):
+    aircraft: str | None = None
+    aircraft_config: str | None = Field(default=None, alias="aircraftConfig")
     altitude_ft: float | None = Field(default=None, alias="altitudeFt")
     gross_weight_kg: float | None = Field(default=None, alias="grossWeightKg")
     mach: float | None = None
+    current_cost_index: int | None = Field(default=None, alias="currentCostIndex")
+    fmc_source: str | None = Field(default=None, alias="fmcSource")
+    fmc_cruise_flight_level: int | None = Field(
+        default=None,
+        alias="fmcCruiseFlightLevel",
+    )
+    fmc_step_climb_distance_nm: float | None = Field(
+        default=None,
+        alias="fmcStepClimbDistanceNm",
+    )
 
     # Wind component along track (positive = tailwind, negative = headwind).
-    # Populated from AIRCRAFT_WIND_X when available.
+    # Populated from AIRCRAFT_WIND_Z when available.
     wind_component_kt: float | None = Field(default=None, alias="windComponentKt")
     isa_deviation_c: float | None = Field(default=None, alias="isaDeviationC")
 
     fuel_remaining_kg: float | None = Field(default=None, alias="fuelRemainingKg")
+    fuel_flow_kg_h: float | None = Field(default=None, alias="fuelFlowKgH")
+    fuel_flow_source: str | None = Field(default=None, alias="fuelFlowSource")
     ground_speed_kt: float | None = Field(default=None, alias="groundSpeedKt")
 
     # Computed from live lat/lon + destination coordinates (Haversine).
@@ -151,23 +182,32 @@ async def simconnect_eta(
             warnings=_collector_warnings(snapshot, fallback="SimConnect telemetry collector is warming up."),
         )
 
+    default_destination_lat = (
+        destination_lat if destination_lat is not None else _destination_lat
+    )
+    default_destination_lon = (
+        destination_lon if destination_lon is not None else _destination_lon
+    )
     effective_destination_lat, effective_destination_lon, destination_lookup_warning = _resolve_destination_coordinates(
-        destination_lat=destination_lat,
-        destination_lon=destination_lon,
+        destination_lat=default_destination_lat,
+        destination_lon=default_destination_lon,
         destination=destination,
     )
     if destination_lookup_warning is not None:
         warnings.append(destination_lookup_warning)
 
-    remaining_nm = live.get_remaining_distance_nm(
+    remaining_nm, _, _ = _resolve_remaining_distance(
+        live,
         destination_lat=effective_destination_lat,
         destination_lon=effective_destination_lon,
-    ) if hasattr(live, "get_remaining_distance_nm") else None
+    )
 
     if remaining_nm is None:
         warnings.append(
-            "Remaining distance not available from SimConnect. "
-            "Provide destinationLat/destinationLon or a destination ICAO code for live calculation."
+            _missing_remaining_distance_warning(
+                destination_lat=effective_destination_lat,
+                destination_lon=effective_destination_lon,
+            )
         )
 
     config = DelayTriggerConfig(
@@ -248,8 +288,8 @@ async def simconnect_telemetry(
     """
     Reads live aircraft telemetry from MSFS via the existing SimConnectClient.
 
-    Pass destinationLat / destinationLon (from SimBrief sync) to enable live
-    remaining distance calculation via Haversine.
+    Pass destinationLat / destinationLon (from SimBrief sync) to support live
+    remaining-distance fallback when no SimBrief route profile is available.
 
     Important:
     - This endpoint returns only real SimConnect telemetry.
@@ -284,7 +324,7 @@ async def simconnect_telemetry(
         destination=destination,
     )
 
-    patch = _live_state_to_patch(
+    patch, remaining_distance_source, remaining_distance_details = _live_state_to_patch(
         live,
         destination_lat=effective_destination_lat,
         destination_lon=effective_destination_lon,
@@ -294,6 +334,7 @@ async def simconnect_telemetry(
         destination_lat=effective_destination_lat,
         destination_lon=effective_destination_lon,
         remaining_distance_nm=patch.remaining_distance_nm,
+        remaining_distance_source=remaining_distance_source,
     )
     if destination_lookup_warning is not None:
         warnings.append(destination_lookup_warning)
@@ -307,7 +348,11 @@ async def simconnect_telemetry(
         lastSampleUtc=_format_snapshot_timestamp(snapshot.last_sample_utc),
         lastError=snapshot.last_error,
         flightStatePatch=patch,
-        rawSummary=_raw_summary(live),
+        rawSummary=_raw_summary(
+            live,
+            remaining_distance_source=remaining_distance_source,
+            remaining_distance_details=remaining_distance_details,
+        ),
         warnings=warnings,
     )
     print("SimConnect telemetry response:", res.json())
@@ -319,34 +364,140 @@ def _live_state_to_patch(
     *,
     destination_lat: float | None = None,
     destination_lon: float | None = None,
-) -> SimConnectFlightStatePatch:
-    # Remaining distance: live Haversine when destination coords provided.
+) -> tuple[SimConnectFlightStatePatch, str | None, dict[str, Any] | None]:
+    # Remaining distance: prefer the synced SimBrief route profile, then fall back.
+    remaining_nm, remaining_distance_source, remaining_distance_details = (
+        _resolve_remaining_distance(
+            live,
+            destination_lat=destination_lat,
+            destination_lon=destination_lon,
+        )
+    )
+
+    # Wind component: use AIRCRAFT_WIND_Z directly (longitudinal axis).
+    # This is the most reliable source — no track calculation needed.
+    wind_component_kt = live.wind_component_along_track()
+
+    return (
+        SimConnectFlightStatePatch(
+            aircraft=_live_aircraft_code(live),
+            aircraftConfig=_live_aircraft_config(live),
+            altitudeFt=live.altitude_ft,
+            grossWeightKg=live.gross_weight_kg,
+            mach=live.mach,
+            currentCostIndex=(
+                live.fmc_snapshot.cost_index
+                if live.fmc_snapshot is not None
+                else None
+            ),
+            fmcSource=(
+                live.fmc_snapshot.source
+                if live.fmc_snapshot is not None
+                else None
+            ),
+            fmcCruiseFlightLevel=(
+                live.fmc_snapshot.cruise_flight_level
+                if live.fmc_snapshot is not None
+                else None
+            ),
+            fmcStepClimbDistanceNm=(
+                live.fmc_snapshot.step_climb.distance_nm
+                if live.fmc_snapshot is not None and live.fmc_snapshot.step_climb is not None
+                else None
+            ),
+            fuelRemainingKg=live.fuel_remaining_kg,
+            fuelFlowKgH=live.fuel_flow_kg_h,
+            fuelFlowSource=live.fuel_flow_source,
+            groundSpeedKt=live.ground_speed_kt,
+            isaDeviationC=live.isa_deviation_c,
+            windComponentKt=wind_component_kt,
+            remainingDistanceNm=remaining_nm,
+            gpsEteSeconds=live.gps_ete_seconds if live.gps_is_active_flight_plan else None,
+            gpsEtaSeconds=live.gps_eta_seconds if live.gps_is_active_flight_plan else None,
+        ),
+        remaining_distance_source,
+        remaining_distance_details,
+    )
+
+
+def _live_aircraft_entry(live: LiveSimState):
+    from optimizer.configs.aircraft.aircraft_catalog import resolve_aircraft_from_title
+
+    return resolve_aircraft_from_title(live.aircraft_title)
+
+
+def _live_aircraft_code(live: LiveSimState) -> str | None:
+    entry = _live_aircraft_entry(live)
+    return entry.simbrief_code if entry is not None else None
+
+
+def _live_aircraft_config(live: LiveSimState) -> str | None:
+    entry = _live_aircraft_entry(live)
+    return entry.config_key if entry is not None else None
+
+def _resolve_remaining_distance(
+    live: LiveSimState,
+    *,
+    destination_lat: float | None = None,
+    destination_lon: float | None = None,
+) -> tuple[float | None, str | None, dict[str, Any] | None]:
+    fmc_snapshot = live.fmc_snapshot
+    fmc_remaining_nm = (
+        fmc_snapshot.destination_distance_nm()
+        if fmc_snapshot is not None
+        else None
+    )
+    if fmc_remaining_nm is not None:
+        return round(float(fmc_remaining_nm), 2), "FMC_ADAPTER", {
+            "destinationIdent": (
+                fmc_snapshot.destination.ident
+                if fmc_snapshot is not None and fmc_snapshot.destination is not None
+                else None
+            ),
+            "destinationEtaZulu": (
+                fmc_snapshot.destination.eta_zulu
+                if fmc_snapshot is not None and fmc_snapshot.destination is not None
+                else None
+            ),
+            "destinationFuel": (
+                fmc_snapshot.destination.fuel
+                if fmc_snapshot is not None and fmc_snapshot.destination is not None
+                else None
+            ),
+            "page": fmc_snapshot.page if fmc_snapshot is not None else None,
+            "adapterKey": (
+                fmc_snapshot.adapter_key if fmc_snapshot is not None else None
+            ),
+        }
+
+    route_estimate = estimate_route_remaining_distance(
+        current_lat=live.latitude,
+        current_lon=live.longitude,
+        route_profile=_remaining_route_profile,
+    )
+    if route_estimate is not None:
+        return (
+            float(route_estimate["remainingDistanceNm"]),
+            "SIMBRIEF_ROUTE",
+            route_estimate,
+        )
+
     gps_remaining_nm = (
         live.gps_remaining_distance_nm
         if live.gps_is_active_flight_plan and _positive(live.gps_remaining_distance_nm)
         else None
     )
-    remaining_nm = gps_remaining_nm or live.get_remaining_distance_nm(
+    if gps_remaining_nm is not None:
+        return round(float(gps_remaining_nm), 2), "GPS_FLIGHT_PLAN", None
+
+    direct_remaining_nm = live.get_remaining_distance_nm(
         destination_lat=destination_lat,
         destination_lon=destination_lon,
     )
+    if direct_remaining_nm is not None:
+        return round(float(direct_remaining_nm), 2), "DESTINATION_GC", None
 
-    # Wind component: use AIRCRAFT_WIND_X directly (longitudinal axis).
-    # This is the most reliable source — no track calculation needed.
-    wind_component_kt = live.wind_component_along_track()
-
-    return SimConnectFlightStatePatch(
-        altitudeFt=live.altitude_ft,
-        grossWeightKg=live.gross_weight_kg,
-        mach=live.mach,
-        fuelRemainingKg=live.fuel_remaining_kg,
-        groundSpeedKt=live.ground_speed_kt,
-        isaDeviationC=live.isa_deviation_c,
-        windComponentKt=wind_component_kt,
-        remainingDistanceNm=remaining_nm,
-        gpsEteSeconds=live.gps_ete_seconds if live.gps_is_active_flight_plan else None,
-        gpsEtaSeconds=live.gps_eta_seconds if live.gps_is_active_flight_plan else None,
-    )
+    return None, None, None
 
 
 def _build_warnings(
@@ -355,6 +506,7 @@ def _build_warnings(
     destination_lat: float | None = None,
     destination_lon: float | None = None,
     remaining_distance_nm: float | None = None,
+    remaining_distance_source: str | None = None,
 ) -> list[str]:
     warnings: list[str] = []
 
@@ -370,24 +522,46 @@ def _build_warnings(
     if live.fuel_remaining_kg is None:
         warnings.append("SimConnect did not return fuel remaining.")
 
+    if live.fuel_flow_kg_h is None:
+        warnings.append(
+            "SimConnect did not return usable fuel flow; optimization will not use a static fuel-flow fallback."
+        )
+
+    if (
+        live.fmc_adapter_status not in {None, "inactive", "connected"}
+        and live.fmc_adapter_error
+        and live.aircraft_title
+    ):
+        warnings.append(live.fmc_adapter_error)
+    elif live.fmc_adapter_status == "starting" and live.aircraft_title:
+        warnings.append(
+            "Aircraft-specific FMC bridge is active but no supported FMC page has been parsed yet. "
+            "Open the relevant progress page to enable FMC-derived telemetry."
+        )
+
     if live.ground_speed_kt is None:
         warnings.append("SimConnect did not return ground speed.")
 
     if live.isa_deviation_c is None:
         warnings.append("SimConnect did not return enough data to calculate ISA deviation.")
 
-    if live.wind_x_kt is None and live.wind_velocity_kt is None:
+    if live.wind_z_kt is None and live.wind_velocity_kt is None:
         warnings.append("SimConnect did not return wind data.")
 
-    if live.gps_is_active_flight_plan and _positive(live.gps_remaining_distance_nm):
+    if remaining_distance_source in {"FMC_ADAPTER", "SIMBRIEF_ROUTE"}:
         pass
-    elif destination_lat is None or destination_lon is None:
+    elif _remaining_route_profile is not None and remaining_distance_nm is not None:
         warnings.append(
-            "No destination coordinates available for live remaining-distance calculation."
+            "Remaining distance fell back from the synced SimBrief route profile to a less accurate source."
         )
+    elif remaining_distance_source in {"GPS_FLIGHT_PLAN", "DESTINATION_GC"}:
+        pass
     elif remaining_distance_nm is None:
         warnings.append(
-            "Remaining distance could not be calculated from live position and destination."
+            _missing_remaining_distance_warning(
+                destination_lat=destination_lat,
+                destination_lon=destination_lon,
+            )
         )
 
     return warnings
@@ -416,8 +590,14 @@ def _resolve_destination_coordinates(
     )
 
 
-def _raw_summary(live: LiveSimState) -> dict[str, Any]:
-    return {
+def _raw_summary(
+    live: LiveSimState,
+    *,
+    remaining_distance_source: str | None = None,
+    remaining_distance_details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = {
+        "aircraft_title": live.aircraft_title,
         "altitude_ft": live.altitude_ft,
         "pressure_altitude_ft": live.pressure_altitude_ft,
         "true_altitude_ft": live.true_altitude_ft,
@@ -428,11 +608,14 @@ def _raw_summary(live: LiveSimState) -> dict[str, Any]:
         "vertical_speed_fpm": live.vertical_speed_fpm,
         "gross_weight_kg": live.gross_weight_kg,
         "fuel_remaining_kg": live.fuel_remaining_kg,
+        "fuel_flow_kg_h": live.fuel_flow_kg_h,
+        "fuel_flow_source": live.fuel_flow_source,
         "latitude": live.latitude,
         "longitude": live.longitude,
         "wind_velocity_kt": live.wind_velocity_kt,
         "wind_direction_deg": live.wind_direction_deg,
         "wind_x_kt": live.wind_x_kt,
+        "wind_z_kt": live.wind_z_kt,
         "ambient_temperature_c": live.ambient_temperature_c,
         "isa_deviation_c": live.isa_deviation_c,
         "on_ground": live.on_ground,
@@ -443,7 +626,131 @@ def _raw_summary(live: LiveSimState) -> dict[str, Any]:
         "gps_remaining_distance_nm": live.gps_remaining_distance_nm,
         "gps_waypoint_distance_nm": live.gps_waypoint_distance_nm,
         "gps_ground_speed_kt": live.gps_ground_speed_kt,
+        "fmc_adapter_status": live.fmc_adapter_status,
+        "fmc_adapter_error": live.fmc_adapter_error,
+        "remaining_distance_source": (
+            remaining_distance_source.lower()
+            if remaining_distance_source is not None
+            else None
+        ),
+        "route_profile_segment_count": (
+            _remaining_route_profile.segment_count
+            if _remaining_route_profile is not None
+            else None
+        ),
+        "route_profile_total_distance_nm": (
+            _remaining_route_profile.total_distance_nm
+            if _remaining_route_profile is not None
+            else None
+        ),
     }
+
+    if remaining_distance_details is not None:
+        summary.update(
+            {
+                "fmc_destination_ident": remaining_distance_details.get(
+                    "destinationIdent"
+                ),
+                "fmc_destination_eta_zulu": remaining_distance_details.get(
+                    "destinationEtaZulu"
+                ),
+                "fmc_destination_fuel": remaining_distance_details.get(
+                    "destinationFuel"
+                ),
+                "fmc_page": remaining_distance_details.get("page"),
+                "fmc_adapter_key": remaining_distance_details.get("adapterKey"),
+                "route_profile_active_segment_index": remaining_distance_details.get(
+                    "activeSegmentIndex"
+                ),
+                "route_profile_active_waypoint": remaining_distance_details.get(
+                    "activeWaypointIdent"
+                ),
+                "route_profile_segment_deviation_nm": remaining_distance_details.get(
+                    "segmentDeviationNm"
+                ),
+                "route_profile_distance_to_next_waypoint_nm": remaining_distance_details.get(
+                    "distanceToNextWaypointNm"
+                ),
+            }
+        )
+
+    if live.fmc_snapshot is not None:
+        summary.update(
+            {
+                "fmc_aircraft": live.fmc_snapshot.aircraft,
+                "fmc_source": live.fmc_snapshot.source,
+                "fmc_cdu_index": live.fmc_snapshot.cdu_index,
+                "fmc_flight_number": live.fmc_snapshot.flight_number,
+                "fmc_cost_index": live.fmc_snapshot.cost_index,
+                "fmc_cruise_flight_level": live.fmc_snapshot.cruise_flight_level,
+                "fmc_econ_speed_mach": live.fmc_snapshot.econ_speed_mach,
+                "fmc_destination_ident": (
+                    live.fmc_snapshot.destination.ident
+                    if live.fmc_snapshot.destination is not None
+                    else None
+                ),
+                "fmc_destination_eta_zulu": (
+                    live.fmc_snapshot.destination.eta_zulu
+                    if live.fmc_snapshot.destination is not None
+                    else None
+                ),
+                "fmc_destination_fuel": (
+                    live.fmc_snapshot.destination.fuel
+                    if live.fmc_snapshot.destination is not None
+                    else None
+                ),
+                "fmc_to_waypoint_ident": (
+                    live.fmc_snapshot.to_waypoint.ident
+                    if live.fmc_snapshot.to_waypoint is not None
+                    else None
+                ),
+                "fmc_to_waypoint_distance_nm": (
+                    live.fmc_snapshot.to_waypoint.dtg_nm
+                    if live.fmc_snapshot.to_waypoint is not None
+                    else None
+                ),
+                "fmc_next_waypoint_ident": (
+                    live.fmc_snapshot.next_waypoint.ident
+                    if live.fmc_snapshot.next_waypoint is not None
+                    else None
+                ),
+                "fmc_next_waypoint_distance_nm": (
+                    live.fmc_snapshot.next_waypoint.dtg_nm
+                    if live.fmc_snapshot.next_waypoint is not None
+                    else None
+                ),
+                "fmc_step_climb_time_zulu": (
+                    live.fmc_snapshot.step_climb.time_zulu
+                    if live.fmc_snapshot.step_climb is not None
+                    else None
+                ),
+                "fmc_step_climb_distance_nm": (
+                    live.fmc_snapshot.step_climb.distance_nm
+                    if live.fmc_snapshot.step_climb is not None
+                    else None
+                ),
+            }
+        )
+
+    return summary
+
+
+def _missing_remaining_distance_warning(
+    *,
+    destination_lat: float | None,
+    destination_lon: float | None,
+) -> str:
+    if _remaining_route_profile is not None:
+        return (
+            "Remaining distance could not be calculated from live position and the "
+            "synced SimBrief route profile."
+        )
+    if destination_lat is None or destination_lon is None:
+        return (
+            "No synced SimBrief route profile or destination coordinates are available "
+            "for live remaining-distance calculation."
+        )
+    return "Remaining distance could not be calculated from live position and destination."
 
 
 async def _get_telemetry_snapshot(

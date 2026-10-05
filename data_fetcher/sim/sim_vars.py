@@ -63,6 +63,16 @@ STANDARD_SIM_VARS = {
         "python_simconnect_name": "TOTAL_WEIGHT",
         "unit": "pounds",
     },
+    "engine_count": {
+        "simvar": "NUMBER OF ENGINES",
+        "python_simconnect_name": "NUMBER_OF_ENGINES",
+        "unit": "number",
+    },
+    "engine_type": {
+        "simvar": "ENGINE TYPE",
+        "python_simconnect_name": "ENGINE_TYPE",
+        "unit": "enum",
+    },
     "fuel_remaining_lb": {
         "simvar": "FUEL TOTAL QUANTITY WEIGHT",
         "python_simconnect_name": "FUEL_TOTAL_QUANTITY_WEIGHT",
@@ -72,6 +82,46 @@ STANDARD_SIM_VARS = {
         "simvar": "FUEL TOTAL QUANTITY WEIGHT EX1",
         "python_simconnect_name": "FUEL_TOTAL_QUANTITY_WEIGHT_EX1",
         "unit": "pounds",
+    },
+    "fuel_weight_per_gallon_lb": {
+        "simvar": "FUEL WEIGHT PER GALLON",
+        "python_simconnect_name": "FUEL_WEIGHT_PER_GALLON",
+        "unit": "pounds",
+    },
+    "turb_eng_fuel_flow_pph": {
+        "simvar": "TURB ENG FUEL FLOW PPH:index",
+        "python_simconnect_name": "TURB_ENG_FUEL_FLOW_PPH:index",
+        "unit": "pounds per hour",
+    },
+    "eng_fuel_flow_pph": {
+        "simvar": "ENG FUEL FLOW PPH:index",
+        "python_simconnect_name": "ENG_FUEL_FLOW_PPH:index",
+        "unit": "pounds per hour",
+    },
+    "eng_fuel_flow_pph_ssl": {
+        "simvar": "ENG FUEL FLOW PPH SSL:index",
+        "python_simconnect_name": "ENG_FUEL_FLOW_PPH_SSL:index",
+        "unit": "pounds per hour",
+    },
+    "recip_eng_fuel_flow_pph": {
+        "simvar": "RECIP ENG FUEL FLOW:index",
+        "python_simconnect_name": "RECIP_ENG_FUEL_FLOW:index",
+        "unit": "pounds per hour",
+    },
+    "eng_fuel_flow_gph": {
+        "simvar": "ENG FUEL FLOW GPH:index",
+        "python_simconnect_name": "ENG_FUEL_FLOW_GPH:index",
+        "unit": "gallons per hour",
+    },
+    "turb_eng_corrected_ff": {
+        "simvar": "TURB ENG CORRECTED FF:index",
+        "python_simconnect_name": "TURB_ENG_CORRECTED_FF:index",
+        "unit": "pounds per hour",
+    },
+    "fuelsystem_line_fuel_flow": {
+        "simvar": "FUELSYSTEM LINE FUEL FLOW:index",
+        "python_simconnect_name": "FUELSYSTEM_LINE_FUEL_FLOW:index",
+        "unit": "gallons per hour",
     },
 
     # Weather / atmosphere

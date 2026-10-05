@@ -57,6 +57,13 @@ class RemainingCruiseInput:
     isa_deviation_c: float = 0.0
     segment_distance_nm: float = 50.0
     engine_variant: str | None = None
+    live_fuel_flow_kg_h: float | None = None
+    live_fuel_flow_source: str | None = None
+    fuel_flow_reference_altitude_ft: float | None = None
+    fuel_flow_reference_gross_weight_kg: float | None = None
+    fuel_flow_reference_mach: float | None = None
+    fuel_flow_reference_isa_deviation_c: float | None = None
+    require_live_fuel_flow: bool = False
 
     # Optional new API: when provided, these replace the legacy single average
     # distance/wind/temp/altitude assumptions.
@@ -88,6 +95,8 @@ class RemainingCruiseResult:
     performance_model: str = "openap"
     source_aircraft: str | None = None
     segment_count: int = 1
+    live_fuel_flow_kg_h: float | None = None
+    live_fuel_flow_source: str | None = None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -155,6 +164,19 @@ def simulate_remaining_cruise(
         openap_aircraft=openap_aircraft,
         warnings=warnings,
     )
+    live_fuel_flow_scale_factor = _resolve_live_fuel_flow_scale_factor(
+        request=request,
+        aircraft_cfg=profile,
+        fuel_flow_model=fuel_flow_model,
+        fcom_performance=fcom_performance,
+        warnings=warnings,
+    )
+    if request.require_live_fuel_flow and live_fuel_flow_scale_factor is None:
+        raise ValueError(
+            "Live SimConnect fuel flow is required. Refusing to use a static or purely modeled fuel-flow value."
+        )
+    if live_fuel_flow_scale_factor is not None:
+        performance_model = f"{performance_model}_simconnect_anchor"
 
     distance_total_nm = 0.0
     distance_left_weighted_tas = 0.0
@@ -203,6 +225,7 @@ def simulate_remaining_cruise(
             distance_nm=seg_distance_nm,
             subsegment_distance_nm=request.segment_distance_nm,
             fcom_performance=fcom_performance,
+            live_fuel_flow_scale_factor=live_fuel_flow_scale_factor,
             warnings=warnings,
         )
 
@@ -237,6 +260,10 @@ def simulate_remaining_cruise(
         performance_model=performance_model,
         source_aircraft=fcom_variant or openap_aircraft,
         segment_count=len(segments),
+        live_fuel_flow_kg_h=round(request.live_fuel_flow_kg_h, 2)
+        if request.live_fuel_flow_kg_h is not None
+        else None,
+        live_fuel_flow_source=request.live_fuel_flow_source,
         warnings=warnings,
     )
 
@@ -254,6 +281,7 @@ def _simulate_distance_in_subsegments(
     distance_nm: float,
     subsegment_distance_nm: float,
     fcom_performance: BoeingFcomPerformance | None,
+    live_fuel_flow_scale_factor: float | None,
     warnings: list[str],
 ) -> tuple[float, float]:
     distance_left_nm = distance_nm
@@ -264,36 +292,21 @@ def _simulate_distance_in_subsegments(
     while distance_left_nm > 1e-9:
         segment_nm = min(subsegment_distance_nm, distance_left_nm)
 
-        raw_fuel_flow_kg_s = fuel_flow_model.enroute(
-            mass=current_weight_kg,
-            tas=tas_kt,
-            alt=altitude_ft,
-            vs=0,
-            acc=0,
-            dT=isa_deviation_c,
-            limit=True,
-        )
-
-        raw_fuel_flow_kg_h = float(raw_fuel_flow_kg_s) * 3600.0
-        if fcom_performance is not None:
-            raw_fuel_flow_kg_h = _compute_hybrid_fcom_fuel_flow_kg_h(
-                fuel_flow_model=fuel_flow_model,
-                fcom_performance=fcom_performance,
-                gross_weight_kg=current_weight_kg,
-                altitude_ft=altitude_ft,
-                isa_deviation_c=isa_deviation_c,
-                target_mach=mach,
-                target_tas_kt=tas_kt,
-                raw_openap_target_fuel_flow_kg_h=raw_fuel_flow_kg_h,
-                warnings=warnings,
-            )
-        calibrated_fuel_flow_kg_h = _apply_fuel_flow_calibration(
-            raw_fuel_flow_kg_h=raw_fuel_flow_kg_h,
+        modeled_fuel_flow_kg_h = _compute_modeled_fuel_flow_kg_h(
+            fuel_flow_model=fuel_flow_model,
             aircraft_cfg=aircraft_cfg,
             mach=mach,
-            altitude_ft=altitude_ft,
             gross_weight_kg=current_weight_kg,
+            altitude_ft=altitude_ft,
+            isa_deviation_c=isa_deviation_c,
+            tas_kt=tas_kt,
+            fcom_performance=fcom_performance,
+            warnings=warnings,
         )
+
+        calibrated_fuel_flow_kg_h = modeled_fuel_flow_kg_h
+        if live_fuel_flow_scale_factor is not None:
+            calibrated_fuel_flow_kg_h *= live_fuel_flow_scale_factor
 
         segment_time_h = segment_nm / ground_speed_kt
         segment_fuel_kg = calibrated_fuel_flow_kg_h * segment_time_h
@@ -304,6 +317,136 @@ def _simulate_distance_in_subsegments(
         distance_left_nm -= segment_nm
 
     return total_fuel_kg, total_time_h
+
+
+def _resolve_live_fuel_flow_scale_factor(
+    *,
+    request: RemainingCruiseInput,
+    aircraft_cfg: Mapping[str, Any],
+    fuel_flow_model: FuelFlow,
+    fcom_performance: BoeingFcomPerformance | None,
+    warnings: list[str],
+) -> float | None:
+    if request.live_fuel_flow_kg_h is None or request.live_fuel_flow_kg_h <= 0:
+        return None
+
+    reference_mach = _coalesce_float(
+        request.fuel_flow_reference_mach,
+        request.mach,
+    )
+    reference_altitude_ft = _coalesce_float(
+        request.fuel_flow_reference_altitude_ft,
+        request.altitude_ft,
+    )
+    reference_gross_weight_kg = _coalesce_float(
+        request.fuel_flow_reference_gross_weight_kg,
+        request.gross_weight_kg,
+    )
+    reference_isa_deviation_c = _coalesce_float(
+        request.fuel_flow_reference_isa_deviation_c,
+        request.isa_deviation_c,
+    )
+
+    reference_tas_kt = aero.mach2tas(
+        reference_mach,
+        reference_altitude_ft * aero.ft,
+        dT=reference_isa_deviation_c,
+    ) / aero.kts
+
+    reference_modeled_fuel_flow_kg_h = _compute_modeled_fuel_flow_kg_h(
+        fuel_flow_model=fuel_flow_model,
+        aircraft_cfg=aircraft_cfg,
+        mach=reference_mach,
+        gross_weight_kg=reference_gross_weight_kg,
+        altitude_ft=reference_altitude_ft,
+        isa_deviation_c=reference_isa_deviation_c,
+        tas_kt=reference_tas_kt,
+        fcom_performance=fcom_performance,
+        warnings=warnings,
+    )
+
+    if reference_modeled_fuel_flow_kg_h <= 1e-9:
+        if request.require_live_fuel_flow:
+            raise ValueError("Live SimConnect fuel flow could not be anchored to the performance model.")
+        _append_unique_warnings(
+            warnings,
+            [
+                "Live SimConnect fuel flow was available, but the modeled reference burn collapsed to zero. "
+                "Falling back to the pure performance model."
+            ],
+        )
+        return None
+
+    scale_factor = request.live_fuel_flow_kg_h / reference_modeled_fuel_flow_kg_h
+    if scale_factor <= 0.05 or scale_factor >= 20.0:
+        if request.require_live_fuel_flow:
+            raise ValueError(
+                f"Live SimConnect fuel flow scale factor {scale_factor:.2f} is implausible; refusing static fallback."
+            )
+        _append_unique_warnings(
+            warnings,
+            [
+                f"Live SimConnect fuel flow scale factor {scale_factor:.2f} looks implausible for "
+                f"{request.live_fuel_flow_kg_h:.0f} kg/h; ignoring the live anchor."
+            ],
+        )
+        return None
+
+    if request.live_fuel_flow_source == "FUEL_TOTAL_QUANTITY_WEIGHT_DELTA":
+        _append_unique_warnings(
+            warnings,
+            [
+                "Live fuel flow is being estimated from recent total-fuel burn because no direct engine fuel-flow SimVar was available."
+            ],
+        )
+
+    return scale_factor
+
+
+def _compute_modeled_fuel_flow_kg_h(
+    *,
+    fuel_flow_model: FuelFlow,
+    aircraft_cfg: Mapping[str, Any],
+    mach: float,
+    gross_weight_kg: float,
+    altitude_ft: float,
+    isa_deviation_c: float,
+    tas_kt: float,
+    fcom_performance: BoeingFcomPerformance | None,
+    warnings: list[str],
+) -> float:
+    raw_fuel_flow_kg_h = float(
+        fuel_flow_model.enroute(
+            mass=gross_weight_kg,
+            tas=tas_kt,
+            alt=altitude_ft,
+            vs=0,
+            acc=0,
+            dT=isa_deviation_c,
+            limit=True,
+        )
+    ) * 3600.0
+
+    if fcom_performance is not None:
+        raw_fuel_flow_kg_h = _compute_hybrid_fcom_fuel_flow_kg_h(
+            fuel_flow_model=fuel_flow_model,
+            fcom_performance=fcom_performance,
+            gross_weight_kg=gross_weight_kg,
+            altitude_ft=altitude_ft,
+            isa_deviation_c=isa_deviation_c,
+            target_mach=mach,
+            target_tas_kt=tas_kt,
+            raw_openap_target_fuel_flow_kg_h=raw_fuel_flow_kg_h,
+            warnings=warnings,
+        )
+
+    return _apply_fuel_flow_calibration(
+        raw_fuel_flow_kg_h=raw_fuel_flow_kg_h,
+        aircraft_cfg=aircraft_cfg,
+        mach=mach,
+        altitude_ft=altitude_ft,
+        gross_weight_kg=gross_weight_kg,
+    )
 
 
 def _compute_hybrid_fcom_fuel_flow_kg_h(

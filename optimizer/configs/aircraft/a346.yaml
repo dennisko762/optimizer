@@ -24,22 +24,86 @@ maint: 2936
 own: 4378
 sched: 578
 performance:
+  source:
+    primary: openap
+    openap_aircraft: A343
   speed_envelope:
     vmo_kt: 330    # KIAS
     mmo: 0.86
 
   min_ci: 0
-  max_ci: 100
+  max_ci: 300
   ci_step: 5
   ci_normalization_factor: 21500
+  cruise:
+    reference_mach: 0.82
+    normal_min_mach: 0.80
+    normal_max_mach: 0.84
+    recovery_max_mach: 0.84
+    cas_mach_crossover_fl: 320.0
+    default_segment_distance_nm: 50.0
 ff: 13200
+cost_index_mapping:
+  min_ci: 0
+  max_ci: 300
+  kg_per_min_to_ci_factor: 1.0
+  optimizer_mode: airbus_family_fmc_like_ci
+  airbus_family_ci:
+    confidence_level: fallback
+    lrc_anchor_ci: 50
+    min_ci: 0
+    max_ci: 300
+    high_speed_soft_anchor_ci: 200
+    low_ci_shape: 0.85
+    high_ci_shape: 0.95
+    high_ci_soft_fraction: 0.55
+    candidate_ci_values: [0, 20, 50, 80, 100, 150, 200]
+    recovery_candidate_ci_values: [250, 300]
+    cas_mach_crossover_fl: 320.0
+    reference_lrc_mach: 0.823
+    reference_flight_level: 350
+    reference_gross_weight_kg: 300000
+    minimum_lrc_mach: 0.71
+    lrc_to_envelope_margin_mach: 0.01
+    lrc_mach_delta_by_flight_level:
+      - { flight_level: 230, delta_mach: -0.082 }
+      - { flight_level: 250, delta_mach: -0.067 }
+      - { flight_level: 280, delta_mach: -0.042 }
+      - { flight_level: 310, delta_mach: -0.018 }
+      - { flight_level: 330, delta_mach: -0.004 }
+      - { flight_level: 350, delta_mach: 0.000 }
+      - { flight_level: 370, delta_mach: 0.004 }
+    lrc_mach_delta_by_weight_kg:
+      - { weight_kg: 220000, delta_mach: -0.010 }
+      - { weight_kg: 280000, delta_mach: -0.002 }
+      - { weight_kg: 320000, delta_mach: 0.006 }
+      - { weight_kg: 360000, delta_mach: 0.012 }
+    mrc_min_cas_kt: 242.0
+    mrc_cas_offset_by_altitude_ft:
+      - { altitude_ft: 23000, offset_kt: 17.0 }
+      - { altitude_ft: 28000, offset_kt: 14.0 }
+      - { altitude_ft: 32000, offset_kt: 11.0 }
+      - { altitude_ft: 35000, offset_kt: 9.0 }
+      - { altitude_ft: 39000, offset_kt: 8.0 }
+    mrc_cas_offset_by_weight_kg:
+      - { weight_kg: 220000, offset_kt: 0.0 }
+      - { weight_kg: 300000, offset_kt: 1.0 }
+      - { weight_kg: 360000, offset_kt: 2.0 }
+    headwind_mach_per_50kt: 0.005
+    tailwind_mach_per_50kt: 0.005
+    max_headwind_mach_adjustment: 0.015
+    max_tailwind_mach_adjustment: 0.015
+    isa_adjustment_mach_per_c: 0.00015
+    max_isa_mach_adjustment: 0.004
+    econ_max_mmo_margin: 0.02
 support_status:
   estimated: false
   has_curated_catalog_entry: true
-  performance_model: estimated_baseline_scaling
+  performance_model: airbus_family_ci_guided_fallback
 notes:
   important:
   - This file is generated for simulator/VA optimization use.
+  - Airbus-family CI behavior for the A340-600 is a conservative family fallback until stronger -500/-600-specific calibration data is added.
   - Cost values are estimates scaled from the A320 baseline until operator/VA data
     is provided.
   - Cabin crew minimum uses EASA ORO.CC.100 one cabin crew member per 50 or fraction
@@ -50,5 +114,4 @@ notes:
     crew_regulation: EASA ORO.CC.100 one-per-50-or-fraction installed passenger seats.
     cost_model: A320 baseline scaled by MTOW/seats; replace with VA/operator-provided
       cost data.
-    performance: Reference fuel flow is approximate unless backed by curated/OpenAP/performance
-      data.
+    performance: Conservative Airbus family CI guidance plus shared simulator/OpenAP performance path.

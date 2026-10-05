@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
+from data_fetcher.sim.fmc_bridge import get_fmc_bridge_manager
 from data_fetcher.sim.sim_client import SimClient, SimClientError
 from data_fetcher.sim.sim_config import create_sim_client
 from data_fetcher.sim.sim_models import LiveSimState
@@ -49,6 +50,7 @@ class TelemetryHub:
     ) -> None:
         self.poll_interval_s = poll_interval_s
         self._client_factory = client_factory or create_sim_client
+        self._fmc_bridge = get_fmc_bridge_manager()
         self._client: SimClient | None = None
         self._snapshot = TelemetrySnapshot(poll_interval_s=poll_interval_s)
         self._snapshot_lock = asyncio.Lock()
@@ -76,6 +78,7 @@ class TelemetryHub:
                 await task
 
         await asyncio.to_thread(self._safe_close_client)
+        await asyncio.to_thread(self._fmc_bridge.close)
 
     async def get_snapshot(self) -> TelemetrySnapshot:
         async with self._snapshot_lock:
@@ -113,6 +116,7 @@ class TelemetryHub:
                     f"Unexpected SimConnect telemetry error: {exc}"
                 )
             else:
+                live = await asyncio.to_thread(self._enrich_with_fmc_snapshot, live)
                 await self._store_live(live)
 
     def _get_client(self) -> SimClient:
@@ -159,6 +163,17 @@ class TelemetryHub:
             except Exception:
                 pass
         self._client = None
+
+    def _enrich_with_fmc_snapshot(self, live: LiveSimState) -> LiveSimState:
+        self._fmc_bridge.update_aircraft_context(live.aircraft_title)
+        snapshot, status, error = self._fmc_bridge.get_latest_snapshot()
+        return live.model_copy(
+            update={
+                "fmc_snapshot": snapshot,
+                "fmc_adapter_status": status,
+                "fmc_adapter_error": error,
+            }
+        )
 
 
 _telemetry_hub = TelemetryHub()

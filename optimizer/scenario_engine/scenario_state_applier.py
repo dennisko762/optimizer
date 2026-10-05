@@ -6,6 +6,7 @@ from optimizer.scenario_engine.scenario_models import (
     ScenarioInput,
     ScenarioType,
 )
+from optimizer.route_profile_models import cruise_segments_from_remaining_route_profile
 
 
 def apply_scenario_to_current_state(
@@ -48,6 +49,16 @@ def apply_scenario_to_current_state(
 
     if not updates:
         return current_state
+
+    remaining_distance_nm = updates.get("remaining_distance_nm")
+    if (
+        remaining_distance_nm is not None
+        and current_state.remaining_route_profile is not None
+    ):
+        updates["cruise_segments"] = cruise_segments_from_remaining_route_profile(
+            current_state.remaining_route_profile,
+            remaining_distance_nm=float(remaining_distance_nm),
+        )
 
     return current_state.model_copy(update=updates)
 

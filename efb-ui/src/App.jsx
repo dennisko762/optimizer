@@ -91,6 +91,8 @@ const EMPTY_FLIGHT_STATE = {
   windComponentKt: "",
   isaDeviationC: "",
   fuelRemainingKg: "",
+  fuelFlowKgH: "",
+  fuelFlowSource: "",
   groundSpeedKt: "",
   paxCount: "",
 };
@@ -114,6 +116,8 @@ const EMPTY_TELEMETRY_PATCH = {
   windComponentKt: null,
   isaDeviationC: null,
   fuelRemainingKg: null,
+  fuelFlowKgH: null,
+  fuelFlowSource: null,
   groundSpeedKt: null,
   remainingDistanceNm: null,
   gpsEteSeconds: null,
@@ -479,6 +483,7 @@ function normalizeStrategy(strategy) {
   return {
     costIndex: pick(strategy, ["costIndex", "cost_index"], null),
     mach: pick(strategy, ["mach"], null),
+    flightLevel: pick(strategy, ["flightLevel", "flight_level"], null),
     fuelKg: pick(strategy, ["fuelKg", "performance.remainingFuelKg", "performance.remaining_fuel_kg"], null),
     timeMin: pick(strategy, ["timeMin", "performance.remainingTimeMin", "performance.remaining_time_min"], null),
     totalCostEur: pick(strategy, ["totalCostEur", "cost.totalCostEur", "cost.total_cost_eur"], null),
@@ -608,7 +613,14 @@ function numberOrNull(value) {
   return parseFlexibleNumber(value);
 }
 
-function buildOptimizeRequest({ selectedAction, aircraftConfig, flightState, flightContext, payload }) {
+function buildOptimizeRequest({
+  selectedAction,
+  aircraftConfig,
+  flightState,
+  flightContext,
+  remainingRouteProfile,
+  payload,
+}) {
   const cleanedPayload = {};
   for (const [key, value] of Object.entries(payload ?? {})) {
     if (value === "" || value === undefined || value === null) {
@@ -642,6 +654,8 @@ function buildOptimizeRequest({ selectedAction, aircraftConfig, flightState, fli
       windComponentKt: numberOrNull(flightState.windComponentKt),
       isaDeviationC: numberOrNull(flightState.isaDeviationC),
       fuelRemainingKg: numberOrNull(flightState.fuelRemainingKg),
+      fuelFlowKgH: numberOrNull(flightState.fuelFlowKgH),
+      fuelFlowSource: emptyToNull(flightState.fuelFlowSource),
       groundSpeedKt: numberOrNull(flightState.groundSpeedKt),
       paxCount: numberOrNull(flightState.paxCount),
     },
@@ -654,8 +668,23 @@ function buildOptimizeRequest({ selectedAction, aircraftConfig, flightState, fli
       sibtUtc: emptyToNull(flightContext.sibtUtc),
       sobtUtc: emptyToNull(flightContext.sobtUtc),
     },
+    remainingRouteProfile: remainingRouteProfile ?? null,
     payload: cleanedPayload,
   };
+}
+
+function formatStrategyProfile(strategy, fallbackAltitudeFt = null) {
+  if (!strategy) return "—";
+
+  const mach = strategy.mach != null ? `M${formatNumber(strategy.mach, 3)}` : null;
+  const flightLevel =
+    strategy.flightLevel != null
+      ? `FL${strategy.flightLevel}`
+      : fallbackAltitudeFt != null
+      ? formatFlightLevelValue(fallbackAltitudeFt)
+      : null;
+
+  return [flightLevel, mach].filter(Boolean).join(" / ") || "—";
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
@@ -865,6 +894,7 @@ function OperationalApp() {
   const [aircraftConfig, setAircraftConfig] = useState("");
   const [flightState, setFlightState] = useState(EMPTY_FLIGHT_STATE);
   const [flightContext, setFlightContext] = useState(EMPTY_FLIGHT_CONTEXT);
+  const [remainingRouteProfile, setRemainingRouteProfile] = useState(null);
   const [payload, setPayload] = useState(getInitialPayload("NORMAL_RECALC"));
   const [simbriefUsername, setSimbriefUsername] = useState(
     () => localStorage.getItem("simbriefUsername") ?? ""
@@ -982,6 +1012,7 @@ function OperationalApp() {
           telemetryUrl.searchParams.set("destination", flightContext.destination);
         }
 
+        
         const response = await fetch(telemetryUrl, {
           signal: AbortSignal.timeout(1500),
         });
@@ -991,12 +1022,15 @@ function OperationalApp() {
         if (!mounted) return;
 
         if (data.connected && data.flightStatePatch) {
+          const { aircraftConfig: liveAircraftConfig, ...flightStatePatch } = data.flightStatePatch;
+          if (liveAircraftConfig) setAircraftConfig(liveAircraftConfig);
+
           setSimConnectStatus("connected");
           setLiveTelemetry((prev) => ({
             ...prev,
             patch: {
               ...prev.patch,
-              ...removeEmptyValues(data.flightStatePatch),
+              ...removeEmptyValues(flightStatePatch),
             },
             collectorStatus: data.collectorStatus ?? "connected",
             dataAgeMs: data.dataAgeMs ?? null,
@@ -1006,13 +1040,16 @@ function OperationalApp() {
           }));
           // Merge live values into flightState — only overwrite non-null values
           setFlightState((prev) => {
-            const patch = data.flightStatePatch;
+            const patch = flightStatePatch;
             
             const updated = { ...prev };
+            if (patch.aircraft           != null) updated.aircraft           = String(patch.aircraft);
             if (patch.altitudeFt         != null) updated.altitudeFt         = String(patch.altitudeFt);
             if (patch.grossWeightKg      != null) updated.grossWeightKg      = String(Math.round(patch.grossWeightKg));
             if (patch.mach               != null) updated.mach               = String(patch.mach.toFixed(3));
             if (patch.fuelRemainingKg    != null) updated.fuelRemainingKg    = String(Math.round(patch.fuelRemainingKg));
+            if (patch.fuelFlowKgH        != null) updated.fuelFlowKgH        = String(Math.round(patch.fuelFlowKgH));
+            if (patch.fuelFlowSource     != null) updated.fuelFlowSource     = String(patch.fuelFlowSource);
             if (patch.groundSpeedKt      != null) updated.groundSpeedKt      = String(Math.round(patch.groundSpeedKt));
             if (patch.isaDeviationC      != null) updated.isaDeviationC      = String(patch.isaDeviationC.toFixed(1));
             if (patch.windComponentKt    != null) updated.windComponentKt    = String(Math.round(patch.windComponentKt));
@@ -1101,6 +1138,7 @@ function OperationalApp() {
       const flightStatePatch = data.flightStatePatch ?? {};
       const flightContextPatch = data.flightContextPatch ?? {};
       const aircraftInfo = data.aircraftInfo ?? {};
+      const nextRemainingRouteProfile = data.remainingRouteProfile ?? null;
 
       const { destinationLat, destinationLon, ...restStatePatch } = flightStatePatch;
       setFlightState((p) => ({ ...p, ...removeEmptyValues(restStatePatch) }));
@@ -1110,6 +1148,7 @@ function OperationalApp() {
         ...(destinationLat != null ? { destinationLat } : {}),
         ...(destinationLon != null ? { destinationLon } : {}),
       }));
+      setRemainingRouteProfile(nextRemainingRouteProfile);
 
       if (destinationLat != null && destinationLon != null) {
         fetch(`${API_BASE_URL}/api/simconnect/destination`, {
@@ -1139,7 +1178,14 @@ function OperationalApp() {
     const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     try {
-      const requestBody = buildOptimizeRequest({ selectedAction, aircraftConfig, flightState, flightContext, payload });
+      const requestBody = buildOptimizeRequest({
+        selectedAction,
+        aircraftConfig,
+        flightState,
+        flightContext,
+        remainingRouteProfile,
+        payload,
+      });
 
       if (!requestBody.aircraftConfig) throw new Error("Missing aircraft config. Sync SimBrief first.");
       if (!requestBody.flightState.aircraft) throw new Error("Missing aircraft. Sync SimBrief first.");
@@ -1338,13 +1384,13 @@ function OperationalApp() {
                   <div>
                     <span>Current</span>
                     <strong>CI {flightState.currentCostIndex || current?.costIndex || "—"}</strong>
-                    <small>M{formatNumber(flightState.mach || current?.mach, 3)}</small>
+                    <small>{formatStrategyProfile(current, flightState.altitudeFt)}</small>
                   </div>
                   <div className="recommendation-separator" />
                   <div>
                     <span>Recommended</span>
                     <strong>CI {best?.costIndex ?? "—"}</strong>
-                    <small>{best?.mach != null ? `M${formatNumber(best.mach, 3)}` : "—"}</small>
+                    <small>{formatStrategyProfile(best)}</small>
                   </div>
                 </div>
 
@@ -1598,16 +1644,17 @@ function OperationalApp() {
                     const isBest =
                       best &&
                       String(strategy.costIndex) === String(best.costIndex) &&
-                      Number(strategy.mach) === Number(best.mach);
+                      Number(strategy.mach) === Number(best.mach) &&
+                      Number(strategy.flightLevel) === Number(best.flightLevel);
 
                     return (
                       <div
                         className={`strategy-row ${isBest ? "strategy-row--best" : ""}`}
-                        key={`${strategy.costIndex}-${strategy.mach}-${index}`}
+                        key={`${strategy.costIndex}-${strategy.flightLevel}-${strategy.mach}-${index}`}
                       >
                         <div>
                           <strong>CI {strategy.costIndex ?? "—"}</strong>
-                          <span>M{formatNumber(strategy.mach, 3)}</span>
+                          <span>{formatStrategyProfile(strategy)}</span>
                         </div>
                         <div>
                           <span>Fuel</span>

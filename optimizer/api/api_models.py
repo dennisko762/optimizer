@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from optimizer.route_profile_models import RemainingRouteProfile
+
 
 class EfbAction(str, Enum):
     NORMAL_RECALC = "NORMAL_RECALC"
@@ -39,12 +41,23 @@ class UiFlightState(BaseModel):
     gross_weight_kg: float = Field(alias="grossWeightKg")
     mach: float
     current_cost_index: int | None = Field(default=None, alias="currentCostIndex")
+    fmc_source: str | None = Field(default=None, alias="fmcSource")
+    fmc_cruise_flight_level: int | None = Field(
+        default=None,
+        alias="fmcCruiseFlightLevel",
+    )
+    fmc_step_climb_distance_nm: float | None = Field(
+        default=None,
+        alias="fmcStepClimbDistanceNm",
+    )
 
     remaining_distance_nm: float = Field(alias="remainingDistanceNm")
     route_distance_nm: float | None = Field(default=None, alias="routeDistanceNm")
     wind_component_kt: float | None = Field(default=None, alias="windComponentKt")
     isa_deviation_c: float | None = Field(default=None, alias="isaDeviationC")
     fuel_remaining_kg: float | None = Field(default=None, alias="fuelRemainingKg")
+    fuel_flow_kg_h: float | None = Field(default=None, alias="fuelFlowKgH")
+    fuel_flow_source: str | None = Field(default=None, alias="fuelFlowSource")
     ground_speed_kt: float | None = Field(default=None, alias="groundSpeedKt")
     cruise_segments: list[UiCruiseSegment] = Field(default_factory=list, alias="cruiseSegments")
 
@@ -85,6 +98,10 @@ class OptimizeRequest(BaseModel):
 
     flight_state: UiFlightState = Field(alias="flightState")
     flight_context: UiFlightContext = Field(alias="flightContext")
+    remaining_route_profile: RemainingRouteProfile | None = Field(
+        default=None,
+        alias="remainingRouteProfile",
+    )
 
     # Trigger-specific data from UI.
     # Examples:
@@ -102,6 +119,12 @@ class OptimizeRequest(BaseModel):
 class StrategyResponse(BaseModel):
     cost_index: int | None = Field(alias="costIndex")
     mach: float
+    speed_mode: str | None = Field(default=None, alias="speedMode")
+    target_cas_kt: float | None = Field(default=None, alias="targetCasKt")
+    cost_index_source: str | None = Field(default=None, alias="costIndexSource")
+    cost_index_label: str | None = Field(default=None, alias="costIndexLabel")
+    performance_ci_kg_per_min: float | None = Field(default=None, alias="performanceCiKgPerMin")
+    flight_level: int | None = Field(default=None, alias="flightLevel")
     label: str | None = None
 
     fuel_kg: float = Field(alias="fuelKg")
@@ -183,6 +206,7 @@ class OperationalDataResponse(BaseModel):
 
 class OptimizeResponse(BaseModel):
     recommendation: str
+    optimizer_mode: str | None = Field(default=None, alias="optimizerMode")
 
     current_strategy: StrategyResponse = Field(alias="currentStrategy")
     best_strategy: StrategyResponse = Field(alias="bestStrategy")

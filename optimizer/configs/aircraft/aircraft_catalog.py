@@ -162,6 +162,44 @@ def get_catalog_entry(simbrief_or_icao_code: str) -> AircraftCatalogEntry | None
     return AIRCRAFT_CATALOG.get(normalized)
 
 
+def resolve_aircraft_from_title(title: str | None) -> AircraftCatalogEntry | None:
+    """
+    Best-effort aircraft type detection from simulator aircraft title strings.
+
+    SimConnect TITLE is addon-specific free text, so this intentionally returns
+    a catalog entry only for clear type signals.
+    """
+
+    normalized = normalize_aircraft_code(title)
+    if normalized is None:
+        return None
+
+    direct = AIRCRAFT_CATALOG.get(normalized)
+    if direct is not None:
+        return direct
+
+    for pattern, code in (
+        ("B777300ER", "B77W"),
+        ("777300ER", "B77W"),
+        ("B77W", "B77W"),
+        ("B777200LR", "B77L"),
+        ("777200LR", "B77L"),
+        ("B77L", "B77L"),
+        ("B777200ER", "B772"),
+        ("777200ER", "B772"),
+        ("B777200", "B772"),
+        ("777200", "B772"),
+        ("B772", "B772"),
+        ("B777F", "B77F"),
+        ("777F", "B77F"),
+        ("B77F", "B77F"),
+    ):
+        if pattern in normalized:
+            return AIRCRAFT_CATALOG.get(code)
+
+    return None
+
+
 def normalize_aircraft_code(value: str | None) -> str | None:
     if value is None:
         return None
@@ -200,7 +238,15 @@ def normalize_aircraft_code(value: str | None) -> str | None:
         "B737MAX9": "B39M",
         "B737MAX10": "B3XM",
         "B777300ER": "B77W",
+        "777300ER": "B77W",
+        "B777200ER": "B772",
+        "777200ER": "B772",
+        "B777200": "B772",
+        "777200": "B772",
         "B777200LR": "B77L",
+        "777200LR": "B77L",
+        "B777F": "B77F",
+        "777F": "B77F",
         "B7878": "B788",
         "B7879": "B789",
         "B78710": "B78X",

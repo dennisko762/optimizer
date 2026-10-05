@@ -21,7 +21,13 @@
       "Bash(sed -n '822,840p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
       "Bash(sed -n '865,880p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
       "Bash(sed -n '949,965p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
-      "Bash(sed -n '982,1000p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)"
+      "Bash(sed -n '982,1000p' /Users/dennis/private/optimizer/optimizer/app/ci_optimization_service.py)",
+      "WebFetch(domain:www.jstage.jst.go.jp)",
+      "Bash(python -c \"import PyPDF2; print\\('PyPDF2 available'\\)\")",
+      "Bash(python -c \"import fitz; print\\('PyMuPDF available'\\)\")",
+      "Bash(python -c \"import pdfminer; print\\('pdfminer available'\\)\")",
+      "Bash(pip list *)",
+      "Bash(findstr -i pdf)"
     ]
   }
 }

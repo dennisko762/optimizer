@@ -1,0 +1,458 @@
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    356 2314z  84.9
+ NEXT
+UDROS    453 2325z  83.2
+ DEST
+RKSI    5010 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 749nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    356 2314z  84.9
+ NEXT
+UDROS    453 2325z  83.2
+ DEST
+RKSI    5009 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 749nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    356 2314z  84.9
+ NEXT
+UDROS    453 2325z  83.2
+ DEST
+RKSI    5009 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 749nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    355 2314z  84.9
+ NEXT
+UDROS    452 2325z  83.2
+ DEST
+RKSI    5009 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 748nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    355 2314z  84.9
+ NEXT
+UDROS    452 2325z  83.2
+ DEST
+RKSI    5009 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 748nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    355 2314z  84.9
+ NEXT
+UDROS    452 2325z  83.2
+ DEST
+RKSI    5008 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 748nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    355 2314z  84.9
+ NEXT
+UDROS    452 2325z  83.2
+ DEST
+RKSI    5008 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 748nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    355 2314z  84.9
+ NEXT
+UDROS    452 2325z  83.2
+ DEST
+RKSI    5008 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 747nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    355 2314z  84.9
+ NEXT
+UDROS    452 2325z  83.2
+ DEST
+RKSI    5008 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 747nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    354 2314z  84.9
+ NEXT
+UDROS    451 2325z  83.2
+ DEST
+RKSI    5008 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 747nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    354 2314z  84.9
+ NEXT
+UDROS    451 2325z  83.2
+ DEST
+RKSI    5008 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 747nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    354 2314z  84.9
+ NEXT
+UDROS    451 2325z  83.2
+ DEST
+RKSI    5007 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 747nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    354 2314z  84.9
+ NEXT
+UDROS    451 2325z  83.2
+ DEST
+RKSI    5007 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 747nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    353 2314z  84.9
+ NEXT
+UDROS    450 2325z  83.2
+ DEST
+RKSI    5007 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 746nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    353 2314z  84.9
+ NEXT
+UDROS    450 2325z  83.2
+ DEST
+RKSI    5007 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 746nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    353 2314z  84.9
+ NEXT
+UDROS    450 2325z  83.2
+ DEST
+RKSI    5006 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 746nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    353 2314z  84.9
+ NEXT
+UDROS    450 2325z  83.2
+ DEST
+RKSI    5006 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 746nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    352 2314z  84.9
+ NEXT
+UDROS    449 2325z  83.2
+ DEST
+RKSI    5006 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 745nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    352 2314z  84.9
+ NEXT
+UDROS    449 2325z  83.2
+ DEST
+RKSI    5006 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 745nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    352 2314z  84.9
+ NEXT
+UDROS    449 2325z  83.2
+ DEST
+RKSI    5005 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 745nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    352 2314z  84.9
+ NEXT
+UDROS    449 2325z  83.2
+ DEST
+RKSI    5005 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 745nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    352 2314z  84.9
+ NEXT
+UDROS    449 2325z  83.2
+ DEST
+RKSI    5005 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 744nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    352 2314z  84.9
+ NEXT
+UDROS    449 2325z  83.2
+ DEST
+RKSI    5005 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 744nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    351 2314z  84.9
+ NEXT
+UDROS    448 2325z  83.2
+ DEST
+RKSI    5005 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 744nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    351 2314z  84.9
+ NEXT
+UDROS    448 2325z  83.2
+ DEST
+RKSI    5005 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 744nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
+
+================ CDU 0 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    351 2314z  84.9
+ NEXT
+UDROS    448 2325z  83.2
+ DEST
+RKSI    5004 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 743nm
+
+
+------------------------
+<POS REPORT     POS REF>
+2037
+======================================
+
+================ CDU 1 ================
+    KAL902 PROGRESS 1/4
+ TO      DTG  ETA   FUEL
+DINRO    351 2314z  84.9
+ NEXT
+UDROS    448 2325z  83.2
+ DEST
+RKSI    5004 0822z  15.3
+ ECON SPD    TO STEP CLB
+.842        0000z/ 743nm
+
+
+------------------------
+<POS REPORT     POS REF>
+
+======================================
