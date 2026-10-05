@@ -12,9 +12,13 @@ Design rules (mirrors the rest of the EFB backend):
   ``crew_platform/technical/alembic``) to apply migrations.
 
 Environment variables:
-- ``TECHLOG_DB_PATH`` — full path to the SQLite file. Wins when set.
-- ``EFB_DATA_DIR``    — directory in which the SQLite file is created
-                        (default: project root, i.e. where ``.env`` lives).
+- ``CREW_TECHLOG_DB_PATH`` — full path to the SQLite file. Wins when set.
+- ``TECHLOG_DB_PATH``      — legacy alias for the above (pre-T2 naming);
+                             honoured for compatibility with any deployed
+                             configuration that predates the rename.
+- ``EFB_DATA_DIR``         — directory in which the SQLite file is created
+                             when no explicit path is set (default:
+                             ``<project root>/data``).
 """
 
 from __future__ import annotations
@@ -27,8 +31,10 @@ from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-ENV_DB_PATH = "TECHLOG_DB_PATH"
+ENV_DB_PATH = "CREW_TECHLOG_DB_PATH"
+LEGACY_ENV_DB_PATH = "TECHLOG_DB_PATH"
 ENV_DATA_DIR = "EFB_DATA_DIR"
+DB_DIRNAME = "data"
 DB_FILENAME = "techlog.db"
 DB_ENGINE_URL_PREFIX = "sqlite:///"
 
@@ -51,17 +57,21 @@ def _project_root() -> Path:
 def get_db_path() -> Path:
     """Resolve the SQLite file path from the environment.
 
-    ``TECHLOG_DB_PATH`` (absolute or cwd-relative) wins; otherwise the file
-    goes into ``EFB_DATA_DIR`` (default: project root) as ``techlog.db``.
-    No credentials, no fixed secrets — a bare file location only.
+    ``CREW_TECHLOG_DB_PATH`` (absolute or cwd-relative) wins; the legacy
+    ``TECHLOG_DB_PATH`` name is honoured as an alias for it. Otherwise the
+    file goes into ``EFB_DATA_DIR`` (default: ``<project root>/data``) as
+    ``techlog.db``. No credentials, no fixed secrets — a bare file
+    location only.
     """
-    raw = os.environ.get(ENV_DB_PATH, "").strip()
+    raw = os.environ.get(ENV_DB_PATH, "").strip() or os.environ.get(
+        LEGACY_ENV_DB_PATH, ""
+    ).strip()
     if raw:
         path = Path(raw)
         if not path.is_absolute():
             path = Path.cwd() / path
         return path
-    data_dir = Path(os.environ.get(ENV_DATA_DIR, "") or _project_root())
+    data_dir = Path(os.environ.get(ENV_DATA_DIR, "") or _project_root() / DB_DIRNAME)
     return data_dir / DB_FILENAME
 
 

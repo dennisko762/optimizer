@@ -32,6 +32,11 @@ config = context.config
 # details exist here; the resolved URL is a local file path only.
 config.set_main_option("sqlalchemy.url", techlog_database.build_database_url())
 
+# The directory holding the database file must exist before the engine
+# connects (the application's ``create_engine`` does this too; Alembic's
+# stock ``engine_from_config`` path does not).
+techlog_database.get_db_path().parent.mkdir(parents=True, exist_ok=True)
+
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
