@@ -21,10 +21,16 @@ POST /techlog/{entry_id}/defects          — create a defect on an entry
 GET  /techlog/{entry_id}/defects          — list defects for an entry
 GET  /defects/{defect_id}                 — get a single defect
 POST /defects/{defect_id}/status          — transition defect status
+
+Endpoints — Maintenance Actions
+--------------------------------
+POST /aircraft/{reg}/maintenance          — create a maintenance action
+GET  /aircraft/{reg}/maintenance          — list actions (newest first)
 """
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -38,11 +44,36 @@ from crew_platform.technical.models import (
     Defect,
     DEFECT_STATUS_TRANSITIONS,
     DEFECT_STATUS_VALUES,
+    DEFECT_TERMINAL_STATUSES,
+    MaintenanceAction,
+    MAINTENANCE_ACTION_TYPES,
     TechLogEntry,
     TECHLOG_STATUS_VALUES,
 )
 
 router = APIRouter(prefix="/api/crew/technical", tags=["crew-technical"])
+
+
+def _apply_defect_transition(defect: Defect, new_status: str) -> None:
+    """Validate and apply a defect status transition in-place.
+
+    Raises 409 if the transition is not allowed from the defect's current
+    status.  Terminal statuses (RECTIFIED, CLOSED) set ``closed`` and
+    ``closure_timestamp``.  Does not commit — the caller owns the session.
+    """
+    allowed = DEFECT_STATUS_TRANSITIONS.get(defect.status, ())
+    if new_status not in allowed:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot transition from '{defect.status}' to "
+                f"'{new_status}'. Allowed: {', '.join(allowed) or 'none (terminal state)'}"
+            ),
+        )
+    defect.status = new_status
+    if new_status in ("RECTIFIED", "CLOSED"):
+        defect.closed = 1
+        defect.closure_timestamp = datetime.now(timezone.utc)
 
 
 # ---- request / response schemas -------------------------------------------
@@ -97,6 +128,21 @@ class DefectStatusIn(BaseModel):
     """Payload for transitioning a defect's status."""
 
     status: str
+
+
+class MaintenanceActionIn(BaseModel):
+    """Payload for recording a maintenance action on an aircraft.
+
+    ``defect_id`` is optional: when supplied the action is linked to that
+    defect, and for ``action_type=RECTIFICATION`` the defect is transitioned
+    to RECTIFIED.  ``performed_by`` is a display name only.
+    """
+
+    action_type: str
+    description: str
+    performed_by: str
+    defect_id: Optional[int] = None
+    performed_at: Optional[datetime] = None
 
 
 # ---- Aircraft routes -------------------------------------------------------
@@ -326,23 +372,136 @@ def transition_defect_status(defect_id: int, body: DefectStatusIn):
         if defect is None:
             raise HTTPException(status_code=404, detail="Defect not found")
 
-        allowed = DEFECT_STATUS_TRANSITIONS.get(defect.status, ())
-        if new_status not in allowed:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"Cannot transition from '{defect.status}' to "
-                    f"'{new_status}'. Allowed: {', '.join(allowed) or 'none (terminal state)'}"
-                ),
-            )
-
-        defect.status = new_status
-        if new_status in ("RECTIFIED", "CLOSED"):
-            defect.closed = 1
-            defect.closure_timestamp = datetime.now(timezone.utc)
+        _apply_defect_transition(defect, new_status)
 
         session.commit()
         session.refresh(defect)
         return defect.to_dict()
+    finally:
+        session.close()
+
+
+# ---- Maintenance Action routes ---------------------------------------------
+
+
+def _deterministic_action_code(registration: str) -> str:
+    """Build a deterministic, collision-safe maintenance action code.
+
+    Format: ``MA-<REG>-<seq>-<short-uuid>``.  The sequence counts existing
+    actions for this aircraft (so codes read in order), and the short-uuid
+    suffix guards against two actions created for the same aircraft in
+    rapid succession landing on the same number.
+    """
+    session = get_session()
+    try:
+        seq = (
+            session.query(MaintenanceAction)
+            .filter(MaintenanceAction.aircraft_registration == registration)
+            .count()
+        ) + 1
+    finally:
+        session.close()
+    return f"MA-{registration}-{seq:04d}-{uuid.uuid4().hex[:6]}"
+
+
+@router.post("/aircraft/{registration}/maintenance", status_code=201)
+def create_maintenance_action(registration: str, body: MaintenanceActionIn):
+    """Create a maintenance action for an aircraft.
+
+    If ``defect_id`` is supplied the defect must belong to this aircraft
+    (404 otherwise).  For ``action_type=RECTIFICATION`` the defect must be in
+    a non-terminal state (409 if already RECTIFIED/CLOSED); the rectification
+    transitions the defect to RECTIFIED and appends the action text to the
+    linked tech-log entry.
+    """
+    action_type = (body.action_type or "").upper()
+    if action_type not in MAINTENANCE_ACTION_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid action_type '{body.action_type}'. "
+            f"Valid values: {', '.join(MAINTENANCE_ACTION_TYPES)}",
+        )
+
+    performed_at = (
+        body.performed_at
+        if body.performed_at is not None
+        else datetime.now(timezone.utc)
+    )
+
+    session = get_session()
+    try:
+        ac = session.get(Aircraft, registration)
+        if ac is None:
+            raise HTTPException(status_code=404, detail="Aircraft not found")
+
+        # Resolve the linked defect, if any.
+        defect = None
+        entry = None
+        if body.defect_id is not None:
+            defect = session.get(Defect, body.defect_id)
+            if defect is None:
+                raise HTTPException(status_code=404, detail="Defect not found")
+            if defect.aircraft_registration != registration:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Defect does not belong to this aircraft",
+                )
+            entry = session.get(TechLogEntry, defect.techlog_entry_id)
+
+        if action_type == "RECTIFICATION" and defect is not None:
+            if defect.status in DEFECT_TERMINAL_STATUSES:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Defect is already {defect.status}; it cannot be "
+                        "rectified again."
+                    ),
+                )
+            # Reuse T3 transition logic to move the defect to RECTIFIED.
+            _apply_defect_transition(defect, "RECTIFIED")
+            # Append the maintenance action text to the tech-log entry so the
+            # aircraft history retains both the defect and the rectification.
+            if entry is not None:
+                existing = entry.maintenance_action
+                entry.maintenance_action = (
+                    f"{existing}\n{body.description}".strip()
+                    if existing
+                    else body.description
+                )
+
+        code = _deterministic_action_code(registration)
+        action = MaintenanceAction(
+            id=code,
+            aircraft_registration=registration,
+            defect_id=body.defect_id,
+            action_type=action_type,
+            description=body.description,
+            performed_by=body.performed_by,
+            performed_at=performed_at,
+        )
+        session.add(action)
+        session.commit()
+        session.refresh(action)
+        return action.to_dict()
+    finally:
+        session.close()
+
+
+@router.get("/aircraft/{registration}/maintenance")
+def list_maintenance_actions(registration: str):
+    """List all maintenance actions for an aircraft, newest first."""
+    session = get_session()
+    try:
+        ac = session.get(Aircraft, registration)
+        if ac is None:
+            raise HTTPException(status_code=404, detail="Aircraft not found")
+        rows = (
+            session.query(MaintenanceAction)
+            .filter(MaintenanceAction.aircraft_registration == registration)
+            .order_by(MaintenanceAction.performed_at.desc(),
+                      MaintenanceAction.id.desc())
+            .all()
+        )
+        return [r.to_dict() for r in rows]
     finally:
         session.close()
