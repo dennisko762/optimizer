@@ -1,74 +1,78 @@
-# Crew Pad Design Spec ("Qatar-Optik" / flySmart Crew Pad)
+# Crew Pad Design Spec — Qatar Airways "QR SmartOps"
 
-Referenz-Mockup: `image_baa77c.png` (Screenshot vom 20.09.2026, 23:17 — liegt in
-`C:\Users\Dennis Korolevych\AppData\Roaming\Hermes\composer-images\image_baa77c.png`).
-Dies ist die Ziel-Optik der App. Jede UI-Arbeit (Restyling, neue Panels) MUSS
-dieser Spec folgen und gegen das Mockup verifiziert werden.
+**ZIEL-OPTIK (authoritativ, 2.–3.10.2026):** die 5 maroon/Burgundy Qatar-Mockups.
+Das alte navy "flySmart!" Dashboard (20.09.) wurde von diesen ersetzt und ist
+nicht mehr Ziel.
 
-## Layout (Top-Level, NICHT Sidebar-Tiles)
+## Referenz-Bilder (Pflicht, gegen diese verifizieren)
 
-Die App ist ein volles Cockpit-Dashboard (Landscape, Tablet-First), NICHT ein
-Tile-Launcher mit Sidebar. Struktur oben nach unten:
-
-1. **Top Bar** (höhe ~48px, dunkel-navy, unterer Rand 1px Amber):
-   - Links: Uhrzeit (groß, `23:17`) + Datum (`Sonntag, 20. September`)
-   - Logo: `flySmart!` (Ausrufezeichen in Amber)
-   - Mitte: Pill-Tabbar: **Übersicht** (aktiv), Zeiten, Flightplan, Route, Bahnen,
-     Wetter, Briefing, EDTO — aktive Tab hat helleren navy-Pill-Hintergrund
-   - Rechts: `Oceanic 21:17z` + Icons (Sonne/Theme, Sync, Upload/Arrow-up)
-2. **Route Hero** (Panel, ~160px):
-   - Links ICAO Abflug groß (48px, weiß, Mono), rechts ICAO Ankunft groß
-   - Mitte: Fluggesellschafts-Flugnummer groß (`DLH459`), Callsign klein daneben
-   - Darunter: **Amber Route-Progressbar** mit Flugzeug-Icon am Ende;
-     darunter zentriert: `5 206 NM · 10:22 · FL370`
-   - Unterzeilen links/rechts: Abflugzeit + RWY links (`04:55z · RWY 28R`),
-     ETA/PLN/RWY rechts — Abweichungen rot (`ON-BLK`, `+75 min`)
-3. **Info-Grid** (9 Spalten, Uppercase-Labels, Mono, Werte groß):
-   MUSTER (A388 / A380-800), KENNZEICHEN, PAX, ABFLUG-GATE, ANKUNFTS-GATE,
-   COST INDEX, REISEVERFAHREN (`CI 20 · M.830`), SELCAL, ETOPS
-4. **Status-Band** (Panel mit rotem linken Rand bei DELAY):
-   VATSIM·VDGS Status (`DELAY` rot, `+75 min gegen Plan`), EOBT, AOBT, ATOT,
-   ETA/IN/PLN (rechts), AIRB·TAXI
-5. **Fuel Cards** (4 Karten nebeneinander, große Mono-Zahlen):
-   IM FLUG (`100 %`), KRAFTSTOFF START (`136 371 kg`, Block darunter),
-   FUEL-CHECK (`—`, noch kein Eintrag), LANDUNG GEPLANT (`18 920 kg`, Reserve)
-6. **Info-Rows** (zeilenweise, Icon + Uppercase-Label + Text):
-   VATSIM (online-Status, Höhe/GS/Squawk, Warnung rot: `Transponder steht auf
-   2000; zugewiesen ist 1723.`), VAMSYS (`Zu diesem OFP ist keine Buchung offen.`),
-   WETTER (`KSFo 250/05 IFR · EDDM 270/06 VFR`)
-
-## Farben
-
-| Rolle | Hex |
+| Datei | Screen |
 |---|---|
-| App-Hintergrund | `#0d1830` |
-| Panel-Hintergrund | `#14213f` |
-| Panel-Hintergrund (hell, Hero/Tab-Pill aktiv) | `#1b2c55` |
-| Panel-Rand | `#24365f` |
-| Text primär | `#f2f5fa` |
-| Text sekundär (Labels, Uppercase, Letter-Spacing 0.08em) | `#8fa0c4` |
-| Accent (Progressbar, Logo `!`, aktive Highlights) | `#f5a623` |
-| Warnung/Delay | `#e0524f` |
-| OK/Bestätigt | `#3ecf8e` |
+| `design/qatar-01-lockscreen.png` | iPad-Lockscreen mit Qatar-Wallpaper (Ozean/sonnig + Maroon-Federn), Notifications: MAIL (QR815 DOH→LHR), MESSAGES (QR Ops Gate), WEATHER (MET DOH/LHR), QR OPS (Dispatch ATC slot), SETTINGS |
+| `design/qatar-02-crewdesk-inbox.png` | **Crew Desk**: Sidebar (My Flights, Crew Desk aktiv, Profile, QATAR AIRWAYS Logo unten) + Tabs (Inbox aktiv, Trash, Preflight, Weather) + INBOX–21 MESSAGES Liste mit Badges (DISPATCH, A-CDM, NOTAM, WEATHER, A-CDM, VATSIM), rechts Detail-Panel "No message selected." |
+| `design/qatar-03-flightplan.png` | **Flightplan** (QR SmartOps): Top-Header (QR815, DOH→LHR, Qatar Airways · B777-300ER, Fri 2 Oct, STD 08:10Z STA 13:20Z EET 7:10), OFP-Info-Banner + "Import New Plan" (gold), Fuel-Zeile (DEVIATION, BLOCK FUEL 213.7t, TAKEOFF FUEL 212.6t, TRIP FUEL 189.4t, PLANNED LDG FUEL 23.3t, EXTRA FUEL, RES + ALTN 10.3t, t/kg-Toggle), große Waypoint-Tabelle (WPT, AWY, FIR, LEG NM, REM NM, ETE, LEG ETE, ALT, WIND, BURN, PLN FUEL, ATO, ACT) |
+| `design/qatar-04-route-map.png` | **Route** (QATAR AIRWAYS Logo): Seitenleiste (Map, EDTO, Risks, NAT, Weather, Profile, Altitude) + Karte (Maroon-Töne, offene Küstenlinien) mit Route DOH→SYD, Waypoint-Marker (ABTUN FL360, LERTO FL380, TANPE FL400, IGOGU FL400, PKD FL400, BUNTA FL380, TOVIK FL360), links Layer-Buttons, rechts WX TIME Panel (PLAY, -12h/+12h Slider, NOW), ATC SECTORS VATSIM FL390 (DISPLAY ALTITUDE AUTO/OFF FL320), unten PRECIP + SIGMET Legende (Thunderstorm, Turbulence, Icing, Volcanic Ash, TS Tropical) |
+| `design/qatar-05-edto-risks.png` | **EDTO / Risks** (QATAR AIRWAYS): Top-Header (DOH → LHR, QR815 · B777-300ER, Block 7h 25m, STD 18:40Z STA 23:05Z) + Seitenleiste (Map, EDTO aktiv, Terrain, Risks, NAT, Weather, Profile, Altitude) + Route-Karte (DOH–LHR, 0ER1A MAKIN N571 ELBAM M994 TUSKA DCT LHR, 3 631 NM, 7h 25m, LHR/LGW) + **OPERATIONAL RISK INFORMATION** (OFFICIAL RISK NOTICES · 15:59Z · CURRENT, AIRSPACE PERSIAN GULF & GULF OF OMAN ACTIVE, OPERATOR RISK INFORMATION · 15:59Z · CURRENT: UAE LEVEL 3 CAUTION, Oman LEVEL 3 CAUTION, India LEVEL 3 CAUTION, Indonesia LEVEL 3 CAUTION) + **NAT TRACKS · 15:54Z** (NAT A WESTBOUND 02 OCT 1130–1900Z VENIR 5330/20 51/30 48/40 45/50 RAFTN, NAT B WESTBOUND NEBIN 5230/20 50/40 47/50 BOBTU JAROM, NAT C WESTBOUND TOBOR 5130/20 49/30 46/40 43/50 JEBBY) |
+
+## Farben (Qatar Maroon/Burgundy)
+
+| Rolle | Hex (Schätzung aus Mockups) |
+|---|---|
+| App-Hintergrund (tief) | `#1a0a12` (nahezu schwarzes Maroon) |
+| Panel-Hintergrund | `#2a1019` |
+| Panel-Hintergrund (hell/Hero) | `#3a1824` |
+| Panel-Rand | `#4a2230` |
+| Text primär | `#f5ecec` |
+| Text sekundär (Labels) | `#c9a8ae` |
+| Accent (Qatar-Maroon, aktive Tabs, Badges) | `#8e2a4a` |
+| Accent hell (Qatar-Magenta) | `#c74a6a` |
+| Gold/Amber (Import, Warnung) | `#e8a838` |
+| OK/Bestätigt (VATSIM, CURRENT) | `#4ade80` |
+| Gefahr/Aktiv (ACTIVE, NOTAM) | `#ef4444` |
+| Wallpaper-Maroon | `#5c1a2e` |
 
 ## Typografie
 
-- Zahlen/Werte/ICAO/Flugnummern: **Mono** (JetBrains Mono / Roboto Mono),
-  Tabellen-Zahlen mit digit-spacing
+- Zahlen/Werte/ICAO/Flugnummern/Waypoints: **Mono** (JetBrains Mono / Roboto Mono)
 - Labels: Uppercase, 11px, Letter-Spacing 0.08em, Text-sekundär-Farbe
-- Keine Serifen; alles an ein technisches Cockpit-Instrument-Feeling ausgerichtet
+- Flugnummer/ICAO in der Hero: sehr groß (32–48px), weiß
+- Alles an ein technisches Cockpit-Instrument-Feeling ausgerichtet
+
+## Layout-Prinzipien (aus den 5 Screens)
+
+1. **Top-Header-Band** (jeder Screen): links Uhrzeit+Datum, Mitte Screen-Titel/Route,
+   rechts Status (Signal, Batterie, Theme-Icon, Sync-Icon, Menü-Dots).
+2. **Sidebar** (Crew Desk + QR SmartOps-Screens): schmal, links, Icons+Labels,
+   aktiver Eintrag mit Maroon-Pill + hellerem Rand.
+3. **Tab-/Seitenleiste**: Pill-Tabs (Overview/Times/Flightplan/Route/Charts/
+   Weather/Briefing/EDTO) — aktiver Tab = Maroon-Pill mit hellem Hintergrund.
+4. **Hero-Panel** (Flug): große ICAOs links/rechts, Mitte Flugnummer+Datum+STD/STA,
+   darunter ggf. Progressbar.
+5. **Info-Grid / Fuel-Zeile**: Uppercase-Labels + große Mono-Werte in Spalten.
+6. **Liste+Detail-Panels**: z. B. Inbox mit Badge + Titel + Sender + Zeit rechts,
+   Details in separatem rechten Panel.
+7. **Karten-Screens**: Maroon-getönte Weltkarte, weiße Routenlinie, Waypoint-Marker
+   mit FL-Label, Overlay-Panels (WX TIME, ATC SECTORS, Layers) als dunkle Pills.
+8. **Risk/EDTO**: Sections mit grünem "CURRENT"-Punkt, Country-Karten mit Thumbnail,
+   LEVEL 3 – CAUTION, NAT-Tracks als Mono-Blöcke.
 
 ## Verhalten
 
-- Zahlen aktualisieren live (SimConnect/VATSIM/Flight-Sim-Brücke), Status
-  DELAY/ON-BLK rot
-- Tab "Übersicht" = dieses Dashboard; "Zeiten", "Flightplan", "Wetter" etc.
-  = eigene Panels in der gleichen Optik
+- Qatar-Branding durchgängig (Qatar Airways Logo, Oryx-Feder-Muster im Hintergrund,
+  Maroon-Palette) — das ist der sichtbare Unterschied zum alten navy flySmart.
+- Zahlen aktualisieren live (SimConnect/VATSIM/SimBrief OFP).
 - TechLog/TECH-Inhalte (Aircraft Health, Defects, Dispatchability) werden in
-  diese Optik integriert — nicht als separater Stil
+  dieselbe Maroon-Optik integriert — nicht als separater Stil.
 
 ## Verifikation
 
-Jedes Optik-Milestone wird gegen das Mockup-Image verifiziert (Screenshot der
-laufenden App vs. `image_baa77c.png`): Layout-Reihenfolge, Farben,
-Tab-Labels, Panel-Struktur müssen übereinstimmen.
+Jedes Optik-Milestone wird gegen die 5 Qatar-Mockups verifiziert (Screenshot der
+laufenden App vs. `qatar-0X-*.png`): Layout-Reihenfolge, Farben, Tab-Labels,
+Panel-Struktur, Qatar-Branding müssen übereinstimmen.
+
+## Legacy (Nicht-Ziel)
+
+- `design/ref-crewpad-dashboard.png` + `design/ref-ipad-home.png` +
+  `design/legacy-navy-flysmart-map.png` = altes navy "flySmart!" (20.09.) —
+  nur noch Referenz für die Tile-Shell-Funktionalität (eDesk-Checkin, OFP,
+  Notifications, Boarding), NICHT für die Optik.
