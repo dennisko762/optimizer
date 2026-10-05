@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import OptimizerShowcase from "./OptimizerShowcase";
+import AirlineSelector from "./crew/AirlineSelector.jsx";
+import CrewShell from "./crew/CrewShell.jsx";
+import { useCrewPlatform } from "./crew/useCrewPlatform.js";
+import {
+  flightToOptimizerContext,
+  applyHandoffContext,
+  applyHandoffState,
+} from "./crew/flightHandoff.js";
 import {
   Activity,
   AlertTriangle,
@@ -888,12 +896,20 @@ function CruiseCiInput({ flightState, updateFlightState, payload, updatePayload,
   );
 }
 
-function OperationalApp() {
+function OperationalApp({ handoffFlight = null }) {
+  const { selectedProvider } = useCrewPlatform();
   const [page, setPage] = useState("data");
   const [selectedAction, setSelectedAction] = useState("NORMAL_RECALC");
   const [aircraftConfig, setAircraftConfig] = useState("");
-  const [flightState, setFlightState] = useState(EMPTY_FLIGHT_STATE);
-  const [flightContext, setFlightContext] = useState(EMPTY_FLIGHT_CONTEXT);
+  // eDesk handoff: when opened from the crew shell with a roster flight,
+  // seed the flight context/state once at mount (the optimizer view mounts
+  // fresh each time it is opened, so the initializer captures the right flight).
+  const [flightState, setFlightState] = useState(() =>
+    applyHandoffState(EMPTY_FLIGHT_STATE, flightToOptimizerContext(handoffFlight, selectedProvider))
+  );
+  const [flightContext, setFlightContext] = useState(() =>
+    applyHandoffContext(EMPTY_FLIGHT_CONTEXT, flightToOptimizerContext(handoffFlight, selectedProvider))
+  );
   const [remainingRouteProfile, setRemainingRouteProfile] = useState(null);
   const [payload, setPayload] = useState(getInitialPayload("NORMAL_RECALC"));
   const [simbriefUsername, setSimbriefUsername] = useState(
@@ -1709,11 +1725,32 @@ function OperationalApp() {
   );
 }
 
+/**
+ * CrewPlatformView — shows airline selector when no provider is chosen,
+ * or the crew shell when a provider is active.
+ */
+function CrewPlatformView({ onOpenOptimizer }) {
+  const { selectedProvider } = useCrewPlatform();
+
+  if (!selectedProvider) {
+    return <AirlineSelector />;
+  }
+
+  return <CrewShell onOpenOptimizer={onOpenOptimizer} />;
+}
+
 export default function App() {
   const [showcaseMode, setShowcaseMode] = useState(() => isShowcaseView());
+  const [view, setView] = useState("crew"); // "crew" | "optimizer" | "showcase"
+  const [handoffFlight, setHandoffFlight] = useState(null);
 
   useEffect(() => {
-    const syncShowcaseMode = () => setShowcaseMode(isShowcaseView());
+    const syncShowcaseMode = () => {
+      if (isShowcaseView()) {
+        setShowcaseMode(true);
+        setView("showcase");
+      }
+    };
 
     syncShowcaseMode();
     window.addEventListener("hashchange", syncShowcaseMode);
@@ -1731,7 +1768,41 @@ export default function App() {
     url.hash = "";
     window.history.replaceState(null, "", url);
     setShowcaseMode(false);
+    setView("crew");
   }
 
-  return showcaseMode ? <OptimizerShowcase onClose={closeShowcase} /> : <OperationalApp />;
+  if (showcaseMode || view === "showcase") {
+    return <OptimizerShowcase onClose={closeShowcase} />;
+  }
+
+  if (view === "optimizer") {
+    return (
+      <>
+        <button
+          className="back-to-crew-btn"
+          onClick={() => { setHandoffFlight(null); setView("crew"); }}
+          style={{
+            position: "fixed", top: 8, left: 8, zIndex: 9999,
+            padding: "6px 14px", border: "1px solid rgba(255,255,255,0.15)",
+            background: "rgba(0,0,0,0.7)", color: "#ccc", fontSize: 11,
+            fontWeight: 700, cursor: "pointer", borderRadius: 4,
+            fontFamily: "inherit", letterSpacing: "0.04em",
+          }}
+        >
+          ← Crew Platform
+        </button>
+        <OperationalApp handoffFlight={handoffFlight} />
+      </>
+    );
+  }
+
+  // Crew platform view
+  return (
+    <CrewPlatformView
+      onOpenOptimizer={(flight) => {
+        setHandoffFlight(flight);
+        setView("optimizer");
+      }}
+    />
+  );
 }

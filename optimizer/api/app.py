@@ -15,8 +15,39 @@ from optimizer.api.optimize_routes import router as optimize_router
 from optimizer.api.simbrief_routes import router as simbrief_router
 from optimizer.api.trajectory_routes import router as trajectory_router
 
+from crew_platform.routes import router as crew_router, callback_router as crew_callback_router, technical_router as crew_technical_router
+
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from a .env file into os.environ (stdlib only).
+
+    Used for VAMSYS_PILOT_CLIENT_ID / VAMSYS_REDIRECT_URI /
+    CREW_PLATFORM_SESSION_SECRET. Existing environment variables always
+    win; values are never logged. The file is gitignored.
+    """
+    for candidate in (
+        Path(__file__).parent.parent.parent / ".env",
+        Path(os.environ.get("EFB_ENV_FILE", "")) if os.environ.get("EFB_ENV_FILE") else None,
+    ):
+        if not candidate or not candidate.is_file():
+            continue
+        try:
+            for line in candidate.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        except OSError:
+            pass
+
 
 def create_app() -> FastAPI:
+    _load_dotenv()
+
     app = FastAPI(
         title="Dynamic CI Assistant API",
         version="0.1.0",
@@ -41,6 +72,11 @@ def create_app() -> FastAPI:
     app.include_router(simbrief_router)
     app.include_router(simconnect_router)
     app.include_router(trajectory_router)
+    app.include_router(crew_router)
+    app.include_router(crew_technical_router)
+    # Browser OAuth callback — must be registered before the catch-all
+    # static-file mount below so the redirect URL is not swallowed.
+    app.include_router(crew_callback_router)
 
     @app.on_event("startup")
     async def startup_telemetry() -> None:
@@ -54,13 +90,24 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Serve the built Vite frontend if dist/ exists.
-    # Must be mounted last — catches all unmatched routes.
-    # sys._MEIPASS is set by PyInstaller when running as a frozen exe.
+    # Dist path (built Vite frontend) — shared by /privacy and the catch-all mount.
     if getattr(sys, "frozen", False):
         _dist = Path(sys._MEIPASS) / "efb-ui" / "dist"
     else:
         _dist = Path(__file__).parent.parent.parent / "efb-ui" / "dist"
+
+    # /privacy — public privacy policy required by vAMSYS for Pilot API
+    # clients. Served explicitly (StaticFiles would only serve /privacy.html).
+    from fastapi.responses import FileResponse
+
+    if _dist.exists():
+
+        @app.get("/privacy", include_in_schema=False)
+        async def privacy_page():
+            return FileResponse(str(_dist / "privacy.html"))
+
+    # Serve the built Vite frontend if dist/ exists.
+    # Must be mounted last — catches all unmatched routes.
     if _dist.exists():
         app.mount("/", StaticFiles(directory=_dist, html=True), name="ui")
 

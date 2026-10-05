@@ -122,6 +122,27 @@ def _show_tailscale_status(port: int, *, setup: bool) -> None:
             print("  Download manually: https://tailscale.com/download/windows")
 
 
+def server_banner_lines(
+    port: int = _DEFAULT_PORT, local_ip: str = "127.0.0.1"
+) -> list[str]:
+    """Banner lines that stay printable on cp1252 Windows consoles.
+
+    Box-drawing characters are not in cp1252 and raise UnicodeEncodeError
+    on some console code pages, so keep the banner plain ASCII.
+    """
+    title = "       EFB Server"
+    bar = "=" * 34
+    return [
+        "",
+        f"  +{bar}+",
+        f"  |{title:<34}|",
+        f"  +{bar}+",
+        "",
+        f"  This PC:       http://localhost:{port}",
+        f"  Local network: http://{local_ip}:{port}",
+    ]
+
+
 def main() -> None:
     multiprocessing.freeze_support()
 
@@ -134,13 +155,8 @@ def main() -> None:
 
     local_ip = _local_ip()
 
-    print()
-    print("  ╔══════════════════════════════╗")
-    print("  ║       EFB Server             ║")
-    print("  ╚══════════════════════════════╝")
-    print()
-    print(f"  This PC:       http://localhost:{args.port}")
-    print(f"  Local network: http://{local_ip}:{args.port}")
+    for line in server_banner_lines(args.port, local_ip):
+        print(line)
 
     if not args.no_tailscale:
         _show_tailscale_status(args.port, setup=args.setup_tailscale)
