@@ -8,6 +8,11 @@ Models
 - **Defect** — an open defect reported against a TechLogEntry.  Tracks
   lifecycle status through OPEN → UNDER_REVIEW → DEFERRED / MEL_APPLIED →
   RECTIFIED → CLOSED.  Belongs to a TechLogEntry via ``techlog_entry_id`` FK.
+- **MaintenanceAction** — a maintenance action performed on an aircraft
+  (rectification, inspection, component swap, or general work).  Carries a
+  deterministic, human-readable code as its primary key.  May rectify a
+  specific ``Defect`` (``defect_id`` FK) or be general maintenance with no
+  linked defect.
 """
 
 from __future__ import annotations
@@ -211,6 +216,12 @@ class Defect(Base):
 
     # relationships
     techlog_entry = relationship("TechLogEntry", back_populates="defects")
+    maintenance_actions = relationship(
+        "MaintenanceAction",
+        back_populates="defect",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -234,4 +245,70 @@ class Defect(Base):
             ),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# MaintenanceAction
+# ---------------------------------------------------------------------------
+
+# Valid maintenance action types.
+MAINTENANCE_ACTION_TYPES = (
+    "RECTIFICATION",
+    "INSPECTION",
+    "COMPONENT_SWAP",
+    "GENERAL",
+)
+
+# Defect statuses considered terminal for rectification purposes: a defect
+# that is already RECTIFIED or CLOSED cannot be rectified again.
+DEFECT_TERMINAL_STATUSES = ("RECTIFIED", "CLOSED")
+
+
+class MaintenanceAction(Base):
+    """A maintenance action performed on an aircraft.
+
+    ``id`` is a deterministic, human-readable code (e.g. ``MA-D-ABYA-0001``)
+    used as the primary key.  ``defect_id`` links the action to the specific
+    defect it rectifies; it is nullable because an action may be general
+    maintenance not tied to any defect.  ``performed_by`` is a display name
+    only — never a token or secret.
+    """
+
+    __tablename__ = "maintenance_action"
+
+    id = Column(String, primary_key=True)
+    aircraft_registration = Column(
+        String,
+        ForeignKey("aircraft.registration"),
+        nullable=False,
+        index=True,
+    )
+    defect_id = Column(
+        Integer,
+        ForeignKey("defect.id"),
+        nullable=True,
+        index=True,
+    )
+    action_type = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    performed_by = Column(String, nullable=False)
+    performed_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    # relationships
+    defect = relationship("Defect", back_populates="maintenance_actions")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "aircraft_registration": self.aircraft_registration,
+            "defect_id": self.defect_id,
+            "action_type": self.action_type,
+            "description": self.description,
+            "performed_by": self.performed_by,
+            "performed_at": (
+                self.performed_at.isoformat() if self.performed_at else None
+            ),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }

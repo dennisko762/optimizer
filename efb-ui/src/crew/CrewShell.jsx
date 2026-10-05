@@ -33,8 +33,10 @@ import {
   LogIn,
   ChevronRight,
   ExternalLink,
+  Wrench,
 } from "lucide-react";
 import BoardingPanel from "./BoardingPanel.jsx";
+import TechPanel, { TechStatusCard } from "./tech/TechPanel.jsx";
 
 const TILES = [
   { id: "edesk", label: "eDesk", icon: ClipboardCheck, active: true },
@@ -44,6 +46,7 @@ const TILES = [
   // Roadmap — disabled
   { id: "mail", label: "Mail & Notifications", icon: Mail, active: true },
   { id: "boarding", label: "Boarding", icon: Users, active: true },
+  { id: "tech", label: "Tech", icon: Wrench, active: true },
   { id: "charts", label: "Charts", icon: Map, active: false, roadmap: true },
   { id: "flysmart", label: "FlySmart / Map", icon: Plane, active: false, roadmap: true },
   { id: "flightlog", label: "Flight Log", icon: FileText, active: false, roadmap: true },
@@ -133,7 +136,11 @@ export default function CrewShell({ onOpenOptimizer }) {
       {/* Main content area */}
       <main className="crew-main">
         {currentTile === "edesk" && (
-          <EDeskPanel selectedFlight={selectedFlight} onSelectFlight={setSelectedFlight} />
+          <EDeskPanel
+            selectedFlight={selectedFlight}
+            onSelectFlight={setSelectedFlight}
+            onOpenTech={() => setCurrentTile("tech")}
+          />
         )}
         {currentTile === "flight" && (
           <FlightOFPPanel
@@ -149,6 +156,7 @@ export default function CrewShell({ onOpenOptimizer }) {
             onClose={() => setCurrentTile("edesk")}
           />
         )}
+        {currentTile === "tech" && <TechPanel />}
       </main>
     </div>
   );
@@ -156,7 +164,7 @@ export default function CrewShell({ onOpenOptimizer }) {
 
 /* ─── eDesk Panel ─────────────────────────────────────────────────── */
 
-function EDeskPanel({ selectedFlight, onSelectFlight }) {
+function EDeskPanel({ selectedFlight, onSelectFlight, onOpenTech }) {
   const { session, selectedProvider, apiBase } = useCrewPlatform();
   const [flights, setFlights] = useState([]);
   const [checkinResult, setCheckinResult] = useState(null);
@@ -297,6 +305,9 @@ function EDeskPanel({ selectedFlight, onSelectFlight }) {
           </div>
         </div>
       )}
+
+      {/* Aircraft technical status (TechLog P1-T6) */}
+      <TechStatusCard onOpenTech={onOpenTech} />
 
       {!session?.authenticated && (
         <div className="edesk-notice">
