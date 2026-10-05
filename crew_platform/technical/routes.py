@@ -26,6 +26,10 @@ Endpoints — Maintenance Actions
 --------------------------------
 POST /aircraft/{reg}/maintenance          — create a maintenance action
 GET  /aircraft/{reg}/maintenance          — list actions (newest first)
+
+Endpoints — Technical Status (T5)
+----------------------------------
+GET  /aircraft/{registration}/status      — derived technical status + live defects
 """
 
 from __future__ import annotations
@@ -50,16 +54,44 @@ from crew_platform.technical.models import (
     TechLogEntry,
     TECHLOG_STATUS_VALUES,
 )
+from crew_platform.technical.status import derive_status, live_defects
 
 router = APIRouter(prefix="/api/crew/technical", tags=["crew-technical"])
 
 
-def _apply_defect_transition(defect: Defect, new_status: str) -> None:
+def sync_aircraft_status(session, registration: str) -> str:
+    """Recompute and persist ``aircraft.current_technical_status``.
+
+    Called automatically on every defect state change (T3 transition logic)
+    and after maintenance rectification (T4 path) — the client never has to
+    ask for a recompute.  Does not commit; the caller owns the session and
+    commits in one transaction with the defect change.
+
+    Returns the derived status (also written to the aircraft row).
+    """
+    ac = session.get(Aircraft, registration)
+    if ac is None:
+        return "SERVICEABLE"
+    defects = (
+        session.query(Defect)
+        .filter(Defect.aircraft_registration == registration)
+        .all()
+    )
+    status = derive_status(defects)
+    ac.current_technical_status = status
+    return status
+
+
+def _apply_defect_transition(defect: Defect, new_status: str, session=None) -> None:
     """Validate and apply a defect status transition in-place.
 
     Raises 409 if the transition is not allowed from the defect's current
     status.  Terminal statuses (RECTIFIED, CLOSED) set ``closed`` and
     ``closure_timestamp``.  Does not commit — the caller owns the session.
+
+    When ``session`` is provided, the aircraft's ``current_technical_status``
+    is re-derived in the same transaction (T5 hook), so it is always current
+    after the caller commits.
     """
     allowed = DEFECT_STATUS_TRANSITIONS.get(defect.status, ())
     if new_status not in allowed:
@@ -74,6 +106,8 @@ def _apply_defect_transition(defect: Defect, new_status: str) -> None:
     if new_status in ("RECTIFIED", "CLOSED"):
         defect.closed = 1
         defect.closure_timestamp = datetime.now(timezone.utc)
+    if session is not None:
+        sync_aircraft_status(session, defect.aircraft_registration)
 
 
 # ---- request / response schemas -------------------------------------------
@@ -201,6 +235,56 @@ def create_aircraft(body: AircraftIn):
         session.close()
 
 
+@router.get("/aircraft/{registration}/status")
+def get_aircraft_status(registration: str):
+    """Return the derived technical status of an aircraft (T5).
+
+    The status is computed from the aircraft's live (non-terminal) defect
+    set via the pure :func:`crew_platform.technical.status.derive_status`
+    function — the same derivation that keeps
+    ``aircraft.current_technical_status`` current on every state change.
+    Recomputing here (rather than reading the stored column alone) makes
+    the endpoint the authoritative view for the compact Flight/Home status
+    card.
+    """
+    session = get_session()
+    try:
+        ac = session.get(Aircraft, registration)
+        if ac is None:
+            raise HTTPException(status_code=404, detail="Aircraft not found")
+        all_defects = (
+            session.query(Defect)
+            .filter(Defect.aircraft_registration == registration)
+            .order_by(Defect.created_at, Defect.id)
+            .all()
+        )
+        live = live_defects(all_defects)
+        return {
+            "registration": ac.registration,
+            "type": ac.type,
+            "current_technical_status": derive_status(live),
+            "open_defects": len(live),
+            "open_defects_list": [
+                {
+                    "id": d.id,
+                    "ata": d.chapter,
+                    "system_component": d.system_component,
+                    "pilot_report": d.pilot_report,
+                    "status": d.status,
+                    "description": d.description,
+                    "severity": d.severity,
+                    "mel_reference": d.mel_reference,
+                    "created_at": d.created_at.isoformat()
+                    if d.created_at
+                    else None,
+                }
+                for d in live
+            ],
+        }
+    finally:
+        session.close()
+
+
 @router.post("/aircraft/{registration}/flights/complete")
 def record_completed_flight(registration: str, body: FlightCompleteIn):
     """Increment flight hours/cycles for an aircraft after a completed flight."""
@@ -311,6 +395,9 @@ def create_defect(entry_id: int, body: DefectIn):
             maintenance_action=body.maintenance_action,
         )
         session.add(defect)
+        # T5: a newly reported defect is OPEN — recompute the aircraft's
+        # technical status in the same transaction.
+        sync_aircraft_status(session, entry.aircraft_registration)
         session.commit()
         session.refresh(defect)
         return defect.to_dict()
@@ -372,7 +459,7 @@ def transition_defect_status(defect_id: int, body: DefectStatusIn):
         if defect is None:
             raise HTTPException(status_code=404, detail="Defect not found")
 
-        _apply_defect_transition(defect, new_status)
+        _apply_defect_transition(defect, new_status, session=session)
 
         session.commit()
         session.refresh(defect)
@@ -458,7 +545,9 @@ def create_maintenance_action(registration: str, body: MaintenanceActionIn):
                     ),
                 )
             # Reuse T3 transition logic to move the defect to RECTIFIED.
-            _apply_defect_transition(defect, "RECTIFIED")
+            # The session arg triggers the T5 aircraft status recompute in
+            # the same transaction.
+            _apply_defect_transition(defect, "RECTIFIED", session=session)
             # Append the maintenance action text to the tech-log entry so the
             # aircraft history retains both the defect and the rectification.
             if entry is not None:
