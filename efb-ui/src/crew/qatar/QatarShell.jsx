@@ -43,6 +43,8 @@ import {
   Gauge,
 } from "lucide-react";
 import { useCrewPlatform } from "../useCrewPlatform.js";
+import { loadSession, clearSession } from "../crewAuth.js";
+import { useFlightCheckins } from "../useFlightCheckins.js";
 import {
   mapOfpHero,
   mapOfpWaypoints,
@@ -53,6 +55,7 @@ import {
   defaultInboxMessages,
   projectMap,
 } from "./qatarMappers.js";
+import CrewLogin from "./CrewLogin.jsx";
 import BoardingPanel from "../BoardingPanel.jsx";
 import TechPanel from "../tech/TechPanel.jsx";
 
@@ -156,7 +159,11 @@ export default function QatarShell({ onOpenOptimizer }) {
   const { selectedProvider, apiBase } = useCrewPlatform();
   const utc = useUtcClock();
 
-  const [screen, setScreen] = useState("crewdesk"); // crewdesk | myflights | profile
+  // M2b: VA crew login gate — persisted session (crewAuth) from a previous
+  // app start, or a fresh login screen when absent.
+  const [crewSession, setCrewSession] = useState(() => loadSession());
+
+  const [screen, setScreen] = useState("home"); // home | crewdesk | profile | smartops
   const [tab, setTab] = useState("flightplan");
   const [flight, setFlight] = useState(null);
   const [ofp, setOfp] = useState(null);
@@ -165,6 +172,15 @@ export default function QatarShell({ onOpenOptimizer }) {
   const [boarding, setBoarding] = useState(false);
   const [lastPlan, setLastPlan] = useState(null);
   const ofpFlightRef = useRef(null);
+
+  const { checkIn, checkedIn, record: checkinRecord } = useFlightCheckins();
+
+  function handleLogout() {
+    clearSession();
+    setCrewSession(null);
+    setScreen("home");
+    setFlight(null);
+  }
 
   // The last saved SimBrief plan is loaded at app start (spec 4/4): the
   // first flight the crew opens then shows that plan instead of re-fetching.
@@ -251,32 +267,48 @@ export default function QatarShell({ onOpenOptimizer }) {
 
   if (!selectedProvider) return null;
 
+  // M2b: every app start lands on the crew login until a session exists.
+  if (!crewSession) {
+    return (
+      <div className="qr-shell">
+        <CrewLogin session={crewSession} onLoggedIn={setCrewSession} />
+      </div>
+    );
+  }
+
   return (
     <div className="qr-shell">
-      {screen === "crewdesk" && (
-        <CrewDeskScreen utc={utc} onNavigate={setScreen} />
-      )}
-
-      {screen === "myflights" && (
-        <MyFlightsScreen
+      {screen === "home" && (
+        <HomeScreen
           utc={utc}
-          onBack={() => setScreen("crewdesk")}
-          flight={flight}
-          onPick={(f, savedPlan) => {
-            openFlight(f, savedPlan);
-          }}
+          session={crewSession}
+          onNavigate={setScreen}
+          onOpenFlight={(f, savedPlan) => openFlight(f, savedPlan)}
           onBoarding={(f) => {
             setFlight(f);
             setBoarding(true);
           }}
+          checkIn={checkIn}
+          checkedIn={checkedIn}
+          checkinRecord={checkinRecord}
+        />
+      )}
+
+      {screen === "crewdesk" && (
+        <CrewDeskScreen
+          utc={utc}
+          onNavigate={setScreen}
+          pilotName={crewSession.pilotId}
         />
       )}
 
       {screen === "profile" && (
         <ProfileScreen
           utc={utc}
-          onBack={() => setScreen("crewdesk")}
+          onBack={() => setScreen("home")}
           onOpenOptimizer={onOpenOptimizer}
+          crewSession={crewSession}
+          onLogout={handleLogout}
         />
       )}
 
@@ -290,6 +322,7 @@ export default function QatarShell({ onOpenOptimizer }) {
           tab={tab}
           setTab={setTab}
           onImportNewPlan={doImportNewPlan}
+          onBack={() => setScreen("home")}
         />
       )}
 
@@ -303,9 +336,101 @@ export default function QatarShell({ onOpenOptimizer }) {
   );
 }
 
+/* ─── shared sidebar (Home / Crew Desk) ───────────────────────────── */
+
+function Sidebar({ active, onNavigate, pilotName }) {
+  return (
+    <aside className="qr-sidebar">
+      <button
+        className={`qr-side-item ${active === "home" ? "qr-side-item--active" : ""}`}
+        onClick={() => onNavigate("home")}
+      >
+        <Plane size={17} />
+        Home
+      </button>
+      <button
+        className={`qr-side-item ${active === "crewdesk" ? "qr-side-item--active" : ""}`}
+        onClick={() => onNavigate("crewdesk")}
+      >
+        <Inbox size={17} />
+        Crew Desk
+      </button>
+      <button
+        className={`qr-side-item ${active === "profile" ? "qr-side-item--active" : ""}`}
+        onClick={() => onNavigate("profile")}
+      >
+        <User size={17} />
+        Profile
+      </button>
+      {pilotName && <span className="qr-sidebar__pilot mono">{pilotName}</span>}
+      <div className="qr-sidebar__brand">
+        <QrLogo />
+      </div>
+    </aside>
+  );
+}
+
+/* ─── Company News (placeholder, M2b) ─────────────────────────────── */
+
+// Placeholder announcements for the Home screen — the live company feed
+// replaces this list later; the panel keeps its structure and look.
+const PLACEHOLDER_NEWS = [
+  {
+    id: "n-airac",
+    kind: "NOTICE",
+    badge_class: "badge--dispatch",
+    time: "06:40Z",
+    title: "AIRAC 2610 now effective",
+    preview:
+      "New cycle in NAV data from 26 OCT — check updated charts and route notes for your next flight.",
+  },
+  {
+    id: "n-duty",
+    kind: "OPS",
+    badge_class: "badge--notam",
+    time: "05:10Z",
+    title: "QR815 DOH → LHR duty extension",
+    preview:
+      "Duty time extended to 13:30Z for the 05 OCT rotation. Report time at DOH unchanged.",
+  },
+  {
+    id: "n-maint",
+    kind: "MAINT",
+    badge_class: "badge--ok",
+    time: "22:40Z",
+    title: "A6713 A-check completed",
+    preview:
+      "Back in service 04 OCT — Tech Log entry updated, no open defects on the aircraft.",
+  },
+];
+
+function CompanyNewsPanel() {
+  return (
+    <section className="qr-news">
+      <div className="qr-news__head">
+        <h3>COMPANY NEWS</h3>
+        <span className="qr-badge badge--dispatch">PLACEHOLDER</span>
+      </div>
+      {PLACEHOLDER_NEWS.map((n) => (
+        <div className="qr-news__item" key={n.id}>
+          <div className="qr-news__top">
+            <span className={`qr-badge ${n.badge_class}`}>{n.kind}</span>
+            <span className="qr-news__time mono">{n.time}</span>
+          </div>
+          <div className="qr-news__title">{n.title}</div>
+          <div className="qr-news__preview">{n.preview}</div>
+        </div>
+      ))}
+      <div className="qr-news__foot">
+        Placeholder items — the live company announcement feed lands in a later milestone.
+      </div>
+    </section>
+  );
+}
+
 /* ─── Crew Desk (qatar-02) ─────────────────────────────────────────── */
 
-function CrewDeskScreen({ utc, onNavigate }) {
+function CrewDeskScreen({ utc, onNavigate, pilotName }) {
   const { session, apiBase } = useCrewPlatform();
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
@@ -360,23 +485,7 @@ function CrewDeskScreen({ utc, onNavigate }) {
       />
 
       <div className="qr-crewdesk__body">
-        <aside className="qr-sidebar">
-          <button className="qr-side-item" onClick={() => onNavigate("myflights")}>
-            <Plane size={17} />
-            My Flights
-          </button>
-          <button className="qr-side-item qr-side-item--active">
-            <Inbox size={17} />
-            Crew Desk
-          </button>
-          <button className="qr-side-item" onClick={() => onNavigate("profile")}>
-            <User size={17} />
-            Profile
-          </button>
-          <div className="qr-sidebar__brand">
-            <QrLogo />
-          </div>
-        </aside>
+        <Sidebar active="crewdesk" onNavigate={onNavigate} pilotName={pilotName} />
 
         <section className="qr-inbox">
           <div className="qr-inbox__head">
@@ -486,10 +595,25 @@ function WeatherBriefing() {
   );
 }
 
-/* ─── My Flights (eDesk functionality, Qatar look) ─────────────────── */
+/* ─── Home (M2b): Company News + My Flights + check-in ────────────── */
 
-function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
-  const { session, configReady, loading, error, startAuth, apiBase } = useCrewPlatform();
+function HomeScreen({
+  utc,
+  session,
+  onNavigate,
+  onOpenFlight,
+  onBoarding,
+  checkIn,
+  checkedIn,
+}) {
+  const {
+    session: platformSession,
+    configReady,
+    loading,
+    error,
+    startAuth,
+    apiBase,
+  } = useCrewPlatform();
   const [flights, setFlights] = useState([]);
   const [plans, setPlans] = useState([]);
   const [plansTick, setPlansTick] = useState(0);
@@ -503,20 +627,28 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
   const [result, setResult] = useState(null);
   const [checkinError, setCheckinError] = useState(null);
 
-  async function loadFlights() {
-    if (!session?.authenticated) return;
-    try {
-      const resp = await fetch(
-        `${apiBase}/api/crew/session/${session.session_id}/flights`
-      );
-      if (resp.ok) setFlights(await resp.json());
-    } catch {
-      /* pass */
-    }
-  }
+  // Roster: fetch when the screen mounts / platform session is up
+  // (subscription-style — setState only in the async callback).
+  useEffect(() => {
+    if (!platformSession?.authenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(
+          `${apiBase}/api/crew/session/${platformSession.session_id}/flights`
+        );
+        if (!cancelled && resp.ok) setFlights(await resp.json());
+      } catch {
+        /* pass */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [platformSession?.authenticated, platformSession?.session_id, apiBase]);
 
-  // Saved flightplans: subscription-style fetch (setState only in the async
-  // callback); REFRESH / delete bump the tick to re-run it.
+  // Saved SimBrief flightplans: subscription-style fetch; REFRESH /
+  // delete bump the tick to re-run it.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -546,36 +678,24 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
     }
   }
 
-  // Roster + saved flightplans: fetch when the screen mounts / session is up
-  // (subscription-style — setState only in the async callback).
-  useEffect(() => {
-    if (!session?.authenticated) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const resp = await fetch(
-          `${apiBase}/api/crew/session/${session.session_id}/flights`
-        );
-        if (!cancelled && resp.ok) setFlights(await resp.json());
-      } catch {
-        /* pass */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.authenticated, session?.session_id, apiBase]);
-
+  // M2b check-in: the local record is the source of truth for the
+  // "CHECKED IN" status (crewCheckin). With a platform session the M2
+  // backend validation still runs as a best-effort supplement.
   async function doCheckin(f) {
-    if (!session?.authenticated) return;
     setResult(null);
     setCheckinError(null);
+    const local = checkIn(f.flight_id, session);
+    if (!local.ok) {
+      setCheckinError(local.error);
+      return;
+    }
+    if (!platformSession?.authenticated) return;
     try {
       const resp = await fetch(`${apiBase}/api/crew/checkin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          session_id: session.session_id,
+          session_id: platformSession.session_id,
           flight_id: f.flight_id,
           flight_number: f.flight_number,
           simbrief_departure: f.departure_icao,
@@ -592,68 +712,90 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
   }
 
   return (
-    <div className="qr-screen">
+    <div className="qr-screen qr-home">
       <TopHeader
         utc={utc}
-        center={<span className="qr-topbar__title">MY FLIGHTS</span>}
+        center={<span className="qr-topbar__title">HOME</span>}
         right={<QrLogo small />}
       />
-      <div className="qr-screen__body">
-        <div className="qr-hero-card">
-          <div className="qr-hero-card__row">
-            <button className="qr-linkbtn" onClick={onBack}>
-              ← CREW DESK
-            </button>
-            {session?.authenticated && (
-              <span className="qr-label">{session.display_name || "PILOT"}</span>
-            )}
+      <div className="qr-home__body">
+        <Sidebar active="home" onNavigate={onNavigate} pilotName={session?.pilotId} />
+
+        <div className="qr-home__col">
+          <CompanyNewsPanel />
+
+          <div className="qr-section-head">
+            <h3>MY FLIGHTS</h3>
+            <span className="qr-label">
+              CHECK-IN BEFORE YOU OPEN THE FLIGHT
+            </span>
           </div>
 
-          {!session?.authenticated && (
+          {!platformSession?.authenticated && (
             <div className="qr-notice">
               {configReady?.ready ? (
                 <button className="qr-goldbtn" onClick={startAuth} disabled={loading}>
                   <LogIn size={15} /> {loading ? "Connecting…" : "Sign in with vAMSYS"}
                 </button>
               ) : (
-                "Sign in through vAMSYS to view your flight list — or enter a flight manually below."
+                "Roster syncs through the crew session — or enter a flight manually below."
               )}
               {error && <div className="qr-error">{error}</div>}
             </div>
           )}
 
-          {session?.authenticated && (
+          {platformSession?.authenticated && (
             <>
-              <div className="qr-section-head">
-                <h3>FLIGHT ROSTER</h3>
-                <button className="qr-linkbtn" onClick={loadFlights}>
+              <div className="qr-section-head qr-section-head--compact">
+                <h4>FLIGHT ROSTER</h4>
+                <button
+                  className="qr-linkbtn"
+                  onClick={() =>
+                    fetch(
+                      `${apiBase}/api/crew/session/${platformSession.session_id}/flights`
+                    )
+                      .then((r) => (r.ok ? r.json() : null))
+                      .then((d) => d && setFlights(d))
+                      .catch(() => {})
+                  }
+                >
                   REFRESH
                 </button>
               </div>
               {flights.length === 0 && (
-                <div className="qr-notice">No flights loaded yet{session.local ? " (local session)" : ""}.</div>
+                <div className="qr-notice">
+                  No flights in the roster{platformSession.local ? " (local session)" : ""} — use manual entry below.
+                </div>
               )}
               {flights.map((f) => (
                 <button
                   key={f.flight_id}
-                  className={`qr-flight-row ${flight?.flight_id === f.flight_id ? "qr-flight-row--selected" : ""}`}
-                  onClick={() => onPick(f)}
+                  className="qr-flight-row"
+                  onClick={() => onOpenFlight(f)}
                 >
-                  <span className="mono qr-flight-row__no">{f.flight_number || f.callsign || "—"}</span>
+                  <span className="mono qr-flight-row__no">
+                    {f.flight_number || f.callsign || "—"}
+                  </span>
                   <span className="qr-flight-row__route mono">
                     {f.departure_icao || "?"} <ArrowRight size={12} /> {f.arrival_icao || "?"}
                   </span>
                   <span className="qr-flight-row__type">{f.aircraft_icao || "—"}</span>
-                  <span className="qr-flight-row__status">{f.status || "—"}</span>
+                  {checkedIn(f.flight_id) ? (
+                    <span className="qr-flight-row__status qr-flight-row__status--checked">
+                      <CheckCircle2 size={12} /> CHECKED IN
+                    </span>
+                  ) : (
+                    <span className="qr-flight-row__status">{f.status || "—"}</span>
+                  )}
                   <span style={{ display: "flex", gap: 6 }}>
                     <span
-                      className="qr-chip qr-chip--ghost"
+                      className={`qr-chip ${checkedIn(f.flight_id) ? "qr-chip--done" : "qr-chip--ghost"}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         doCheckin(f);
                       }}
                     >
-                      CHECK-IN
+                      {checkedIn(f.flight_id) ? "✓ CHECKED IN" : "CHECK IN"}
                     </span>
                     <span
                       className="qr-chip qr-chip--ghost"
@@ -670,8 +812,8 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
             </>
           )}
 
-          <div className="qr-section-head qr-section-head--mt">
-            <h3>SAVED FLIGHTPLANS</h3>
+          <div className="qr-section-head qr-section-head--compact">
+            <h4>SAVED FLIGHTPLANS</h4>
             <button className="qr-linkbtn" onClick={() => setPlansTick((t) => t + 1)}>
               REFRESH
             </button>
@@ -683,32 +825,45 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
           ) : (
             plans.map((p) => {
               const plan = p.flightplan || {};
+              const f = {
+                flight_id: p.key,
+                flight_number: plan.flight_number || null,
+                departure_icao: plan.origin || null,
+                arrival_icao: plan.destination || null,
+                aircraft_icao: plan.aircraft_icao || plan.aircraft || null,
+                callsign: plan.callsign || null,
+                status: "SAVED",
+              };
               return (
                 <button
                   key={p.key}
-                  className={`qr-flight-row ${flight?.flight_id === p.key ? "qr-flight-row--selected" : ""}`}
-                  onClick={() =>
-                    onPick(
-                      {
-                        flight_id: p.key,
-                        flight_number: plan.flight_number || null,
-                        departure_icao: plan.origin || null,
-                        arrival_icao: plan.destination || null,
-                        aircraft_icao: plan.aircraft_icao || plan.aircraft || null,
-                        callsign: plan.callsign || null,
-                        status: "SAVED",
-                      },
-                      plan
-                    )
-                  }
+                  className="qr-flight-row"
+                  onClick={() => onOpenFlight(f, plan)}
                 >
                   <span className="mono qr-flight-row__no">{plan.flight_number || "—"}</span>
                   <span className="qr-flight-row__route mono">
                     {plan.origin || "?"} <ArrowRight size={12} /> {plan.destination || "?"}
                   </span>
-                  <span className="qr-flight-row__type">{plan.aircraft_icao || plan.aircraft || "—"}</span>
-                  <span className="qr-flight-row__status">SAVED</span>
+                  <span className="qr-flight-row__type">
+                    {plan.aircraft_icao || plan.aircraft || "—"}
+                  </span>
+                  {checkedIn(p.key) ? (
+                    <span className="qr-flight-row__status qr-flight-row__status--checked">
+                      <CheckCircle2 size={12} /> CHECKED IN
+                    </span>
+                  ) : (
+                    <span className="qr-flight-row__status">SAVED</span>
+                  )}
                   <span style={{ display: "flex", gap: 6 }}>
+                    <span
+                      className={`qr-chip ${checkedIn(p.key) ? "qr-chip--done" : "qr-chip--ghost"}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        doCheckin(f);
+                      }}
+                    >
+                      {checkedIn(p.key) ? "✓ CHECKED IN" : "CHECK IN"}
+                    </span>
                     <span
                       className="qr-chip qr-chip--ghost"
                       onClick={(e) => {
@@ -724,47 +879,43 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
             })
           )}
 
-          {(session?.local || !session?.authenticated) && (
-            <div className="qr-section-head qr-section-head--mt">
-              <h3>MANUAL FLIGHT ENTRY</h3>
+          <div className="qr-section-head qr-section-head--compact">
+            <h4>MANUAL FLIGHT ENTRY</h4>
+          </div>
+          <div className="qr-manual-grid">
+            <label><span>Flight No.</span>
+              <input value={manual.flight_number} onChange={(e) => setManual({ ...manual, flight_number: e.target.value })} placeholder="QR815" />
+            </label>
+            <label><span>Dep ICAO</span>
+              <input value={manual.departure_icao} onChange={(e) => setManual({ ...manual, departure_icao: e.target.value.toUpperCase() })} placeholder="DOH" maxLength={4} />
+            </label>
+            <label><span>Arr ICAO</span>
+              <input value={manual.arrival_icao} onChange={(e) => setManual({ ...manual, arrival_icao: e.target.value.toUpperCase() })} placeholder="LHR" maxLength={4} />
+            </label>
+            <label><span>Aircraft</span>
+              <input value={manual.aircraft_icao} onChange={(e) => setManual({ ...manual, aircraft_icao: e.target.value.toUpperCase() })} placeholder="B777-300ER" />
+            </label>
+            <label><span>Callsign</span>
+              <input value={manual.callsign} onChange={(e) => setManual({ ...manual, callsign: e.target.value.toUpperCase() })} placeholder="QTR815" />
+            </label>
+            <div className="qr-manual-grid__action">
+              <button
+                className="qr-goldbtn"
+                disabled={!manual.departure_icao || !manual.arrival_icao}
+                onClick={() => {
+                  const f = {
+                    flight_id:
+                      manual.departure_icao + "-" + manual.arrival_icao + "-" +
+                      (manual.callsign || manual.flight_number || "LOCAL"),
+                    ...manual,
+                  };
+                  onOpenFlight(f);
+                }}
+              >
+                <PlaneTakeoff size={15} /> OPEN FLIGHT
+              </button>
             </div>
-          )}
-          {(session?.local || !session?.authenticated) && (
-            <div className="qr-manual-grid">
-              <label><span>Flight No.</span>
-                <input value={manual.flight_number} onChange={(e) => setManual({ ...manual, flight_number: e.target.value })} placeholder="QR815" />
-              </label>
-              <label><span>Dep ICAO</span>
-                <input value={manual.departure_icao} onChange={(e) => setManual({ ...manual, departure_icao: e.target.value.toUpperCase() })} placeholder="DOH" maxLength={4} />
-              </label>
-              <label><span>Arr ICAO</span>
-                <input value={manual.arrival_icao} onChange={(e) => setManual({ ...manual, arrival_icao: e.target.value.toUpperCase() })} placeholder="LHR" maxLength={4} />
-              </label>
-              <label><span>Aircraft</span>
-                <input value={manual.aircraft_icao} onChange={(e) => setManual({ ...manual, aircraft_icao: e.target.value.toUpperCase() })} placeholder="B777-300ER" />
-              </label>
-              <label><span>Callsign</span>
-                <input value={manual.callsign} onChange={(e) => setManual({ ...manual, callsign: e.target.value.toUpperCase() })} placeholder="QTR815" />
-              </label>
-              <div className="qr-manual-grid__action">
-                <button
-                  className="qr-goldbtn"
-                  disabled={!manual.departure_icao || !manual.arrival_icao}
-                  onClick={() => {
-                    const f = {
-                      flight_id:
-                        manual.departure_icao + "-" + manual.arrival_icao + "-" +
-                        (manual.callsign || manual.flight_number || "LOCAL"),
-                      ...manual,
-                    };
-                    onPick(f);
-                  }}
-                >
-                  <PlaneTakeoff size={15} /> OPEN FLIGHT
-                </button>
-              </div>
-            </div>
-          )}
+          </div>
 
           {result && (
             <div className={`qr-result ${result.valid ? "qr-result--ok" : "qr-result--fail"}`}>
@@ -785,7 +936,7 @@ function MyFlightsScreen({ utc, onBack, flight, onPick, onBoarding }) {
 
 /* ─── Profile (Setup functionality, Qatar look) ────────────────────── */
 
-function ProfileScreen({ utc, onBack, onOpenOptimizer }) {
+function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) {
   const { session, selectedProvider, configReady, logout } = useCrewPlatform();
   return (
     <div className="qr-screen">
@@ -796,9 +947,10 @@ function ProfileScreen({ utc, onBack, onOpenOptimizer }) {
       />
       <div className="qr-screen__body">
         <div className="qr-hero-card">
-          <button className="qr-linkbtn" onClick={onBack}>← CREW DESK</button>
+          <button className="qr-linkbtn" onClick={onBack}>← HOME</button>
           <h3>PILOT PROFILE</h3>
           <div className="qr-idgrid">
+            <div><span className="qr-label">PILOT ID</span><strong className="mono">{crewSession?.pilotId || "—"}</strong></div>
             <div><span className="qr-label">NAME</span><strong>{session?.display_name || "Local Pilot"}</strong></div>
             <div><span className="qr-label">CREW ID</span><strong className="mono">{session?.crew_id || "—"}</strong></div>
             <div><span className="qr-label">RANK</span><strong>{session?.rank || "—"}</strong></div>
@@ -835,6 +987,11 @@ function ProfileScreen({ utc, onBack, onOpenOptimizer }) {
                 <LogOut size={14} /> SIGN OUT
               </button>
             )}
+            {crewSession && (
+              <button className="qr-ghostbtn" onClick={onLogout}>
+                <LogOut size={14} /> LOG OUT
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -844,7 +1001,7 @@ function ProfileScreen({ utc, onBack, onOpenOptimizer }) {
 
 /* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
 
-function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan }) {
+function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
   const ofpData = ofp?.ofp_data || null;
   const hero = useMemo(() => mapOfpHero(flight, ofpData), [flight, ofpData]);
   const simPlan = useMemo(
@@ -889,6 +1046,11 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       />
       <div className="qr-smartops__brand">
         <QrLogo />
+        {onBack && (
+          <button className="qr-linkbtn qr-smartops__back" onClick={onBack}>
+            ← HOME
+          </button>
+        )}
       </div>
 
       {(tab === "flightplan" || tab === "overview" || tab === "times" || tab === "briefing") && (

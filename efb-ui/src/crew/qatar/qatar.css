@@ -1421,6 +1421,227 @@
   word-break: break-word;
 }
 
+/* ─── Crew Login gate (M2b) ───────────────────────────────────────── */
+
+.qr-shell .qr-login {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 24px;
+  min-height: 0;
+}
+
+.qr-shell .qr-login__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.qr-shell .qr-login__logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qr-shell .qr-login__logo .qr-logo__word {
+  font-size: 22px;
+}
+.qr-shell .qr-login__logo .qr-logo__oryx svg {
+  width: 52px;
+  height: 26px;
+}
+.qr-shell .qr-login__logo .qr-logo__air {
+  font-size: 11px;
+  letter-spacing: 0.4em;
+}
+
+.qr-shell .qr-login__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--qr-accent-2);
+}
+.qr-shell .qr-login__sub {
+  font-size: 12px;
+  color: var(--qr-muted);
+  letter-spacing: 0.06em;
+}
+
+.qr-shell .qr-login__card {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--qr-panel);
+  border: 1px solid var(--qr-border);
+  border-radius: 12px;
+  padding: 22px;
+}
+
+.qr-shell .qr-login__pilot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--qr-border);
+  font-size: 12px;
+}
+
+.qr-shell .qr-login__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qr-shell .qr-login__input {
+  padding: 10px 12px;
+  border: 1px solid var(--qr-border);
+  border-radius: 6px;
+  background: var(--qr-bg);
+  color: var(--qr-text);
+  font-size: 14px;
+}
+.qr-shell .qr-login__input:focus {
+  outline: none;
+  border-color: var(--qr-accent-2);
+}
+
+.qr-shell .qr-login__errors {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--qr-danger);
+}
+
+.qr-shell .qr-login__btn {
+  justify-content: center;
+}
+.qr-shell .qr-login__hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--qr-muted);
+}
+
+/* ─── Home (M2b): layout + Company News + check-in states ─────────── */
+
+.qr-shell .qr-home__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px 18px 18px;
+  min-height: 0;
+}
+
+.qr-shell .qr-home__col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.qr-shell .qr-sidebar__pilot {
+  margin: 4px 8px 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--qr-accent-2);
+  text-align: center;
+  background: rgba(142, 42, 74, 0.18);
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qr-shell .qr-news {
+  background: var(--qr-panel);
+  border: 1px solid var(--qr-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.qr-shell .qr-news__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.qr-shell .qr-news__head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--qr-text);
+}
+.qr-shell .qr-news__item {
+  padding: 9px 0;
+  border-top: 1px solid var(--qr-border-soft);
+}
+.qr-shell .qr-news__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.qr-shell .qr-news__time {
+  font-size: 11px;
+}
+.qr-shell .qr-news__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--qr-text);
+}
+.qr-shell .qr-news__preview {
+  font-size: 12px;
+  color: var(--qr-muted);
+  margin-top: 2px;
+}
+.qr-shell .qr-news__foot {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--qr-border);
+  font-size: 11px;
+  color: var(--qr-muted);
+}
+
+/* checked-in states (M2b): status column + chip turn green */
+
+.qr-shell .qr-flight-row__status--checked {
+  color: var(--qr-ok);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.qr-shell .qr-chip--done {
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--qr-ok);
+  cursor: default;
+}
+
+.qr-shell .qr-section-head--compact {
+  margin: 14px 0 8px;
+}
+.qr-shell .qr-section-head--compact h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--qr-muted);
+}
+
+.qr-shell .qr-smartops__back {
+  margin-left: 18px;
+}
+
 /* ─── responsive (narrow laptop) ─────────────────────────────────── */
 
 @media (max-width: 900px) {
