@@ -137,6 +137,19 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+.qr-shell .qr-goldbtn--sm {
+  padding: 4px 10px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+@keyframes qr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.qr-shell .qr-spin {
+  animation: qr-spin 0.9s linear infinite;
+}
 
 .qr-shell .qr-ghostbtn {
   display: inline-flex;

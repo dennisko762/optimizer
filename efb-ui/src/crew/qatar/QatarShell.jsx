@@ -41,6 +41,7 @@ import {
   XCircle,
   CloudRain,
   Gauge,
+  Download,
 } from "lucide-react";
 import { useCrewPlatform } from "../useCrewPlatform.js";
 import { loadSession, clearSession } from "../crewAuth.js";
@@ -244,6 +245,24 @@ export default function QatarShell({ onOpenOptimizer }) {
     }
   }
 
+  // My Flights "LOAD FLIGHTS": re-fetch the current SimBrief OFP in the
+  // background and persist it to the plan store (same import endpoint as
+  // "Import New Plan"). On success the freshly saved plan becomes the
+  // last-plan used when the next flight is opened.
+  async function loadFlights() {
+    try {
+      const resp = await fetch(`${apiBase}/api/simbrief/flightplan/import`, { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      if (resp.ok && body?.flightplan) {
+        setLastPlan(body.flightplan);
+        return { ok: true, key: body.key };
+      }
+      return { ok: false, detail: body?.detail || `SimBrief fetch failed (HTTP ${resp.status}).` };
+    } catch (e) {
+      return { ok: false, detail: String(e.message || e) };
+    }
+  }
+
   // Opening a flight loads a plan: an explicitly passed saved plan wins,
   // then the last saved plan (loaded at app start), then the live SimBrief
   // OFP (a single "current flight" document, fetched once per session).
@@ -291,6 +310,7 @@ export default function QatarShell({ onOpenOptimizer }) {
           checkIn={checkIn}
           checkedIn={checkedIn}
           checkinRecord={checkinRecord}
+          loadFlights={loadFlights}
         />
       )}
 
@@ -605,6 +625,7 @@ function HomeScreen({
   onBoarding,
   checkIn,
   checkedIn,
+  loadFlights,
 }) {
   const {
     session: platformSession,
@@ -626,6 +647,8 @@ function HomeScreen({
   });
   const [result, setResult] = useState(null);
   const [checkinError, setCheckinError] = useState(null);
+  const [loadBusy, setLoadBusy] = useState(false);
+  const [loadMsg, setLoadMsg] = useState(null);
 
   // Roster: fetch when the screen mounts / platform session is up
   // (subscription-style — setState only in the async callback).
@@ -678,6 +701,29 @@ function HomeScreen({
     }
   }
 
+  // My Flights "LOAD FLIGHTS" — re-fetch the current SimBrief OFP in the
+  // background; the saved-plan list refreshes when the fetch lands.
+  async function doLoadFlights() {
+    if (loadBusy) return;
+    setLoadBusy(true);
+    setLoadMsg(null);
+    const r = await loadFlights?.();
+    setLoadBusy(false);
+    if (r?.ok) {
+      setPlansTick((t) => t + 1);
+      setLoadMsg({ ok: true, text: `Loaded ${r.key} from SimBrief.` });
+    } else {
+      setLoadMsg({ ok: false, text: r?.detail || "SimBrief fetch failed." });
+    }
+  }
+
+  // Transient LOAD FLIGHTS status clears itself.
+  useEffect(() => {
+    if (!loadMsg) return;
+    const id = setTimeout(() => setLoadMsg(null), 5000);
+    return () => clearTimeout(id);
+  }, [loadMsg]);
+
   // M2b check-in: the local record is the source of truth for the
   // "CHECKED IN" status (crewCheckin). With a platform session the M2
   // backend validation still runs as a best-effort supplement.
@@ -726,10 +772,32 @@ function HomeScreen({
 
           <div className="qr-section-head">
             <h3>MY FLIGHTS</h3>
-            <span className="qr-label">
-              CHECK-IN BEFORE YOU OPEN THE FLIGHT
+            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                className="qr-goldbtn qr-goldbtn--sm"
+                onClick={doLoadFlights}
+                disabled={loadBusy}
+                title="Re-fetch flightplans from SimBrief (background)"
+              >
+                {loadBusy ? (
+                  <RefreshCw size={12} className="qr-spin" />
+                ) : (
+                  <Download size={12} />
+                )}
+                {loadBusy ? "LOADING…" : "LOAD FLIGHTS"}
+              </button>
+              <span className="qr-label">
+                CHECK-IN BEFORE YOU OPEN THE FLIGHT
+              </span>
             </span>
           </div>
+
+          {loadMsg && (
+            <div className={loadMsg.ok ? "qr-notice" : "qr-error"}>
+              {loadMsg.ok && <CheckCircle2 size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />}
+              {loadMsg.text}
+            </div>
+          )}
 
           {!platformSession?.authenticated && (
             <div className="qr-notice">
@@ -820,7 +888,7 @@ function HomeScreen({
           </div>
           {plans.length === 0 ? (
             <div className="qr-notice">
-              No saved SimBrief plans yet — use “Import New Plan” on the Flightplan screen to pull your current OFP.
+              No saved SimBrief plans yet — press “LOAD FLIGHTS” above (or “Import New Plan” on the Flightplan screen) to pull your current OFP.
             </div>
           ) : (
             plans.map((p) => {
