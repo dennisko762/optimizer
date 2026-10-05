@@ -99,6 +99,35 @@ class TelemetryHub:
         await self._poll_once()
         return await self.get_snapshot()
 
+    async def set_target_state(
+        self,
+        *,
+        flight_level: int | None = None,
+        mach: float | None = None,
+    ) -> dict:
+        """
+        Push a target flight level / Mach into the running sim.
+
+        Runs in a thread (SimConnect calls are blocking). If no client
+        exists yet (sim never connected) the call still creates one and
+        fails cleanly — the returned dict carries the error text.
+        """
+        try:
+            client = await asyncio.to_thread(self._get_client)
+            return await asyncio.to_thread(
+                client.set_target_state,
+                flight_level=flight_level,
+                mach=mach,
+            )
+        except SimClientError as exc:
+            return {"applied": False, "supported": True, "errors": [str(exc)]}
+        except Exception as exc:
+            return {
+                "applied": False,
+                "supported": True,
+                "errors": [f"Unexpected SimConnect command error: {exc}"],
+            }
+
     async def _run(self) -> None:
         while True:
             await self._poll_once()

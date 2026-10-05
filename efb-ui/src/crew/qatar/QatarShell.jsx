@@ -11,7 +11,7 @@
  * no hardcoded brand colors.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plane,
   PlaneTakeoff,
@@ -26,6 +26,7 @@ import {
   BatteryFull,
   Signal,
   Wifi,
+  WifiOff,
   Mail,
   User,
   ArrowRight,
@@ -55,7 +56,17 @@ import {
   mapNotification,
   defaultInboxMessages,
   projectMap,
+  icaoLatlon,
 } from "./qatarMappers.js";
+import {
+  mapSimStatus,
+  mapLiveStrip,
+  mapLiveTiming,
+  mapApplyTargets,
+  mapRouteLive,
+  buildLiveOptimizeRequest,
+} from "./liveMappers.js";
+import { useSimTelemetry } from "./useSimTelemetry.js";
 import CrewLogin from "./CrewLogin.jsx";
 import BoardingPanel from "../BoardingPanel.jsx";
 import TechPanel from "../tech/TechPanel.jsx";
@@ -140,6 +151,177 @@ function Dash({ v, unit }) {
       {v}
       {unit && <span className="qr-unit">{unit}</span>}
     </span>
+  );
+}
+
+/* ─── M3: SimConnect live layer ────────────────────────────────────── */
+
+/**
+ * SIM CONNECTED / DISCONNECTED chip for the top header. Purely driven by
+ * mapSimStatus — no own state, no invented "connected" case.
+ */
+function SimChip({ status }) {
+  const s = status || { status: "unknown", label: "SIM —", sub: null };
+  const Icon = s.status === "connected" ? RefreshCw : s.status === "disconnected" ? WifiOff : AlertTriangle;
+  return (
+    <span className={`qr-simchip qr-simchip--${s.status}`} title={s.sub || s.label}>
+      <i className="qr-simchip__dot" />
+      <Icon size={12} />
+      {s.label}
+      {s.sub && <span className="qr-simchip__sub">{s.sub}</span>}
+    </span>
+  );
+}
+
+/**
+ * Live FL / MACH / GS / WIND / FUEL / FLOW strip (Flightplan screen).
+ *
+ * Every cell renders "—" when SimConnect did not supply the value — there is
+ * no static fallback anywhere (AGENTS.md: live optimization must source fuel
+ * flow from SimConnect, never a modelled value).
+ */
+function LiveStrip({ live, timing, connected }) {
+  if (!connected) {
+    return (
+      <div className="qr-notice qr-notice--center">
+        Live data unavailable — SimConnect is not connected. Flightplan values are plan-only (SimBrief OFP).
+      </div>
+    );
+  }
+  const dev = live?.deviation || null;
+  return (
+    <div className="qr-livestrip">
+      <div className="qr-livecell">
+        <span className="qr-label">FL</span>
+        <Dash v={live?.flightLevel != null ? `FL${live.flightLevel}` : null} />
+        <span className="qr-livecell__sub">
+          {live?.altDeviation != null ? `${live.altDeviation >= 0 ? "+" : ""}${live.altDeviation} vs plan` : "vs plan —"}
+        </span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">MACH</span>
+        <Dash v={live?.mach != null ? live.mach.toFixed(3) : null} />
+        <span className="qr-livecell__sub">
+          {live?.groundSpeedKt != null ? `GS ${Math.round(live.groundSpeedKt)} kt` : "GS —"}
+        </span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">WIND</span>
+        <Dash
+          v={
+            live?.windComponentKt != null
+              ? `${live.windComponentKt >= 0 ? "TW" : "HW"} ${Math.abs(Math.round(live.windComponentKt))}`
+              : null
+          }
+          unit=" kt"
+        />
+        <span className="qr-livecell__sub">along track</span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">FUEL</span>
+        <Dash v={live?.fuelRemainingKg != null ? (live.fuelRemainingKg / 1000).toFixed(1) : null} unit=" t" />
+        <span className="qr-livecell__sub">on board</span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">FUEL FLOW</span>
+        <Dash v={live?.fuelFlowKgH != null ? Math.round(live.fuelFlowKgH) : null} unit=" kg/h" />
+        <span className="qr-livecell__sub">
+          {live?.fuelFlowKgH == null
+            ? "live data unavailable"
+            : live?.fuelFlowSource
+              ? String(live.fuelFlowSource).toUpperCase()
+              : "SIMCONNECT"}
+        </span>
+      </div>
+      <div className="qr-livecell qr-livecell--dev">
+        <span className="qr-label">ETE / FUEL Δ</span>
+        <span className="mono qr-value">
+          {timing?.ete || "—"}
+          {timing?.deltaMin != null && (
+            <span className={`qr-unit ${timing.deltaMin > 0 ? "qr-value--neg" : "qr-value--pos"}`}>
+              {" "}
+              {timing.deltaMin >= 0 ? "+" : ""}
+              {timing.deltaMin} min
+            </span>
+          )}
+        </span>
+        <span className="qr-livecell__sub">
+          {dev != null ? (
+            <span className={dev.kg >= 0 ? "qr-value--pos" : "qr-value--neg"}>
+              {dev.kg >= 0 ? "+" : ""}
+              {dev.t} t vs planned LDG
+            </span>
+          ) : (
+            "fuel deviation —"
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Optimizer recommendation card with the Apply-into-the-sim button.
+ *
+ * `rec` comes from mapApplyTargets(/api/optimize response). The button is
+ * disabled whenever the recommendation is not applyable or the sim is not
+ * connected — no dead buttons, and the backend's error text is shown verbatim.
+ */
+function RecommendPanel({ rec, connected, onApply, applyState, busy, error }) {
+  if (!connected) return null;
+  const applyable = Boolean(rec?.applyable);
+  return (
+    <div className="qr-recommend">
+      <div className="qr-recommend__head">
+        <Gauge size={15} />
+        <h3>OPTIMIZER RECOMMENDATION</h3>
+      </div>
+      {busy && <div className="qr-recommend__summary">Optimizing against live sim state…</div>}
+      {error && <div className="qr-recommend__status qr-recommend__status--err">{error}</div>}
+      {!busy && !error && !rec && (
+        <div className="qr-recommend__summary">
+          No recommendation yet — live telemetry is still warming up.
+        </div>
+      )}
+      {rec?.line && <div className="qr-recommend__line mono">{rec.line}</div>}
+      {rec?.summary && <div className="qr-recommend__summary">{rec.summary}</div>}
+      {rec?.recommendation && <div className="qr-recommend__summary">{rec.recommendation}</div>}
+      {rec && (
+        <div className="qr-recommend__actions">
+          <button
+            className="qr-goldbtn"
+            disabled={!applyable || applyState?.busy}
+            onClick={() =>
+              onApply({
+                flightLevel: rec.targets?.flightLevel ?? null,
+                mach: rec.targets?.mach ?? null,
+                reason: rec.line || null,
+              })
+            }
+          >
+            {applyState?.busy ? "Applying…" : "Apply to Sim"}
+          </button>
+          {!applyable && (
+            <span className="qr-recommend__status">
+              Current profile is already optimal (or the best strategy is not allowed).
+            </span>
+          )}
+          {applyState && !applyState.busy && applyState.applied && (
+            <span className="qr-recommend__status qr-recommend__status--ok">
+              <CheckCircle2 size={13} /> Target set in the sim.
+            </span>
+          )}
+          {applyState && !applyState.busy && applyState.error && (
+            <span className="qr-recommend__status qr-recommend__status--err">
+              <XCircle size={13} /> {applyState.error}
+            </span>
+          )}
+        </div>
+      )}
+      {Array.isArray(rec?.warnings) && rec.warnings.length > 0 && (
+        <div className="qr-recommend__summary">{rec.warnings.join(" · ")}</div>
+      )}
+    </div>
   );
 }
 
@@ -1070,6 +1252,7 @@ function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) 
 /* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
 
 function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
+  const { apiBase } = useCrewPlatform();
   const ofpData = ofp?.ofp_data || null;
   const hero = useMemo(() => mapOfpHero(flight, ofpData), [flight, ofpData]);
   const simPlan = useMemo(
@@ -1095,6 +1278,86 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
     return `${days[d.getUTCDay()]}, ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   }, []);
 
+  /* ── M3: live SimConnect telemetry + optimizer apply ───────────── */
+
+  // Destination coordinates let the backend derive live remaining distance
+  // when no SimBrief route profile is synced.
+  const destPos = useMemo(() => (hero.arrival ? icaoLatlon(hero.arrival) : null), [hero.arrival]);
+  const { telemetry, reachable, apply, applyState } = useSimTelemetry({
+    apiBase,
+    destinationLat: destPos?.[0],
+    destinationLon: destPos?.[1],
+  });
+
+  const simStatus = useMemo(() => mapSimStatus(telemetry, { reachable }), [telemetry, reachable]);
+  const simConnected = simStatus.status === "connected";
+
+  const live = useMemo(
+    () => mapLiveStrip(telemetry, { fuelLandingT: fuel.landing, cruiseAlt: null }),
+    [telemetry, fuel.landing]
+  );
+  const timing = useMemo(
+    () => mapLiveTiming(telemetry, { plannedBlockMin: hero.block_min, sta: hero.eet }),
+    [telemetry, hero.block_min, hero.eet]
+  );
+
+  // Optimizer re-run against live state. Fires only when the sim is
+  // connected — never against invented values (AGENTS.md).
+  const [optimizeResult, setOptimizeResult] = useState(null);
+  const [optimizeBusy, setOptimizeBusy] = useState(false);
+  const [optimizeError, setOptimizeError] = useState(null);
+  const lastOptimizeKeyRef = useRef(null);
+
+  const runOptimize = useCallback(async () => {
+    const body = buildLiveOptimizeRequest(telemetry, { flight, ofpData });
+    if (!body) return;
+    setOptimizeBusy(true);
+    setOptimizeError(null);
+    try {
+      const resp = await fetch(`${apiBase}/api/optimize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const detail = await resp.json().catch(() => ({}));
+        setOptimizeError(detail?.detail ? String(detail.detail) : `Optimizer unavailable (HTTP ${resp.status}).`);
+        setOptimizeResult(null);
+        return;
+      }
+      setOptimizeResult(await resp.json());
+    } catch (e) {
+      setOptimizeError(String(e?.message || e));
+      setOptimizeResult(null);
+    } finally {
+      setOptimizeBusy(false);
+    }
+  }, [apiBase, telemetry, flight, ofpData]);
+
+  // Re-optimize when the live state changed materially (FL / Mach / weight /
+  // remaining distance), not on every 5 s poll.
+  useEffect(() => {
+    if (!simConnected) {
+      lastOptimizeKeyRef.current = null;
+      return;
+    }
+    const p = telemetry?.flightStatePatch || {};
+    const key = [
+      p.altitudeFt != null ? Math.round(p.altitudeFt / 500) : "x",
+      p.mach != null ? p.mach.toFixed(2) : "x",
+      p.grossWeightKg != null ? Math.round(p.grossWeightKg / 2000) : "x",
+      p.remainingDistanceNm != null ? Math.round(p.remainingDistanceNm / 50) : "x",
+    ].join("|");
+    if (key === lastOptimizeKeyRef.current) return;
+    lastOptimizeKeyRef.current = key;
+    runOptimize();
+  }, [simConnected, telemetry, runOptimize]);
+
+  const recommendation = useMemo(
+    () => (optimizeResult ? mapApplyTargets(optimizeResult, { liveFlightLevel: live.flightLevel }) : null),
+    [optimizeResult, live.flightLevel]
+  );
+
   return (
     <div className="qr-screen qr-smartops">
       <TopHeader
@@ -1106,6 +1369,7 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
         }
         right={
           <>
+            <SimChip status={simStatus} />
             <Sun size={16} className="qr-topbar__icon" />
             <RefreshCw size={16} className="qr-topbar__icon" />
             <MoreVertical size={16} className="qr-topbar__icon" />
@@ -1170,11 +1434,30 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
             </div>
           </div>
 
+          <LiveStrip live={live} timing={timing} connected={simConnected} />
+
+          <RecommendPanel
+            rec={recommendation}
+            connected={simConnected}
+            onApply={apply}
+            applyState={applyState}
+            busy={optimizeBusy}
+            error={optimizeError}
+          />
+
           <div className="qr-fuelrow">
             <div className="qr-fuelcell">
               <span className="qr-label">DEVIATION</span>
-              <Dash v={fuel.deviation} />
-              <span className="qr-fuelcell__sub">No active check</span>
+              <Dash
+                v={
+                  live.deviation
+                    ? `${live.deviation.kg >= 0 ? "+" : ""}${live.deviation.t} t`
+                    : fuel.deviation
+                }
+              />
+              <span className="qr-fuelcell__sub">
+                {live.deviation ? "live vs planned LDG" : simConnected ? "live data unavailable" : "No active check"}
+              </span>
             </div>
             <div className="qr-fuelcell">
               <span className="qr-label">BLOCK FUEL</span>
@@ -1258,7 +1541,16 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       )}
 
       {tab === "route" && (
-        <RouteScreen flight={flight} ofpData={ofpData} distanceNm={distanceNm} utc={utc} />
+        <RouteScreen
+          flight={flight}
+          ofpData={ofpData}
+          distanceNm={distanceNm}
+          utc={utc}
+          telemetry={telemetry}
+          simConnected={simConnected}
+          live={live}
+          timing={timing}
+        />
       )}
 
       {tab === "edto" && (
@@ -1276,10 +1568,21 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
 
 /* ─── Route (qatar-04) ─────────────────────────────────────────────── */
 
-function RouteScreen({ flight, ofpData, distanceNm, utc }) {
+function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
   const [wxPlaying, setWxPlaying] = useState(false);
   const [wxOffset, setWxOffset] = useState(0);
   const [altMode, setAltMode] = useState("AUTO");
+
+  // WX TIME playback: Play steps the forecast offset forward one hour per
+  // 1.5 s and wraps at +12 h; Pause freezes it. The offset is the hour the
+  // overlay represents (0 = NOW).
+  useEffect(() => {
+    if (!wxPlaying) return undefined;
+    const id = setInterval(() => {
+      setWxOffset((v) => (v >= 12 ? -12 : v + 1));
+    }, 1500);
+    return () => clearInterval(id);
+  }, [wxPlaying]);
 
   const view = useMemo(() => {
     const v = mapRouteView(flight, ofpData);
@@ -1301,6 +1604,30 @@ function RouteScreen({ flight, ofpData, distanceNm, utc }) {
     (view.hero.departure && view.hero.arrival
       ? `${view.hero.departure} DCT ${view.hero.arrival}`
       : null);
+
+  // M3 live overlay: aircraft position projected onto the planned route +
+  // the set of waypoints already passed. Everything comes from SimConnect;
+  // without a live position the overlay simply is not drawn.
+  const livePos = useMemo(() => {
+    const rs = telemetry?.rawSummary || {};
+    const lat = rs.latitude ?? null;
+    const lon = rs.longitude ?? null;
+    if (!simConnected || lat == null || lon == null) return null;
+    return { latitude: lat, longitude: lon };
+  }, [telemetry, simConnected]);
+
+  const routeLive = useMemo(
+    () => mapRouteLive(view.points, livePos),
+    [view.points, livePos]
+  );
+  const passedIdents = useMemo(
+    () => new Set(routeLive.passedIdents || []),
+    [routeLive.passedIdents]
+  );
+  const acXy = useMemo(
+    () => (livePos ? projectMap(livePos.latitude, livePos.longitude) : null),
+    [livePos]
+  );
 
   return (
     <div className="qr-route">
@@ -1334,6 +1661,7 @@ function RouteScreen({ flight, ofpData, distanceNm, utc }) {
           {/* waypoints */}
           {view.pts.map((p, i) => {
             const isEnd = p.end === "dep" || p.end === "arr";
+            const passed = p.ident ? passedIdents.has(p.ident) : false;
             return (
               <g key={i}>
                 {isEnd ? (
@@ -1343,19 +1671,37 @@ function RouteScreen({ flight, ofpData, distanceNm, utc }) {
                   </>
                 ) : (
                   <>
-                    <circle cx={p.xy.x} cy={p.xy.y} r="2.5" className="qr-svg-wp" />
-                    <path d={`M ${p.xy.x - 5} ${p.xy.y - 12} L ${p.xy.x + 5} ${p.xy.y - 12} L ${p.xy.x} ${p.xy.y - 4} Z`} className="qr-svg-wp-tri" />
+                    <circle cx={p.xy.x} cy={p.xy.y} r="2.5" className={`qr-svg-wp ${passed ? "qr-svg-wp--passed" : ""}`} />
+                    <path
+                      d={`M ${p.xy.x - 5} ${p.xy.y - 12} L ${p.xy.x + 5} ${p.xy.y - 12} L ${p.xy.x} ${p.xy.y - 4} Z`}
+                      className={`qr-svg-wp-tri ${passed ? "qr-svg-tri--passed" : ""}`}
+                    />
                   </>
                 )}
                 {p.ident && (
-                  <text x={p.xy.x + 8} y={p.xy.y - 8} className="qr-wp-label mono">
+                  <text x={p.xy.x + 8} y={p.xy.y - 8} className={`qr-wp-label mono ${passed ? "qr-wp-label--passed" : ""}`}>
                     {p.ident}
                     {p.fl ? ` FL${p.fl}` : ""}
+                    {passed ? " ✓" : ""}
                   </text>
                 )}
               </g>
             );
           })}
+
+          {/* live aircraft symbol (SimConnect position) */}
+          {acXy && (
+            <g>
+              <circle cx={acXy.x} cy={acXy.y} r="11" className="qr-svg-aircraft-halo" />
+              <path
+                d={`M ${acXy.x} ${acXy.y - 8} L ${acXy.x + 7} ${acXy.y + 7} L ${acXy.x} ${acXy.y + 3} L ${acXy.x - 7} ${acXy.y + 7} Z`}
+                className="qr-svg-aircraft"
+              />
+              <text x={acXy.x + 14} y={acXy.y + 4} className="qr-wp-label mono">
+                {live?.flightLevel != null ? `FL${live.flightLevel}` : "LIVE"}
+              </text>
+            </g>
+          )}
         </svg>
 
         <div className="qr-route__layers">
@@ -1423,6 +1769,18 @@ function RouteScreen({ flight, ofpData, distanceNm, utc }) {
         <div className="mono">{routeString}</div>
         <div>
           {distanceNm != null ? `${distanceNm} NM` : "—"} &nbsp;•&nbsp; {view.block_label || "—"}
+          {simConnected ? (
+            routeLive.remainingNm != null ? (
+              <>
+                {" "}&nbsp;•&nbsp; LIVE REM {routeLive.remainingNm} NM
+                {timing?.ete ? ` • ETE ${timing.ete}` : ""}
+              </>
+            ) : (
+              <> &nbsp;•&nbsp; live position unavailable</>
+            )
+          ) : (
+            <> &nbsp;•&nbsp; SIM DISCONNECTED — plan only</>
+          )}
         </div>
         <div className="qr-route__alt">LHR / LGW</div>
       </div>
