@@ -15,7 +15,7 @@ from optimizer.api.optimize_routes import router as optimize_router
 from optimizer.api.simbrief_routes import router as simbrief_router
 from optimizer.api.trajectory_routes import router as trajectory_router
 
-from crew_platform.routes import router as crew_router, callback_router as crew_callback_router
+from crew_platform.routes import router as crew_router, callback_router as crew_callback_router, technical_router as crew_technical_router
 
 
 def _load_dotenv() -> None:
@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(simconnect_router)
     app.include_router(trajectory_router)
     app.include_router(crew_router)
+    app.include_router(crew_technical_router)
     # Browser OAuth callback — must be registered before the catch-all
     # static-file mount below so the redirect URL is not swallowed.
     app.include_router(crew_callback_router)
