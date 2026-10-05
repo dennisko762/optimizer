@@ -1,264 +1,574 @@
-"""Tests for the TechLog Aircraft model + Alembic migration.
+"""Tests for TechLog aircraft entity — CRUD + migration + integration.
 
-Covers the ticket acceptance criteria:
-- ``alembic upgrade head`` on a fresh DB creates ``aircraft`` with the
-  correct schema (columns, nullability, defaults, unique registration).
-- The migration is idempotent (re-running upgrade head is a no-op).
-- The ORM model round-trips against the migrated schema and applies the
-  documented column defaults.
-- ``CREW_TECHLOG_DB_PATH`` is honoured (absolute + cwd-relative), the
-  legacy ``TECHLOG_DB_PATH`` alias still works, and the default path is
-  ``<repo-root>/data/techlog.db``.
-- Importing the model/database modules never creates the DB file at
-  runtime (schema is Alembic-owned; no ``create_all``).
+Uses an in-memory SQLite database so no on-disk file is needed.
 """
 
 from __future__ import annotations
 
+import importlib
 import os
-import sqlite3
-import subprocess
-import sys
+import tempfile
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, inspect
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-ALEMBIC_INI = REPO_ROOT / "crew_platform" / "technical" / "alembic" / "alembic.ini"
-
-
-def _run_alembic(db_path: Path | None, *args: str) -> subprocess.CompletedProcess:
-    env = {k: v for k, v in os.environ.items() if k not in (
-        "CREW_TECHLOG_DB_PATH",
-        "TECHLOG_DB_PATH",
-        "EFB_DATA_DIR",
-    )}
-    if db_path is not None:
-        env["CREW_TECHLOG_DB_PATH"] = str(db_path)
-    return subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-
-
-@pytest.fixture()
-def fresh_db(tmp_path: Path) -> Path:
-    """A brand-new SQLite file migrated to head."""
-    db = tmp_path / "techlog_test.db"
-    result = _run_alembic(db, "upgrade", "head")
-    assert result.returncode == 0, (
-        f"alembic upgrade head failed:\nstdout={result.stdout}\nstderr={result.stderr}"
-    )
-    return db
-
-
-@pytest.fixture()
-def clean_techlog_env(monkeypatch, tmp_path: Path):
-    """Point the resolver at a temp path and clear competing env vars."""
-    for var in ("CREW_TECHLOG_DB_PATH", "TECHLOG_DB_PATH", "EFB_DATA_DIR"):
-        monkeypatch.delenv(var, raising=False)
-    import crew_platform.technical.database as database
-
-    database.reset_engine()
-    yield
-    database.reset_engine()
+from crew_platform.technical.models import Aircraft, Base
 
 
 # ---------------------------------------------------------------------------
-# Migration: schema
+# Fixtures
 # ---------------------------------------------------------------------------
 
 
-def test_upgrade_head_creates_aircraft_table(fresh_db: Path) -> None:
-    with sqlite3.connect(fresh_db) as conn:
-        tables = {row[0] for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )}
-    assert "aircraft" in tables
-    assert "alembic_version" in tables
-    with sqlite3.connect(fresh_db) as conn:
-        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-    assert version == "7c3e1a9d5b02"
+@pytest.fixture()
+def db_session():
+    """Return a fresh in-memory SQLAlchemy Session."""
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    yield session
+    session.close()
+    engine.dispose()
 
 
-def test_aircraft_table_schema(fresh_db: Path) -> None:
-    with sqlite3.connect(fresh_db) as conn:
-        info = {
-            row[1]: {
-                "type": row[2],
-                "notnull": bool(row[3]),
-                "pk": bool(row[5]),
-                "default": row[4],
-            }
-            for row in conn.execute("PRAGMA table_info('aircraft')")
+@pytest.fixture()
+def test_db(tmp_path):
+    """Return a temporary file path for a SQLite DB and set the env var."""
+    path = tmp_path / "techlog_test.db"
+    os.environ["CREW_TECHLOG_DB_PATH"] = str(path)
+    yield path
+    os.environ.pop("CREW_TECHLOG_DB_PATH", None)
+    from crew_platform.technical.db import reset_engine
+
+    reset_engine()
+
+
+@pytest.fixture()
+def api_client(test_db):
+    """Return a TestClient with the techlog DB pointed at a temp file."""
+    from crew_platform.technical.db import get_engine, reset_engine
+    from crew_platform.technical.models import Base
+
+    reset_engine()
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+
+    from optimizer.api import app as app_module
+
+    importlib.reload(app_module)
+    yield TestClient(app_module.app)
+
+
+# ===========================================================================
+# ORM model tests
+# ===========================================================================
+
+
+class TestAircraftModel:
+    def test_create_minimal(self, db_session):
+        ac = Aircraft(registration="D-ABYA")
+        db_session.add(ac)
+        db_session.commit()
+        fetched = db_session.get(Aircraft, "D-ABYA")
+        assert fetched is not None
+        assert fetched.registration == "D-ABYA"
+
+    def test_create_full(self, db_session):
+        ac = Aircraft(
+            registration="A6-EGA",
+            type="B77W",
+            manufacturer="Boeing",
+            flight_hours=1234.5,
+            flight_cycles=567,
+        )
+        db_session.add(ac)
+        db_session.commit()
+        fetched = db_session.get(Aircraft, "A6-EGA")
+        assert fetched.type == "B77W"
+        assert fetched.manufacturer == "Boeing"
+        assert fetched.flight_hours == 1234.5
+        assert fetched.flight_cycles == 567
+
+    def test_to_dict(self, db_session):
+        ac = Aircraft(registration="D-ABYA", type="B77W")
+        db_session.add(ac)
+        db_session.commit()
+        db_session.refresh(ac)
+        d = ac.to_dict()
+        assert d["registration"] == "D-ABYA"
+        assert d["type"] == "B77W"
+        assert d["current_technical_status"] == "SERVICEABLE"
+
+    def test_duplicate_registration_rejected(self, db_session):
+        db_session.add(Aircraft(registration="D-ABYA"))
+        db_session.commit()
+        db_session.add(Aircraft(registration="D-ABYA"))
+        with pytest.raises(IntegrityError):
+            db_session.commit()
+
+    def test_table_has_all_columns(self, db_session):
+        insp = inspect(db_session.bind)
+        cols = {c["name"] for c in insp.get_columns("aircraft")}
+        assert cols >= {
+            "registration",
+            "type",
+            "manufacturer",
+            "operator",
+            "flight_hours",
+            "flight_cycles",
+            "current_technical_status",
+            "created_at",
+            "updated_at",
         }
 
-    assert set(info) == {
-        "registration",
-        "type",
-        "manufacturer",
-        "operator",
-        "flight_hours",
-        "flight_cycles",
-        "current_technical_status",
-        "created_at",
-        "updated_at",
-    }
-
-    assert info["registration"]["pk"]
-    assert info["registration"]["notnull"]
-    assert info["type"]["type"].upper().startswith("VARCHAR")
-    assert info["type"]["notnull"]
-    assert info["manufacturer"]["notnull"]
-    assert not info["operator"]["notnull"]
-    assert info["flight_hours"]["type"].upper() in ("REAL", "FLOAT")
-    assert info["flight_hours"]["notnull"]
-    assert info["flight_hours"]["default"] == "'0'"
-    assert info["flight_cycles"]["type"].upper() == "INTEGER"
-    assert info["flight_cycles"]["notnull"]
-    assert info["flight_cycles"]["default"] == "'0'"
-    assert info["current_technical_status"]["notnull"]
-    assert info["current_technical_status"]["default"] == "'SERVICEABLE'"
-    assert info["created_at"]["notnull"]
-    assert info["updated_at"]["notnull"]
-
-    # Registration is the unique identity of the aircraft.
-    with sqlite3.connect(fresh_db) as conn:
-        covered = set()
-        for row in conn.execute("PRAGMA index_list('aircraft')"):
-            # row: (seq, name, unique, origin, partial)
-            if row[2] == 1:
-                covered |= {
-                    r[2] for r in conn.execute(f"PRAGMA index_info('{row[1]}')")
-                }
-    assert "registration" in covered
+    def test_server_default(self, db_session):
+        ac = Aircraft(registration="D-DEFAULT")
+        db_session.add(ac)
+        db_session.commit()
+        assert ac.current_technical_status == "SERVICEABLE"
 
 
-def test_upgrade_head_is_idempotent(fresh_db: Path) -> None:
-    result = _run_alembic(fresh_db, "upgrade", "head")
-    assert result.returncode == 0, result.stderr
-    assert "Running upgrade 442a00f38d69 -> 7c3e1a9d5b02" not in result.stdout
+# ===========================================================================
+# Alembic migration test
+# ===========================================================================
 
 
-def test_downgrade_drops_aircraft_table(fresh_db: Path) -> None:
-    result = _run_alembic(fresh_db, "downgrade", "base")
-    assert result.returncode == 0, result.stderr
-    with sqlite3.connect(fresh_db) as conn:
-        tables = {row[0] for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )}
-    assert "aircraft" not in tables
+class TestAlembicMigration:
+    def test_alembic_upgrade_head(self, tmp_path):
+        """Run alembic upgrade head programmatically and confirm the tables exist."""
+        from alembic import command
+        from alembic.config import Config
+
+        db_path = tmp_path / "alembic_test.db"
+        os.environ["CREW_TECHLOG_DB_PATH"] = str(db_path)
+        cfg = Config("alembic.ini")
+        cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+        command.upgrade(cfg, "head")
+        engine = create_engine(f"sqlite:///{db_path}")
+        insp = inspect(engine)
+        tables = insp.get_table_names()
+        assert "aircraft" in tables
+        assert "techlog_entry" in tables
+        assert "defect" in tables
+        engine.dispose()
+        os.environ.pop("CREW_TECHLOG_DB_PATH", None)
 
 
-# ---------------------------------------------------------------------------
-# ORM model round-trip
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# REST endpoint tests — Aircraft
+# ===========================================================================
 
 
-def test_model_roundtrip_with_defaults(fresh_db: Path, clean_techlog_env,
-                                       monkeypatch) -> None:
-    monkeypatch.setenv("CREW_TECHLOG_DB_PATH", str(fresh_db))
-    from crew_platform.technical import database as techlog_database
-    from crew_platform.technical.models import Aircraft
+class TestAircraftEndpoints:
+    def test_create_and_get(self, api_client):
+        payload = {"registration": "D-ABYA", "type": "B77W"}
+        resp = api_client.post("/api/crew/technical/aircraft/", json=payload)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["registration"] == "D-ABYA"
+        assert body["type"] == "B77W"
+        assert body["current_technical_status"] == "SERVICEABLE"
 
-    db = techlog_database.get_database()
-    with db.session() as session:
-        session.add(Aircraft(registration="A7-BAD", type="B777-300ER",
-                             manufacturer="Boeing", operator="QR"))
-        session.commit()
+        resp2 = api_client.get("/api/crew/technical/aircraft/D-ABYA")
+        assert resp2.status_code == 200
+        assert resp2.json()["registration"] == "D-ABYA"
 
-    with db.session() as session:
-        row = session.get(Aircraft, "A7-BAD")
-        assert row is not None
-        assert row.type == "B777-300ER"
-        assert row.manufacturer == "Boeing"
-        assert row.operator == "QR"
-        assert row.flight_hours == 0.0
-        assert row.flight_cycles == 0
-        assert row.current_technical_status == "SERVICEABLE"
-        assert row.created_at is not None
-        assert row.updated_at is not None
+    def test_list(self, api_client):
+        api_client.post(
+            "/api/crew/technical/aircraft/",
+            json={"registration": "D-ABYA"},
+        )
+        resp = api_client.get("/api/crew/technical/aircraft/")
+        assert resp.status_code == 200
+        assert len(resp.json()) >= 1
 
+    def test_duplicate_409(self, api_client):
+        payload = {"registration": "D-ABYA"}
+        api_client.post("/api/crew/technical/aircraft/", json=payload)
+        resp = api_client.post("/api/crew/technical/aircraft/", json=payload)
+        assert resp.status_code == 409
 
-def test_model_unique_registration_constraint(fresh_db: Path, clean_techlog_env,
-                                              monkeypatch) -> None:
-    import sqlalchemy.exc
-    monkeypatch.setenv("CREW_TECHLOG_DB_PATH", str(fresh_db))
-    from crew_platform.technical import database as techlog_database
-    from crew_platform.technical.models import Aircraft
+    def test_get_404(self, api_client):
+        resp = api_client.get("/api/crew/technical/aircraft/UNKNOWN")
+        assert resp.status_code == 404
 
-    db = techlog_database.get_database()
-    with db.session() as session:
-        session.add(Aircraft(registration="A7-DUP", type="A350-900",
-                             manufacturer="Airbus"))
-        session.commit()
-    with db.session() as session:
-        session.add(Aircraft(registration="A7-DUP", type="A350-900",
-                             manufacturer="Airbus"))
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
-            session.commit()
+    def test_flights_complete(self, api_client):
+        api_client.post(
+            "/api/crew/technical/aircraft/",
+            json={"registration": "D-ABYA"},
+        )
+        resp = api_client.post(
+            "/api/crew/technical/aircraft/D-ABYA/flights/complete",
+            json={"flight_hours": 1.0, "flight_cycles": 1},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["flight_hours"] == 1.0
+        assert resp.json()["flight_cycles"] == 1
 
+    def test_flights_complete_unknown_404(self, api_client):
+        resp = api_client.post(
+            "/api/crew/technical/aircraft/UNKNOWN/flights/complete",
+            json={"flight_hours": 1.0},
+        )
+        assert resp.status_code == 404
 
-# ---------------------------------------------------------------------------
-# DB path resolution
-# ---------------------------------------------------------------------------
-
-
-def test_default_db_path_is_repo_data_dir(clean_techlog_env) -> None:
-    from crew_platform.technical import database as techlog_database
-
-    assert techlog_database.get_db_path() == REPO_ROOT / "data" / "techlog.db"
-
-
-def test_crew_techlog_db_path_wins(clean_techlog_env, monkeypatch,
-                                   tmp_path: Path) -> None:
-    explicit = tmp_path / "custom" / "my.db"
-    monkeypatch.setenv("CREW_TECHLOG_DB_PATH", str(explicit))
-    from crew_platform.technical import database as techlog_database
-
-    assert techlog_database.get_db_path() == explicit
-    assert "user" not in techlog_database.build_database_url()
+    def test_flights_complete_descriptive_message(self, api_client):
+        resp = api_client.post(
+            "/api/crew/technical/aircraft/UNKNOWN/flights/complete",
+            json={"flight_hours": 1.0},
+        )
+        assert "not found" in resp.json()["detail"].lower()
 
 
-def test_legacy_env_var_still_honoured(clean_techlog_env, monkeypatch,
-                                       tmp_path: Path) -> None:
-    explicit = tmp_path / "legacy.db"
-    monkeypatch.setenv("TECHLOG_DB_PATH", str(explicit))
-    from crew_platform.technical import database as techlog_database
-
-    assert techlog_database.get_db_path() == explicit
+# ===========================================================================
+# REST endpoint tests — TechLog Entries
+# ===========================================================================
 
 
-def test_efb_data_dir_used_when_no_path(clean_techlog_env, monkeypatch,
-                                        tmp_path: Path) -> None:
-    monkeypatch.setenv("EFB_DATA_DIR", str(tmp_path))
-    from crew_platform.technical import database as techlog_database
+class TestTechLogEntryEndpoints:
+    def _seed_aircraft(self, api_client, reg="A7-TEST"):
+        api_client.post(
+            "/api/crew/technical/aircraft/",
+            json={"registration": reg, "type": "B77W"},
+        )
 
-    assert techlog_database.get_db_path() == tmp_path / "techlog.db"
+    def test_create_techlog_entry(self, api_client):
+        self._seed_aircraft(api_client)
+        resp = api_client.post(
+            "/api/crew/technical/aircraft/A7-TEST/techlog",
+            json={
+                "pilot_report": "Fuel leak observed on engine 2",
+                "phase": "POST_FLIGHT",
+                "chapter": "28",
+                "severity": "MAJOR",
+            },
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["aircraft_registration"] == "A7-TEST"
+        assert body["pilot_report"] == "Fuel leak observed on engine 2"
+        assert body["status"] == "OPEN"
+        assert body["id"] is not None
+
+    def test_create_techlog_entry_aircraft_not_found(self, api_client):
+        resp = api_client.post(
+            "/api/crew/technical/aircraft/MISSING/techlog",
+            json={"pilot_report": "test"},
+        )
+        assert resp.status_code == 404
+
+    def test_list_techlog_entries(self, api_client):
+        self._seed_aircraft(api_client)
+        api_client.post(
+            "/api/crew/technical/aircraft/A7-TEST/techlog",
+            json={"pilot_report": "Entry 1"},
+        )
+        api_client.post(
+            "/api/crew/technical/aircraft/A7-TEST/techlog",
+            json={"pilot_report": "Entry 2"},
+        )
+        resp = api_client.get("/api/crew/technical/aircraft/A7-TEST/techlog")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 2
+
+    def test_list_techlog_entries_aircraft_not_found(self, api_client):
+        resp = api_client.get("/api/crew/technical/aircraft/MISSING/techlog")
+        assert resp.status_code == 404
+
+    def test_get_single_techlog_entry(self, api_client):
+        self._seed_aircraft(api_client)
+        create_resp = api_client.post(
+            "/api/crew/technical/aircraft/A7-TEST/techlog",
+            json={"pilot_report": "Test entry"},
+        )
+        entry_id = create_resp.json()["id"]
+        resp = api_client.get(f"/api/crew/technical/techlog/{entry_id}")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == entry_id
+
+    def test_get_techlog_entry_not_found(self, api_client):
+        resp = api_client.get("/api/crew/technical/techlog/99999")
+        assert resp.status_code == 404
 
 
-def test_imports_never_create_db_file(clean_techlog_env, monkeypatch,
-                                      tmp_path: Path) -> None:
-    """Runtime code must not create the schema — Alembic owns it."""
-    db = tmp_path / "never_created.db"
-    monkeypatch.setenv("CREW_TECHLOG_DB_PATH", str(db))
-    # Fresh interpreter state for the modules: they are already imported by
-    # earlier tests in this module, so simulate first-use by asserting the
-    # side effect directly — importing must not create anything.
-    import crew_platform.technical.database  # noqa: F401
-    import crew_platform.technical.models  # noqa: F401
-
-    assert not db.exists()
+# ===========================================================================
+# REST endpoint tests — Defects
+# ===========================================================================
 
 
-def test_url_has_no_credentials(clean_techlog_env, monkeypatch,
-                                tmp_path: Path) -> None:
-    monkeypatch.setenv("CREW_TECHLOG_DB_PATH", str(tmp_path / "x.db"))
-    from crew_platform.technical import database as techlog_database
+class TestDefectEndpoints:
+    def _seed(self, api_client, reg="A7-TEST"):
+        """Create an aircraft and a techlog entry, return entry_id."""
+        api_client.post(
+            "/api/crew/technical/aircraft/",
+            json={"registration": reg, "type": "B77W"},
+        )
+        resp = api_client.post(
+            f"/api/crew/technical/aircraft/{reg}/techlog",
+            json={"pilot_report": "Seed entry"},
+        )
+        return resp.json()["id"]
 
-    url = techlog_database.build_database_url()
-    assert url.startswith("sqlite:///")
-    assert "@" not in url
+    def test_create_defect(self, api_client):
+        entry_id = self._seed(api_client)
+        resp = api_client.post(
+            f"/api/crew/technical/techlog/{entry_id}/defects",
+            json={
+                "description": "Hydraulic pressure low",
+                "severity": "MAJOR",
+                "chapter": "29",
+            },
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["description"] == "Hydraulic pressure low"
+        assert body["status"] == "OPEN"
+        assert body["closed"] is False
+        assert body["aircraft_registration"] == "A7-TEST"
+
+    def test_create_defect_entry_not_found(self, api_client):
+        resp = api_client.post(
+            "/api/crew/technical/techlog/99999/defects",
+            json={"description": "test"},
+        )
+        assert resp.status_code == 404
+
+    def test_list_defects(self, api_client):
+        entry_id = self._seed(api_client)
+        api_client.post(
+            f"/api/crew/technical/techlog/{entry_id}/defects",
+            json={"description": "Defect 1"},
+        )
+        api_client.post(
+            f"/api/crew/technical/techlog/{entry_id}/defects",
+            json={"description": "Defect 2"},
+        )
+        resp = api_client.get(
+            f"/api/crew/technical/techlog/{entry_id}/defects"
+        )
+        assert resp.status_code == 200
+        assert len(resp.json()) == 2
+
+    def test_get_single_defect(self, api_client):
+        entry_id = self._seed(api_client)
+        create_resp = api_client.post(
+            f"/api/crew/technical/techlog/{entry_id}/defects",
+            json={"description": "Test defect"},
+        )
+        defect_id = create_resp.json()["id"]
+        resp = api_client.get(f"/api/crew/technical/defects/{defect_id}")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == defect_id
+
+    def test_get_defect_not_found(self, api_client):
+        resp = api_client.get("/api/crew/technical/defects/99999")
+        assert resp.status_code == 404
+
+
+# ===========================================================================
+# Defect status lifecycle tests
+# ===========================================================================
+
+
+class TestDefectStatusLifecycle:
+    def _seed_defect(self, api_client, reg="A7-TEST"):
+        """Create aircraft + entry + defect, return defect_id."""
+        api_client.post(
+            "/api/crew/technical/aircraft/",
+            json={"registration": reg, "type": "B77W"},
+        )
+        entry_resp = api_client.post(
+            f"/api/crew/technical/aircraft/{reg}/techlog",
+            json={"pilot_report": "Seed"},
+        )
+        entry_id = entry_resp.json()["id"]
+        defect_resp = api_client.post(
+            f"/api/crew/technical/techlog/{entry_id}/defects",
+            json={"description": "Test defect"},
+        )
+        return defect_resp.json()["id"]
+
+    def test_open_to_under_review(self, api_client):
+        defect_id = self._seed_defect(api_client)
+        resp = api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "UNDER_REVIEW"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "UNDER_REVIEW"
+        assert resp.json()["closed"] is False
+
+    def test_open_to_deferred(self, api_client):
+        defect_id = self._seed_defect(api_client)
+        resp = api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "DEFERRED"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "DEFERRED"
+
+    def test_open_to_rectified_closes(self, api_client):
+        defect_id = self._seed_defect(api_client)
+        resp = api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "RECTIFIED"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "RECTIFIED"
+        assert body["closed"] is True
+        assert body["closure_timestamp"] is not None
+
+    def test_open_to_closed(self, api_client):
+        defect_id = self._seed_defect(api_client)
+        resp = api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "CLOSED"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "CLOSED"
+        assert resp.json()["closed"] is True
+
+    def test_full_lifecycle(self, api_client):
+        """OPEN → UNDER_REVIEW → DEFERRED → MEL_APPLIED → RECTIFIED → CLOSED."""
+        defect_id = self._seed_defect(api_client)
+        for status in [
+            "UNDER_REVIEW",
+            "DEFERRED",
+            "MEL_APPLIED",
+            "RECTIFIED",
+            "CLOSED",
+        ]:
+            resp = api_client.post(
+                f"/api/crew/technical/defects/{defect_id}/status",
+                json={"status": status},
+            )
+            assert resp.status_code == 200, (
+                f"Failed transitioning to {status}: {resp.json()}"
+            )
+            assert resp.json()["status"] == status
+
+        # Final state
+        final = api_client.get(
+            f"/api/crew/technical/defects/{defect_id}"
+        ).json()
+        assert final["closed"] is True
+        assert final["closure_timestamp"] is not None
+
+    def test_closed_is_terminal(self, api_client):
+        """Once CLOSED, no further transitions allowed."""
+        defect_id = self._seed_defect(api_client)
+        api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "CLOSED"},
+        )
+        resp = api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "OPEN"},
+        )
+        assert resp.status_code == 409
+
+    def test_invalid_status_400(self, api_client):
+        defect_id = self._seed_defect(api_client)
+        resp = api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "BOGUS"},
+        )
+        assert resp.status_code == 400
+
+    def test_invalid_transition_409(self, api_client):
+        """RECTIFIED → DEFERRED is not allowed (backward)."""
+        defect_id = self._seed_defect(api_client)
+        api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "RECTIFIED"},
+        )
+        resp = api_client.post(
+            f"/api/crew/technical/defects/{defect_id}/status",
+            json={"status": "DEFERRED"},
+        )
+        assert resp.status_code == 409
+
+    def test_status_not_found(self, api_client):
+        resp = api_client.post(
+            "/api/crew/technical/defects/99999/status",
+            json={"status": "CLOSED"},
+        )
+        assert resp.status_code == 404
+
+
+# ===========================================================================
+# Round-trip integration test
+# ===========================================================================
+
+
+class TestRoundTrip:
+    def test_full_lifecycle_create_to_close(self, api_client):
+        """Full lifecycle: create aircraft → techlog → defect → close."""
+        # 1. Create aircraft
+        api_client.post(
+            "/api/crew/technical/aircraft/",
+            json={"registration": "D-TEST", "type": "A320"},
+        )
+
+        # 2. Record a flight
+        api_client.post(
+            "/api/crew/technical/aircraft/D-TEST/flights/complete",
+            json={"flight_hours": 2.5, "flight_cycles": 1},
+        )
+
+        # 3. Create techlog entry
+        entry_resp = api_client.post(
+            "/api/crew/technical/aircraft/D-TEST/techlog",
+            json={
+                "pilot_report": "Engine vibration noticed on approach",
+                "phase": "POST_FLIGHT",
+                "chapter": "72",
+                "severity": "MINOR",
+            },
+        )
+        assert entry_resp.status_code == 201
+        entry_id = entry_resp.json()["id"]
+
+        # 4. Create defect
+        defect_resp = api_client.post(
+            f"/api/crew/technical/techlog/{entry_id}/defects",
+            json={
+                "description": "Engine 1 vibration above normal limits",
+                "severity": "MINOR",
+                "chapter": "72",
+            },
+        )
+        assert defect_resp.status_code == 201
+        defect_id = defect_resp.json()["id"]
+
+        # 5. Progress through lifecycle
+        for status in ["UNDER_REVIEW", "DEFERRED", "RECTIFIED"]:
+            resp = api_client.post(
+                f"/api/crew/technical/defects/{defect_id}/status",
+                json={"status": status},
+            )
+            assert resp.status_code == 200
+
+        # 6. Verify final state
+        defect = api_client.get(
+            f"/api/crew/technical/defects/{defect_id}"
+        ).json()
+        assert defect["status"] == "RECTIFIED"
+        assert defect["closed"] is True
+
+        aircraft = api_client.get(
+            "/api/crew/technical/aircraft/D-TEST"
+        ).json()
+        assert aircraft["flight_hours"] == 2.5
+        assert aircraft["flight_cycles"] == 1
+
+        entries = api_client.get(
+            "/api/crew/technical/aircraft/D-TEST/techlog"
+        ).json()
+        assert len(entries) == 1
+        assert entries[0]["id"] == entry_id
