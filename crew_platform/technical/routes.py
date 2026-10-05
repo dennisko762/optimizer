@@ -1,19 +1,31 @@
-"""REST endpoints for the TechLog aircraft registry.
+"""REST endpoints for the TechLog domain.
 
 Mounted under ``/api/crew/technical`` by the main app router.
 
-Endpoints
----------
-GET  /aircraft/                  — list all aircraft
-GET  /aircraft/{registration}    — get one (404 if missing)
-POST /aircraft/                  — create (409 on duplicate registration)
-POST /aircraft/{registration}/flights/complete
-                                 — record a completed flight (increments
-                                   flight_hours / flight_cycles on request)
+Endpoints — Aircraft
+---------------------
+GET  /aircraft/                           — list all aircraft
+GET  /aircraft/{registration}             — get one (404 if missing)
+POST /aircraft/                           — create (409 on duplicate)
+POST /aircraft/{reg}/flights/complete     — increment hours/cycles
+
+Endpoints — TechLog Entries
+----------------------------
+POST /aircraft/{reg}/techlog              — create a techlog entry
+GET  /aircraft/{reg}/techlog              — list entries for an aircraft
+GET  /techlog/{entry_id}                  — get a single entry
+
+Endpoints — Defects
+--------------------
+POST /techlog/{entry_id}/defects          — create a defect on an entry
+GET  /techlog/{entry_id}/defects          — list defects for an entry
+GET  /defects/{defect_id}                 — get a single defect
+POST /defects/{defect_id}/status          — transition defect status
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -21,12 +33,20 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from crew_platform.technical.db import get_session
-from crew_platform.technical.models import Aircraft
+from crew_platform.technical.models import (
+    Aircraft,
+    Defect,
+    DEFECT_STATUS_TRANSITIONS,
+    DEFECT_STATUS_VALUES,
+    TechLogEntry,
+    TECHLOG_STATUS_VALUES,
+)
 
 router = APIRouter(prefix="/api/crew/technical", tags=["crew-technical"])
 
 
 # ---- request / response schemas -------------------------------------------
+
 
 class AircraftIn(BaseModel):
     registration: str
@@ -40,11 +60,47 @@ class AircraftIn(BaseModel):
 
 class FlightCompleteIn(BaseModel):
     """Payload for recording a completed flight."""
-    flight_hours: Optional[float] = None   # hours to ADD
-    flight_cycles: Optional[int] = None    # cycles to ADD
+
+    flight_hours: Optional[float] = None  # hours to ADD
+    flight_cycles: Optional[int] = None  # cycles to ADD
 
 
-# ---- routes ---------------------------------------------------------------
+class TechLogEntryIn(BaseModel):
+    """Payload for creating a new tech-log entry."""
+
+    airline_style_log_line_id: Optional[str] = None
+    phase: Optional[str] = None
+    pilot_report: Optional[str] = None
+    chapter: Optional[str] = None
+    system_component: Optional[str] = None
+    source: Optional[str] = "PILOT_REPORT"
+    severity: Optional[str] = None
+    mel_reference: Optional[str] = None
+    maintenance_action: Optional[str] = None
+    free_text: Optional[str] = None
+
+
+class DefectIn(BaseModel):
+    """Payload for creating a new defect."""
+
+    description: str
+    severity: Optional[str] = None
+    chapter: Optional[str] = None
+    system_component: Optional[str] = None
+    pilot_report: Optional[str] = None
+    source: Optional[str] = "PILOT_REPORT"
+    mel_reference: Optional[str] = None
+    maintenance_action: Optional[str] = None
+
+
+class DefectStatusIn(BaseModel):
+    """Payload for transitioning a defect's status."""
+
+    status: str
+
+
+# ---- Aircraft routes -------------------------------------------------------
+
 
 @router.get("/aircraft/")
 def list_aircraft():
@@ -82,7 +138,8 @@ def create_aircraft(body: AircraftIn):
             operator=body.operator,
             flight_hours=body.flight_hours,
             flight_cycles=body.flight_cycles,
-            current_technical_status=body.current_technical_status or "SERVICEABLE",
+            current_technical_status=body.current_technical_status
+            or "SERVICEABLE",
         )
         session.add(ac)
         session.commit()
@@ -113,5 +170,179 @@ def record_completed_flight(registration: str, body: FlightCompleteIn):
         session.commit()
         session.refresh(ac)
         return ac.to_dict()
+    finally:
+        session.close()
+
+
+# ---- TechLog Entry routes --------------------------------------------------
+
+
+@router.post("/aircraft/{registration}/techlog", status_code=201)
+def create_techlog_entry(registration: str, body: TechLogEntryIn):
+    """Create a new tech-log entry for the given aircraft."""
+    session = get_session()
+    try:
+        ac = session.get(Aircraft, registration)
+        if ac is None:
+            raise HTTPException(status_code=404, detail="Aircraft not found")
+        entry = TechLogEntry(
+            aircraft_registration=registration,
+            airline_style_log_line_id=body.airline_style_log_line_id,
+            phase=body.phase,
+            pilot_report=body.pilot_report,
+            chapter=body.chapter,
+            system_component=body.system_component,
+            source=body.source,
+            severity=body.severity,
+            mel_reference=body.mel_reference,
+            maintenance_action=body.maintenance_action,
+            free_text=body.free_text,
+        )
+        session.add(entry)
+        session.commit()
+        session.refresh(entry)
+        return entry.to_dict()
+    finally:
+        session.close()
+
+
+@router.get("/aircraft/{registration}/techlog")
+def list_techlog_entries(registration: str):
+    """List all tech-log entries for an aircraft."""
+    session = get_session()
+    try:
+        ac = session.get(Aircraft, registration)
+        if ac is None:
+            raise HTTPException(status_code=404, detail="Aircraft not found")
+        rows = (
+            session.query(TechLogEntry)
+            .filter(TechLogEntry.aircraft_registration == registration)
+            .all()
+        )
+        return [r.to_dict() for r in rows]
+    finally:
+        session.close()
+
+
+@router.get("/techlog/{entry_id}")
+def get_techlog_entry(entry_id: int):
+    """Return a single tech-log entry by id."""
+    session = get_session()
+    try:
+        entry = session.get(TechLogEntry, entry_id)
+        if entry is None:
+            raise HTTPException(
+                status_code=404, detail="TechLog entry not found"
+            )
+        return entry.to_dict()
+    finally:
+        session.close()
+
+
+# ---- Defect routes ---------------------------------------------------------
+
+
+@router.post("/techlog/{entry_id}/defects", status_code=201)
+def create_defect(entry_id: int, body: DefectIn):
+    """Create a new defect against a tech-log entry."""
+    session = get_session()
+    try:
+        entry = session.get(TechLogEntry, entry_id)
+        if entry is None:
+            raise HTTPException(
+                status_code=404, detail="TechLog entry not found"
+            )
+        defect = Defect(
+            techlog_entry_id=entry_id,
+            aircraft_registration=entry.aircraft_registration,
+            description=body.description,
+            severity=body.severity,
+            chapter=body.chapter,
+            system_component=body.system_component,
+            pilot_report=body.pilot_report,
+            source=body.source,
+            mel_reference=body.mel_reference,
+            maintenance_action=body.maintenance_action,
+        )
+        session.add(defect)
+        session.commit()
+        session.refresh(defect)
+        return defect.to_dict()
+    finally:
+        session.close()
+
+
+@router.get("/techlog/{entry_id}/defects")
+def list_defects(entry_id: int):
+    """List all defects for a tech-log entry."""
+    session = get_session()
+    try:
+        entry = session.get(TechLogEntry, entry_id)
+        if entry is None:
+            raise HTTPException(
+                status_code=404, detail="TechLog entry not found"
+            )
+        rows = (
+            session.query(Defect)
+            .filter(Defect.techlog_entry_id == entry_id)
+            .all()
+        )
+        return [r.to_dict() for r in rows]
+    finally:
+        session.close()
+
+
+@router.get("/defects/{defect_id}")
+def get_defect(defect_id: int):
+    """Return a single defect by id."""
+    session = get_session()
+    try:
+        defect = session.get(Defect, defect_id)
+        if defect is None:
+            raise HTTPException(status_code=404, detail="Defect not found")
+        return defect.to_dict()
+    finally:
+        session.close()
+
+
+@router.post("/defects/{defect_id}/status")
+def transition_defect_status(defect_id: int, body: DefectStatusIn):
+    """Transition a defect to a new status.
+
+    Validates against the allowed status transitions.  Terminal statuses
+    (RECTIFIED, CLOSED) set ``closed=True`` and record ``closure_timestamp``.
+    """
+    new_status = body.status.upper()
+    if new_status not in DEFECT_STATUS_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status '{body.status}'. "
+            f"Valid values: {', '.join(DEFECT_STATUS_VALUES)}",
+        )
+
+    session = get_session()
+    try:
+        defect = session.get(Defect, defect_id)
+        if defect is None:
+            raise HTTPException(status_code=404, detail="Defect not found")
+
+        allowed = DEFECT_STATUS_TRANSITIONS.get(defect.status, ())
+        if new_status not in allowed:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot transition from '{defect.status}' to "
+                    f"'{new_status}'. Allowed: {', '.join(allowed) or 'none (terminal state)'}"
+                ),
+            )
+
+        defect.status = new_status
+        if new_status in ("RECTIFIED", "CLOSED"):
+            defect.closed = 1
+            defect.closure_timestamp = datetime.now(timezone.utc)
+
+        session.commit()
+        session.refresh(defect)
+        return defect.to_dict()
     finally:
         session.close()
