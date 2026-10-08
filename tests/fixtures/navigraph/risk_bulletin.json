@@ -1,0 +1,24 @@
+{
+  "generated": "2026-10-07T15:59:00Z",
+  "airspace": [
+    {
+      "region": "Persian Gulf & Gulf of Oman",
+      "status": "ACTIVE",
+      "updated": "2026-10-07T15:59:00Z",
+      "level": 4,
+      "detail": "Heightened military activity. Monitor NOTAM and company bulletins."
+    },
+    {
+      "region": "Eastern Mediterranean",
+      "status": "ADVISORY",
+      "updated": "2026-10-07T14:10:00Z",
+      "level": 2
+    }
+  ],
+  "operator": [
+    { "country": "UAE", "level": "LEVEL 3 CAUTION", "updated": "2026-10-07T15:59:00Z" },
+    { "country": "Oman", "level": "LEVEL 3 CAUTION", "updated": "2026-10-07T15:59:00Z" },
+    { "country": "India", "level": "LEVEL 2 ADVISORY", "updated": "2026-10-07T12:00:00Z" }
+  ],
+  "nat_track_message": "NAT TRACK MESSAGE\n(NAT-1/2026 TMI IS 280\nOCT 07/1130Z TO OCT 07/1900Z\nWESTBOUND\nA VENIR 55/20 56/30 56/40 54/50 RAFIN 350 360 370\nB NEBIN 54/20 55/30 55/40 53/50 BOBTU 330 340 350\nEND OF PART ONE OF TWO PARTS\n"
+}

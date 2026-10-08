@@ -1,0 +1,20 @@
+[
+  {
+    "package_id": "e3a9fb5c-19cc-4723-8e2d-0d251fa04ca4",
+    "cycle": "2610",
+    "revision": "1",
+    "description": "Navigraph FMS Data, AIRAC 2610",
+    "format": "dfd",
+    "package_status": "current",
+    "format_type": "fmsdata_api_package",
+    "files": [
+      {
+        "file_id": "14aeccbf-69aa-4d1f-9884-79573846b1a7",
+        "key": "navdata.zip",
+        "hash": "bf76d901d86e1d70b5de53c688222a96f98b241636dd55edbb23affb4532e183",
+        "signed_url": "https://packages.fmsdata.api.navigraph.com/e3a9fb5c/navdata.zip?Expires=1&Signature=REDACTED"
+      }
+    ],
+    "addons": [{ "addon_id": "b5773412-5eb8-452b-9077-ea921f3417af" }]
+  }
+]
