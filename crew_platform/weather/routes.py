@@ -204,10 +204,21 @@ async def ingest(
     config = GfsConfig.from_env()
 
     def _run() -> dict[str, Any]:
-        if not force and STORE.load_meta(cycle_id, req_box(req)) is not None:
-            return {"cycle": cycle_id, "already_published": True}
-        meta = ingest_cycle(config, req, store=STORE)
-        return meta.to_dict()
+        # share the scheduler's single-ingest lock so a manual job can never
+        # run a cycle concurrently with the background one
+        if not scheduler.acquire_job():
+            raise HTTPException(
+                status_code=409,
+                detail="A weather ingest is already in progress (scheduler or "
+                       "another manual job). Try again shortly.",
+            )
+        try:
+            if not force and STORE.load_meta(cycle_id, req_box(req)) is not None:
+                return {"cycle": cycle_id, "already_published": True}
+            meta = ingest_cycle(config, req, store=STORE)
+            return meta.to_dict()
+        finally:
+            scheduler.release_job()
 
     try:
         out = await asyncio.to_thread(_run)

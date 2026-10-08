@@ -57,6 +57,12 @@ _events_cond = threading.Condition()
 _running = False
 _thread: Optional[threading.Thread] = None
 
+#: shared job lock — only one ingest (scheduled OR manual) at a time.
+_job_lock = threading.Lock()
+
+#: stop event so stop() actually terminates the loop thread.
+_stop_evt = threading.Event()
+
 
 def _interval_s() -> float:
     return float(os.environ.get("WEATHER_CHECK_INTERVAL_S", "180"))
@@ -72,6 +78,7 @@ def _box() -> Optional[IngestRequest]:
 
 def set_active_box(ll: float, rl: float, tp: float, bl: float) -> None:
     """Point the scheduler at the route region to keep current."""
+    global _active_box
     with _box_lock:
         _active_box = (ll, rl, tp, bl)
     with _status_lock:
@@ -96,11 +103,24 @@ def _run_cycle(config: GfsConfig, cycle_id: str, req: IngestRequest) -> None:
                          leftlon=req.leftlon, rightlon=req.rightlon,
                          toplat=req.toplat, bottomlat=req.bottomlat,
                          offsets=tuple(req.offsets))
-    meta = ingest_cycle(config, req2, store=STORE)
+    if not _job_lock.acquire(timeout=0):
+        # a manual (or other) ingest job holds the lock — skip this tick,
+        # the next one will retry.
+        with _status_lock:
+            _status["in_progress_cycle"] = None
+        _mark("idle", last_error="ingest in progress (manual job holds the lock)")
+        return
+    try:
+        meta = ingest_cycle(config, req2, store=STORE)
+    finally:
+        _job_lock.release()
+    # only after a successful publish does the cycle become "current"
     with _status_lock:
         _status["current_cycle"] = meta.cycle_id
         _status["fetched_at"] = meta.fetched_at
         _status["in_progress_cycle"] = None
+        _status["last_failed_cycle"] = None
+        _status["last_failed_at"] = None
     _emit(meta.cycle_id)
 
 
@@ -125,18 +145,31 @@ def _tick(config: GfsConfig) -> None:
         with _status_lock:
             current = _status["current_cycle"]
             in_progress = _status["in_progress_cycle"]
+            failed = _status.get("last_failed_cycle")
+            failed_at = _status.get("last_failed_at") or 0.0
         if newest == current or newest == in_progress:
             _mark("idle")
             return
+        if newest == failed:
+            # a failed cycle is retried after a bounded backoff instead of
+            # being abandoned for the life of the process.
+            if time.time() - failed_at < _retry_backoff_s():
+                _mark("idle")
+                return
 
-        _mark("downloading", in_progress_cycle=newest, current_cycle=newest)
+        # keep the last-good cycle authoritative until the new one is fully
+        # ingested (current_cycle is only advanced on success)
+        _mark("downloading", in_progress_cycle=newest)
         try:
             _run_cycle(config, newest, req)
             _mark("idle", current_cycle=newest, in_progress_cycle=None, last_error=None)
         except gfs.GfsError as exc:
-            # keep the last good cycle authoritative (offline fallback)
+            # keep the last good cycle authoritative (offline fallback) and
+            # remember the failure so the next tick may retry after backoff
             with _status_lock:
                 _status["in_progress_cycle"] = None
+                _status["last_failed_cycle"] = newest
+                _status["last_failed_at"] = time.time()
             _mark("error", last_error=str(exc))
             LOG.warning("ingest of %s failed: %s", newest, exc)
     except Exception as exc:  # noqa: BLE001 — a scheduler bug must not kill the thread
@@ -146,14 +179,20 @@ def _tick(config: GfsConfig) -> None:
         LOG.exception("scheduler tick failed")
 
 
+def _retry_backoff_s() -> float:
+    return float(os.environ.get("WEATHER_RETRY_BACKOFF_S", "300"))
+
+
 def _loop(config: GfsConfig) -> None:
     interval = _interval_s()
-    while True:
+    while not _stop_evt.is_set():
         try:
             _tick(config)
         except Exception:  # noqa: BLE001
             LOG.exception("unexpected scheduler error")
-        time.sleep(interval)
+        _stop_evt.wait(interval)
+    global _running
+    _running = False
 
 
 def start() -> bool:
@@ -164,6 +203,7 @@ def start() -> bool:
     if os.environ.get("WEATHER_SCHEDULER_ENABLED", "1") == "0":
         return False
     _running = True
+    _stop_evt.clear()
     config = GfsConfig.from_env()
     interval = _interval_s()
     _thread = threading.Thread(target=_loop, args=(config,), name="weather-scheduler", daemon=True)
@@ -172,9 +212,31 @@ def start() -> bool:
     return True
 
 
-def stop() -> None:
-    global _running
-    _running = False
+def stop(timeout: float = 5.0) -> None:
+    """Stop the loop thread; returns once it has exited (or after timeout)."""
+    _stop_evt.set()
+    t = _thread
+    if t is not None:
+        t.join(timeout)
+
+
+def job_available() -> bool:
+    """True if no ingest job (scheduled or manual) is running right now."""
+    return not _job_lock.locked()
+
+
+def acquire_job(timeout: float = 0) -> bool:
+    """Acquire the shared ingest job lock (manual ``POST /ingest`` path).
+
+    ``timeout=0`` is a non-blocking attempt; a positive value waits at most
+    that long.
+    """
+    return bool(_job_lock.acquire(timeout=timeout))
+
+
+def release_job() -> None:
+    if _job_lock.locked():
+        _job_lock.release()
 
 
 def status_payload() -> dict[str, Any]:
@@ -191,6 +253,7 @@ def status_payload() -> dict[str, Any]:
         "enabled": os.environ.get("WEATHER_SCHEDULER_ENABLED", "1") != "0",
         "state": s["state"],
         "current_cycle": s["current_cycle"] or (latest.cycle_id if latest else None),
+        "in_progress_cycle": s["in_progress_cycle"],
         "latest_published": [m.cycle_id for m in published[:4]],
         "last_good": latest.cycle_id if latest else None,
         "has_route": has_box,
