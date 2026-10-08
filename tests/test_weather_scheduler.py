@@ -101,8 +101,10 @@ def _fake_ingest_publish(tmp_store, offsets=(0, 6, 12), box=None):
 
     def _ingest(config, req, store=None):
         store = store or tmp_store
+        box = BoxKey(round(req.leftlon, 2), round(req.rightlon, 2),
+                     round(req.toplat, 2), round(req.bottomlat, 2))
         for off in req.offsets:
-            store.write_raw(req.cycle_id, off, b"\x00" * 16)
+            store.write_raw(req.cycle_id, box, off, b"\x00" * 16)
         meta = CycleMeta(
             cycle_id=req.cycle_id, run_date=req.cycle_id.split("_")[0],
             run_hour=req.cycle_id.split("_")[1], box=box,
@@ -151,7 +153,7 @@ def test_failed_ingest_retains_last_good_and_retries(tmp_store, monkeypatch):
     """A failed cycle must not clobber current_cycle; it must be retried."""
     # seed a last-good cycle so there is something to retain
     box = BoxKey(25.0, 75.0, 65.0, 10.0)
-    tmp_store.write_raw("20261005_12", 0, b"\x00" * 16)
+    tmp_store.write_raw("20261005_12", box, 0, b"\x00" * 16)
     tmp_store.publish(CycleMeta(
         cycle_id="20261005_12", run_date="20261005", run_hour="12", box=box,
         offsets=[0], fields=["u"], n_lat=4, n_lon=4, fetched_at=time.time()))

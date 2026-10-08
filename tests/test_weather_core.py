@@ -280,9 +280,11 @@ def test_polygonize_grid_produces_polygon():
     lon = [0.0, 0.5, 1.0, 1.5, 2.0]
     feats = polygonize.polygonize_grid(vals, lat, lon, [0.5], epsilon=0.0)
     assert len(feats) >= 1
-    poly = feats[0]
-    assert poly["type"] == "Polygon"
-    coords = poly["coordinates"][0]
+    feat = feats[0]
+    # standards GeoJSON envelope: Feature wrappers carry the geometry
+    assert feat["type"] == "Feature"
+    assert feat["geometry"]["type"] == "Polygon"
+    coords = feat["geometry"]["coordinates"][0]
     assert coords[0] == coords[-1]  # closed
     # the ring should surround the high cell (~lon 1.0, lat 1.0)
     lons = [c[0] for c in coords]
@@ -393,3 +395,39 @@ def test_sample_at_fl_brackets_level():
     # FL340 sits between 250 and 300; t fraction in (0,1); value between 20 and 30
     assert val is not None
     assert 20.0 <= val <= 30.0
+
+
+# wind meteorological FROM direction (#3)
+def test_wind_from_direction_is_meteorological():
+    """u>0 (wind to the EAST) must report FROM 270 (west), not 90.
+
+    Regression: the old atan2(u, -v) convention reported the wind
+    destination, so an eastward flow read as FROM 090 (east) — backwards.
+    """
+    from crew_platform.weather.hazards import wind_from_deg
+    # due east flow
+    assert wind_from_deg(10.0, 0.0) == 270
+    # due north flow
+    assert wind_from_deg(0.0, 10.0) == 180
+    # due west flow
+    assert wind_from_deg(-10.0, 0.0) == 90
+    # due south flow
+    assert wind_from_deg(0.0, -10.0) == 0
+    # 45° NE (u>0, v>0): coming from the SW
+    assert 180 < wind_from_deg(10.0, 10.0) < 270
+
+
+# FL-slab hazard interpolation (#4)
+def test_hazard_grid_fl_slab_interpolates_between_levels():
+    """A hazard present at two bracketing levels blends in pressure space —
+    not a single-level clamp. FL300 between 300 and 250 hPa must yield a
+    value strictly between the two single-level grids."""
+    import numpy as np
+    from crew_platform.weather.service import _hazard_grid_at_fl
+
+    # two bracketing hazard levels (250 hPa stronger than 300 hPa)
+    bund = {"ti_250": np.full((2, 2), 4.0), "ti_300": np.full((2, 2), 2.0)}
+    grid = _hazard_grid_at_fl(bund, "ti", (300, 250, 200), 320.0)
+    assert grid is not None
+    # FL320 sits between 300 and 250 hPa -> strictly blended
+    assert 2.0 < grid[0, 0] < 4.0

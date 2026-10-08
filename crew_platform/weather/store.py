@@ -54,7 +54,7 @@ def _cycle_dir(cycle_id: str) -> Path:
     return cache_root() / cycle_id
 
 
-@dataclass
+@dataclass(frozen=True)
 class BoxKey:
     """Region box that a subset was fetched for (degrees)."""
 
@@ -66,10 +66,21 @@ class BoxKey:
     def __str__(self) -> str:
         # underscore separator: '/' is a path separator on Windows and would
         # turn the meta filename into a nested (non-existent) directory.
+        # Order is left, right, BOTTOM, top — :meth:`parse` is the exact
+        # inverse (a positional BoxKey(*parts) would swap the lat bounds).
         return (
             f"{self.leftlon:.2f}_{self.rightlon:.2f}_"
             f"{self.bottomlat:.2f}_{self.toplat:.2f}"
         )
+
+    @classmethod
+    def parse(cls, text: str) -> "BoxKey":
+        """Exact inverse of :meth:`__str__`: left, right, BOTTOM, TOP."""
+        parts = [float(x) for x in str(text).split("_")]
+        if len(parts) != 4:
+            raise ValueError(f"bad box key: {text!r}")
+        left, right, bottom, top = parts
+        return cls(leftlon=left, rightlon=right, toplat=top, bottomlat=bottom)
 
 
 @dataclass
@@ -103,12 +114,12 @@ class CycleMeta:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "CycleMeta":
-        box = str(d["box"]).split("_")
+        box = BoxKey.parse(str(d["box"]))
         return cls(
             cycle_id=d["cycle_id"],
             run_date=d["run_date"],
             run_hour=d["run_hour"],
-            box=BoxKey(*[float(x) for x in box]),
+            box=box,
             offsets=list(d["offsets"]),
             fields=list(d["fields"]),
             n_lat=int(d["n_lat"]),
@@ -118,11 +129,25 @@ class CycleMeta:
         )
 
 
+def _region_dir(cycle_id: str, box: BoxKey) -> Path:
+    """Region-keyed data dir: two boxes in one cycle can never collide."""
+    return _cycle_dir(cycle_id) / str(box)
+
+
 def _meta_path(cycle_id: str, box: BoxKey) -> Path:
-    return _cycle_dir(cycle_id) / f"{box}.meta.json"
+    return _region_dir(cycle_id, box) / "meta.json"
 
 
-def _file_path(cycle_id: str, offset: int) -> Path:
+def _file_path(cycle_id: str, box: BoxKey, offset: int) -> Path:
+    """Region-keyed raw subset path, with a legacy flat-layout fallback.
+
+    Cycles published before region-keying stored ``f###.grb2`` directly in
+    the cycle dir; reads transparently fall back to that location so an
+    already-published legacy cycle keeps serving until it is re-ingested.
+    """
+    region = _region_dir(cycle_id, box) / f"f{offset:03d}.grb2"
+    if region.is_file():
+        return region
     return _cycle_dir(cycle_id) / f"f{offset:03d}.grb2"
 
 
@@ -135,9 +160,14 @@ class CycleStore:
 
     # -- publish -----------------------------------------------------------
 
-    def write_raw(self, cycle_id: str, offset: int, data: bytes) -> Path:
-        """Stage one forecast-hour subset on disk (not yet visible)."""
-        path = _file_path(cycle_id, offset)
+    def write_raw(self, cycle_id: str, box: BoxKey, offset: int, data: bytes) -> Path:
+        """Stage one forecast-hour subset on disk (not yet visible).
+
+        The raw file is region-keyed, so two boxes inside the same cycle can
+        never overwrite each other. The write is atomic (tmp + os.replace):
+        a reader never observes a half-written subset.
+        """
+        path = _region_dir(cycle_id, box) / f"f{offset:03d}.grb2"
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f"f{offset:03d}.", suffix=".tmp")
         try:
@@ -151,19 +181,21 @@ class CycleStore:
         return path
 
     def publish(self, meta: CycleMeta) -> None:
-        """Atomically make a completed cycle visible.
+        """Atomically make a completed (cycle, box) visible.
 
         Refuses to publish while any required file is missing (a completed
-        cycle must have every declared offset on disk).
+        cycle must have every declared offset on disk). The meta swap is a
+        single ``os.replace`` — readers see the previous state or the new
+        one, never a mixture. Enforces retention afterwards.
         """
         for off in meta.offsets:
-            p = _file_path(meta.cycle_id, off)
+            p = _region_dir(meta.cycle_id, meta.box) / f"f{off:03d}.grb2"
             if not p.is_file() or p.stat().st_size == 0:
                 raise ValueError(f"offset f{off:03d} missing for {meta.cycle_id}")
         with self._lock:
             path = _meta_path(meta.cycle_id, meta.box)
             fd, tmp = tempfile.mkstemp(
-                dir=str(path.parent), prefix=str(meta.box) + ".", suffix=".meta.tmp"
+                dir=str(path.parent), prefix="meta.", suffix=".tmp"
             )
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -173,6 +205,7 @@ class CycleStore:
                 if os.path.exists(tmp):
                     os.unlink(tmp)
                 raise
+        self.prune()
 
     # -- read --------------------------------------------------------------
 
@@ -193,7 +226,9 @@ class CycleStore:
         for cyc in sorted(root.iterdir(), reverse=True):
             if not cyc.is_dir() or not re.match(r"^\d{8}_\d{2}$", cyc.name):
                 continue
-            for m in cyc.glob("*.meta.json"):
+            # region layout: <cycle>/<box>/meta.json ; legacy: <cycle>/*.meta.json
+            metas = list(cyc.glob("*/meta.json")) + list(cyc.glob("*.meta.json"))
+            for m in metas:
                 try:
                     out.append(CycleMeta.from_dict(json.loads(m.read_text(encoding="utf-8"))))
                 except (OSError, ValueError, KeyError, json.JSONDecodeError):
@@ -213,7 +248,7 @@ class CycleStore:
             if key in self._ds_cache:
                 self._ds_cache.move_to_end(key)
                 return self._ds_cache[key]
-        path = _file_path(cycle_id, offset)
+        path = _file_path(cycle_id, box, offset)
         if not path.is_file():
             return None
         try:
@@ -231,9 +266,64 @@ class CycleStore:
                 self._ds_cache.popitem(last=False)
         return ds
 
+    # -- retention ---------------------------------------------------------
+
+    def disk_usage_bytes(self) -> int:
+        total = 0
+        root = cache_root()
+        if not root.is_dir():
+            return 0
+        for dirpath, _dirs, files in os.walk(root):
+            for f in files:
+                try:
+                    total += os.path.getsize(os.path.join(dirpath, f))
+                except OSError:
+                    continue
+        return total
+
+    def prune(self) -> list[str]:
+        """Enforce the disk limit: evict oldest cycles first (newest kept).
+
+        The ceiling is env-only: ``WEATHER_CACHE_MAX_MB`` (default 4096).
+        Returns the list of evicted cycle dirs (testable, no side effects
+        beyond the eviction itself).
+        """
+        limit_mb = float(os.environ.get("WEATHER_CACHE_MAX_MB", "4096"))
+        if limit_mb <= 0:
+            return []
+        limit_bytes = limit_mb * 1024 * 1024
+        if self.disk_usage_bytes() <= limit_bytes:
+            return []
+        root = cache_root()
+        cycles = sorted(
+            (d for d in root.iterdir() if d.is_dir() and re.match(r"^\d{8}_\d{2}$", d.name)),
+            key=lambda d: d.name,  # oldest first (cycle ids sort chronologically)
+        )
+        evicted: list[str] = []
+        import shutil
+
+        for d in cycles[:-1]:  # always keep the newest cycle
+            if self.disk_usage_bytes() <= limit_bytes:
+                break
+            shutil.rmtree(d, ignore_errors=True)
+            evicted.append(d.name)
+        return evicted
+
 
 #: process-wide store instance (shared by routes + scheduler)
 STORE = CycleStore()
+
+
+def cycle_epoch(cycle_id: str) -> float:
+    """Unix time (UTC) of a cycle's model run (``YYYYMMDD_HH``)."""
+    import calendar
+    import re
+
+    m = re.match(r"^(\d{4})(\d{2})(\d{2})_(\d{2})$", cycle_id or "")
+    if not m:
+        raise ValueError(f"bad cycle id: {cycle_id!r}")
+    y, mo, d, h = (int(x) for x in m.groups())
+    return float(calendar.timegm((y, mo, d, h, 0, 0, 0, 0, 0)))
 
 
 def staleness(now: float, fetched_at: float) -> dict[str, Any]:

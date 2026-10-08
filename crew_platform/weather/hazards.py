@@ -265,6 +265,27 @@ def jet_tier(speed_ms: float) -> int:
     return 0
 
 
+def wind_from_deg(u: float, v: float) -> float:
+    """Meteorological wind direction (FROM), 0..360 deg, from wind components.
+
+    ``u`` is the eastward component and ``v`` the northward component (m/s):
+    the wind blows TOWARD ``(u, v)``, so it comes FROM the opposite
+    direction:
+
+        FROM = (deg(atan2(-u, -v)) + 360) mod 360
+
+    Cardinals (regression anchors):
+      u=+10, v=0  (eastward flow)  -> 270  (wind FROM the west)
+      u=-10, v=0  (westward flow)  ->  90  (wind FROM the east)
+      u=0, v=+10  (northward flow) -> 180  (wind FROM the south)
+      u=0, v=-10  (southward flow) ->   0  (wind FROM the north)
+    Zero wind is NaN (undefined direction — never report a cardinal for it).
+    """
+    if u == 0.0 and v == 0.0:
+        return float("nan")
+    return (math.degrees(math.atan2(-u, -v)) + 360.0) % 360.0
+
+
 # ---------------------------------------------------------------------------
 # Thermal fronts — Hewson & Järvi style, Bolton-1980 theta_e
 # ---------------------------------------------------------------------------

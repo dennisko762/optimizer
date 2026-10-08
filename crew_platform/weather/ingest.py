@@ -84,7 +84,8 @@ def _box_of(req: IngestRequest) -> BoxKey:
 
 
 def _npz_path(cycle_id: str, box: BoxKey, offset: int):
-    return cache_root() / cycle_id / f"f{offset:03d}.npz"
+    # region-keyed: bundles for two boxes in one cycle never collide
+    return cache_root() / cycle_id / str(box) / f"f{offset:03d}.npz"
 
 
 def _backoff(attempt: int) -> float:
@@ -219,19 +220,23 @@ def _hazard_grids(
     if cape is not None:
         out["cape"] = cape
 
-    # frontal strength: horizontal gradient of (theta_e_850 - theta_e_500),
-    # scaled to K per 250 km (Hewson & Järvi 1995).
+    # frontal strength: the Hewson & Järvi (1995) thermal-front parameter —
+    # the horizontal gradient of equivalent potential temperature at mid
+    # level (500 hPa θe), scaled to K per 250 km. (The earlier version
+    # gradiented the *vertical difference* (θe850−θe500), which is a tilt,
+    # not the front intensity parameter.) The vertical tilt itself is kept
+    # for warm/cold sign: θe850 > θe500 on the warm side of the front.
     t_lo = fields.get(("t", 850)); r_lo = fields.get(("r", 850))
     t_hi = fields.get(("t", 500)); r_hi = fields.get(("r", 500))
     if all(g is not None for g in (t_lo, r_lo, t_hi, r_hi)):
         te_lo = hazards.theta_e_grid(t_lo - 273.15, r_lo, 850.0)
         te_hi = hazards.theta_e_grid(t_hi - 273.15, r_hi, 500.0)
-        dte = te_lo - te_hi  # (lat, lon)
         with np.errstate(invalid="ignore", divide="ignore"):
-            g_east = np.gradient(dte, axis=1) / dx_east     # K/m
-            g_north = np.gradient(dte, axis=0) / dx_north   # K/m
-        grad_km = np.hypot(g_east, g_north) * 250_000.0     # K / 250 km
+            g_east = np.gradient(te_hi, axis=1) / dx_east    # K/m
+            g_north = np.gradient(te_hi, axis=0) / dx_north  # K/m
+        grad_km = np.hypot(g_east, g_north) * 250_000.0      # K / 250 km
         out["front"] = np.nan_to_num(grad_km, nan=0.0, posinf=0.0).astype(np.float32)
+        out["front_tilt"] = np.nan_to_num(te_lo - te_hi, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
     return out
 
 
@@ -268,7 +273,7 @@ def ingest_cycle(
     # 1) download every forecast-hour subset (with retry), stage on disk
     for off in req.offsets:
         data = _fetch_with_retry(config, date, hour, off, req)
-        store.write_raw(req.cycle_id, off, data)
+        store.write_raw(req.cycle_id, box, off, data)
 
     # 2) parse + derive + persist a fast bundle per hour
     import xarray as xr
@@ -276,7 +281,7 @@ def ingest_cycle(
     field_stems: set[str] = set()
     lat = lon = None
     for off in req.offsets:
-        raw = cache_root() / req.cycle_id / f"f{off:03d}.grb2"
+        raw = cache_root() / req.cycle_id / str(box) / f"f{off:03d}.grb2"
         # the subset mixes isobaric and surface (CAPE) levels; cfgrib refuses
         # to build one dataset from a mixed typeOfLevel, so open each family
         # separately and merge the extracted fields.

@@ -161,9 +161,13 @@ def test_real_turbulence_polygons_non_empty(client):
     body = r.json()
     assert body["type"] == "FeatureCollection"
     assert body["features"], "real GFS cycle produced no turbulence polygons"
-    polys = [f for f in body["features"] if f["type"] == "Polygon"]
-    assert polys, "no closed (Polygon) features — only open rings?"
-    ring = polys[0]["coordinates"][0]
+    # standards-based GeoJSON: Feature wrappers carrying Polygon geometries
+    polys = [
+        f for f in body["features"]
+        if f["type"] == "Feature" and f["geometry"]["type"] == "Polygon"
+    ]
+    assert polys, "no Feature(Polygon) features — malformed GeoJSON envelope"
+    ring = polys[0]["geometry"]["coordinates"][0]
     assert len(ring) >= 4 and ring[0] == ring[-1], "outer ring must be closed"
     for x, y in ring:
         assert 15 <= x <= 75, f"lon {x} outside box"

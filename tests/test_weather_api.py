@@ -53,13 +53,15 @@ def _synthetic_bundle(tmp_path, cycle="20261005_18", offset=0):
         "ice_850": ice, "ice_700": ice * 0.8, "ice_500": ice * 0.5,
         "cape": cape, "front": front,
     }
-    path = cache_root() / cycle / f"f{offset:03d}.npz"
+    box = BoxKey(25.0, 75.0, 65.0, 10.0)
+    # region-keyed layout (matches CycleStore.write_raw/publish since the
+    # region-collision fix)
+    path = cache_root() / cycle / str(box) / f"f{offset:03d}.npz"
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(str(path), **payload)
     # stub raw GRIB so publish validation passes
     raw = path.parent / f"f{offset:03d}.grb2"
     raw.write_bytes(b"\x00" * 32)
-    box = BoxKey(25.0, 75.0, 65.0, 10.0)
     return box
 
 
@@ -149,10 +151,13 @@ def test_layer_turbulence_polygon(client):
     body = r.json()
     assert body["type"] == "FeatureCollection"
     assert body["features"], "expected at least one turbulence polygon"
-    polys = [f for f in body["features"] if f["type"] == "Polygon"]
+    polys = [
+        f for f in body["features"]
+        if f["type"] == "Feature" and f["geometry"]["type"] == "Polygon"
+    ]
     assert polys
-    # polygon coordinate schema: list of rings of [lon,lat]
-    ring = polys[0]["coordinates"][0]
+    # standards GeoJSON envelope: Feature carries the Polygon geometry
+    ring = polys[0]["geometry"]["coordinates"][0]
     assert len(ring) >= 4
     assert ring[0] == ring[-1]
     assert isinstance(ring[0][0], float) and isinstance(ring[0][1], float)

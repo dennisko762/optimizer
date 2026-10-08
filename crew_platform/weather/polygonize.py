@@ -290,11 +290,12 @@ def polygonize_grid(
 
     For each threshold ``t_i`` the cumulative hazard region ``{z >= t_i}`` is
     contoured with the pure-python :func:`marching_squares_segments` +
-    :func:`assemble_rings` path and returned as one or more Polygon features
-    (each with its holes). Bands are nested (higher thresholds sit inside
-    lower ones), which is exactly how tiered hazards are drawn. Returns a list
-    of features ``{"type": "Polygon", "coordinates": [outer, hole, ...],
-    "properties": {"band": i, "min": t_i}}``.
+    :func:`assemble_rings` path and returned as one or more Polygon
+    features (each with its holes). Bands are nested (higher thresholds sit
+    inside lower ones), which is exactly how tiered hazards are drawn.
+    Returns a list of GeoJSON Features
+    ``{"type": "Feature", "geometry": {"type": "Polygon",
+    "coordinates": [outer, hole, ...]}, "properties": {"band": i, "min": t_i}}``.
 
     No scientific-stack dependency: the grid is padded with a one-cell frame
     valued below the threshold so that hazard regions touching the box edge
@@ -328,9 +329,12 @@ def polygonize_grid(
             if len(outer) < 4:
                 continue
             crings = [_close_ring(outer)] + [_close_ring(h) for h in holes if len(h) >= 4]
+            # standards-based GeoJSON: each entry is a Feature wrapping a
+            # Polygon geometry (MapLibre and generic consumers both require
+            # the Feature envelope, not a bare geometry)
             features.append({
-                "type": "Polygon",
-                "coordinates": crings,
+                "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": crings},
                 "properties": {"band": band, "min": thr},
             })
     return features
