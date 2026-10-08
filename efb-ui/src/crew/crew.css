@@ -945,3 +945,334 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ──────────────── Tech Area (TechLog) ──────────────── */
+
+.tech-panel {
+  background: var(--airline-surface, #111820);
+  border-radius: 12px;
+  padding: 20px;
+  color: var(--airline-text, #e8ecf0);
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.tech-loading {
+  text-align: center;
+  padding: 24px 0;
+  color: var(--airline-text-secondary);
+}
+
+.tech-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--airline-text-secondary);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.tech-empty-small {
+  padding: 10px 12px;
+  color: var(--airline-text-secondary);
+  font-size: 12px;
+}
+
+.tech-error {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(220, 38, 38, 0.1);
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+/* Header + aircraft picker */
+.tech-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tech-header-flight {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tech-header-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--airline-accent, #64748b);
+}
+
+.tech-header-sub {
+  font-size: 12px;
+  color: var(--airline-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tech-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tech-picker .boarding-input {
+  width: 180px;
+  text-transform: uppercase;
+}
+
+/* Status badges */
+.tech-status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--airline-text-secondary);
+}
+
+.tech-status-badge--ok {
+  background: #065f4620;
+  border: 1px solid #065f46;
+  color: #22c55e;
+}
+
+.tech-status-badge--mel {
+  background: #713f1220;
+  border: 1px solid #b45309;
+  color: #fbbf24;
+}
+
+.tech-status-badge--review {
+  background: #1e3a8a20;
+  border: 1px solid #1d4ed8;
+  color: #60a5fa;
+}
+
+.tech-status-badge--open {
+  background: #7f1d1d20;
+  border: 1px solid #b91c1c;
+  color: #f87171;
+}
+
+/* Overview grid reuses .ofp-grid / .ofp-item tokens */
+.tech-overview {
+  margin-top: 4px;
+}
+
+/* View tabs */
+.tech-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.tech-tab--active {
+  border-color: var(--airline-accent, #64748b);
+  color: var(--airline-accent, #64748b);
+  font-weight: 700;
+}
+
+/* Sections */
+.tech-section {
+  margin-top: 16px;
+}
+
+.tech-section h4 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--airline-text-secondary);
+  margin-bottom: 8px;
+}
+
+/* Defect rows */
+.tech-defect-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+}
+
+.tech-defect-id {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.tech-defect-name {
+  font-weight: 700;
+}
+
+.tech-chip {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--airline-text-secondary);
+}
+
+.tech-chip--open {
+  background: #7f1d1d20;
+  border: 1px solid #b91c1c;
+  color: #f87171;
+}
+
+.tech-chip--mel {
+  background: #713f1220;
+  border: 1px solid #b45309;
+  color: #fbbf24;
+}
+
+.tech-chip--ok {
+  background: #065f4620;
+  border: 1px solid #065f46;
+  color: #22c55e;
+}
+
+.tech-chip--muted {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--airline-text-secondary);
+}
+
+.tech-defect-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--airline-text-secondary);
+}
+
+.tech-defect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Tech log entries */
+.tech-entry {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+}
+
+.tech-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.tech-entry-date {
+  font-size: 11px;
+  color: var(--airline-text-secondary);
+}
+
+.tech-entry-text {
+  margin: 4px 0;
+}
+
+.tech-entry-maintenance {
+  color: var(--airline-text-secondary);
+  font-size: 12px;
+}
+
+/* Forms */
+.tech-form {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.tech-form .edesk-checkin-btn {
+  margin-top: 4px;
+}
+
+.tech-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tech-form-wide {
+  grid-column: 1 / -1;
+}
+
+/* Compact home card */
+.tech-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--airline-surface, #111820);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.tech-status-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tech-status-card__id {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tech-status-card__reg {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.tech-status-card__type {
+  font-size: 11px;
+  color: var(--airline-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tech-status-card__meta {
+  font-size: 12px;
+  color: var(--airline-text-secondary);
+}
+
+@media (max-width: 480px) {
+  .tech-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tech-header {
+    flex-direction: column;
+  }
+
+  .tech-picker .boarding-input {
+    width: 100%;
+  }
+}

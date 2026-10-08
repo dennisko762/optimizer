@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
 
 from data_fetcher.simbrief.simbrief_client import SimBriefClient
 from data_fetcher.simbrief.simbrief_models import SimBriefPerformanceSeed
