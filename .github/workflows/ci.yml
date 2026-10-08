@@ -59,12 +59,18 @@ jobs:
         # that do not exist on main (pre-existing gap, see
         # docs/ci-quality-gate.md#pre-existing-failures). Collected and
         # reported, not silently skipped, so a PR that fixes them is
-        # visible as a real improvement.
+        # visible as a real improvement. `|| true`: the real pass/fail
+        # decision is docs/test-baseline-failures.json-aware (next
+        # step), not pytest's raw exit code — a pre-existing failure
+        # must never block an unrelated PR, but a NEW one must.
         run: |
           python -m pytest tests -v \
             --continue-on-collection-errors \
             --cov --cov-report=xml --cov-report=term-missing \
-            --junitxml=pytest-report.xml
+            --junitxml=pytest-report.xml || true
+
+      - name: Enforce no newly introduced test failures
+        run: python .github/scripts/check_test_baseline.py pytest-report.xml
 
       - name: Upload coverage report
         if: always()

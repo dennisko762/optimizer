@@ -21,6 +21,16 @@ extend-exclude = ["efb-ui", "node_modules", ".venv", "dist", "build"]
 # a follow-up app-code PR, then re-added here once clear.
 select = ["E4", "E7", "E9", "F401", "F403", "F405", "F811", "F601", "F602", "F631", "F632", "F633", "F634", "F701", "F702", "F706", "F707"]
 
+[tool.mypy]
+explicit_package_bases = true
+mypy_path = "."
+exclude = [
+    "efb-ui/",
+    "_bak\\.py$",
+    "/bak/",
+    "\\.venv/",
+]
+
 [tool.coverage.run]
 branch = true
 source = [
