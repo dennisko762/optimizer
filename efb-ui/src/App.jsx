@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import OptimizerShowcase from "./OptimizerShowcase";
 import AirlineSelector from "./crew/AirlineSelector.jsx";
-import CrewShell from "./crew/CrewShell.jsx";
+import QatarShell from "./crew/qatar/QatarShell.jsx";
+import "./crew/qatar/qatar.css";
 import { useCrewPlatform } from "./crew/useCrewPlatform.js";
 import {
   flightToOptimizerContext,
@@ -1736,7 +1737,7 @@ function CrewPlatformView({ onOpenOptimizer }) {
     return <AirlineSelector />;
   }
 
-  return <CrewShell onOpenOptimizer={onOpenOptimizer} />;
+  return <QatarShell onOpenOptimizer={onOpenOptimizer} />;
 }
 
 export default function App() {

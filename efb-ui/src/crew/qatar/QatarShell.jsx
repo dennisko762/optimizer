@@ -1,0 +1,1899 @@
+/**
+ * QatarShell — the "QR SmartOps" iPad interface (Qatar maroon look, 05.10.).
+ *
+ * Screens: Crew Desk (My Flights / Crew Desk / Profile), Flightplan,
+ * Route, EDTO + Risks. Legacy functionality is mapped in, not lost:
+ * eDesk check-in → My Flights, OFP → Flightplan, Notifications → Crew Desk
+ * Inbox, Boarding → My Flights action, Tech → Crew Desk "Tech Log" tab,
+ * Setup → Profile, CI Optimizer → gold "Import New Plan" action.
+ *
+ * All styling is in qatar.css via the QR maroon palette — this file carries
+ * no hardcoded brand colors.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Plane,
+  PlaneTakeoff,
+  AlertTriangle,
+  Inbox,
+  Trash2,
+  ClipboardCheck,
+  Cloud,
+  Sun,
+  RefreshCw,
+  MoreVertical,
+  BatteryFull,
+  Signal,
+  Wifi,
+  WifiOff,
+  Mail,
+  User,
+  ArrowRight,
+  Play,
+  Pause,
+  ChevronRight,
+  ExternalLink,
+  Mountain,
+  Wrench,
+  LogOut,
+  LogIn,
+  CheckCircle2,
+  XCircle,
+  CloudRain,
+  Gauge,
+  Download,
+} from "lucide-react";
+import { useCrewPlatform } from "../useCrewPlatform.js";
+import { loadSession, clearSession } from "../crewAuth.js";
+import { useFlightCheckins } from "../useFlightCheckins.js";
+import {
+  mapOfpHero,
+  mapOfpWaypoints,
+  modelSimPlan,
+  mapRouteView,
+  mapEdtoView,
+  mapNotification,
+  defaultInboxMessages,
+  projectMap,
+  icaoLatlon,
+} from "./qatarMappers.js";
+import {
+  mapSimStatus,
+  mapLiveStrip,
+  mapLiveTiming,
+  mapApplyTargets,
+  mapRouteLive,
+  buildLiveOptimizeRequest,
+  formatApiError,
+} from "./liveMappers.js";
+import { useSimTelemetry } from "./useSimTelemetry.js";
+import CrewLogin from "./CrewLogin.jsx";
+import BoardingPanel from "../BoardingPanel.jsx";
+import TechPanel from "../tech/TechPanel.jsx";
+
+/* ─── shared bits ──────────────────────────────────────────────────── */
+
+function TopHeader({ center, right, utc }) {
+  return (
+    <header className="qr-topbar">
+      <div className="qr-topbar__left">
+        <span className="qr-clock mono">{utc?.time || "00:00"}</span>
+        <span className="qr-date">{utc?.date || "—"}</span>
+      </div>
+      <div className="qr-topbar__center">{center}</div>
+      <div className="qr-topbar__right">
+        {right}
+        <Signal size={15} />
+        <Wifi size={15} />
+        <span className="qr-batt mono">
+          97 <BatteryFull size={16} className="qr-batt__icon" />
+        </span>
+      </div>
+    </header>
+  );
+}
+
+function useUtcClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 15000);
+    return () => clearInterval(id);
+  }, []);
+  const time = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const date = `${days[now.getUTCDay()]}, ${now.getUTCDate()} ${months[now.getUTCMonth()]}`;
+  return { time, date };
+}
+
+function QrLogo({ small }) {
+  return (
+    <span className={`qr-logo ${small ? "qr-logo--small" : ""}`}>
+      <span className="qr-logo__word">QATAR</span>
+      <span className="qr-logo__oryx">
+        <svg viewBox="0 0 64 32" aria-hidden="true">
+          <path
+            d="M2 22 C 14 10, 30 4, 60 6 C 42 12, 34 16, 28 22 C 24 26, 16 27, 10 25 C 6 24, 4 23, 2 22 Z"
+            fill="currentColor"
+            opacity="0.9"
+          />
+          <path d="M60 6 L 48 10" stroke="currentColor" strokeWidth="1.5" fill="none" />
+        </svg>
+      </span>
+      <span className="qr-logo__air">AIRWAYS</span>
+    </span>
+  );
+}
+
+function PillTabs({ tabs, active, onSelect }) {
+  return (
+    <div className="qr-tabs" role="tablist">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          role="tab"
+          aria-selected={active === t.id}
+          className={`qr-tab ${active === t.id ? "qr-tab--active" : ""}`}
+          onClick={() => onSelect(t.id)}
+        >
+          {t.icon && <t.icon size={15} />}
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Dash({ v, unit }) {
+  if (v == null || v === "") return <span className="qr-dash">—</span>;
+  return (
+    <span className="mono qr-value">
+      {v}
+      {unit && <span className="qr-unit">{unit}</span>}
+    </span>
+  );
+}
+
+/* ─── M3: SimConnect live layer ────────────────────────────────────── */
+
+/**
+ * SIM CONNECTED / DISCONNECTED chip for the top header. Purely driven by
+ * mapSimStatus — no own state, no invented "connected" case.
+ */
+function SimChip({ status }) {
+  const s = status || { status: "unknown", label: "SIM —", sub: null };
+  const Icon = s.status === "connected" ? RefreshCw : s.status === "disconnected" ? WifiOff : AlertTriangle;
+  return (
+    <span className={`qr-simchip qr-simchip--${s.status}`} title={s.sub || s.label}>
+      <i className="qr-simchip__dot" />
+      <Icon size={12} />
+      {s.label}
+      {s.sub && <span className="qr-simchip__sub">{s.sub}</span>}
+    </span>
+  );
+}
+
+/**
+ * Live FL / MACH / GS / WIND / FUEL / FLOW strip (Flightplan screen).
+ *
+ * Every cell renders "—" when SimConnect did not supply the value — there is
+ * no static fallback anywhere (AGENTS.md: live optimization must source fuel
+ * flow from SimConnect, never a modelled value).
+ */
+function LiveStrip({ live, timing, connected }) {
+  if (!connected) {
+    return (
+      <div className="qr-notice qr-notice--center">
+        Live data unavailable — SimConnect is not connected. Flightplan values are plan-only (SimBrief OFP).
+      </div>
+    );
+  }
+  const dev = live?.deviation || null;
+  return (
+    <div className="qr-livestrip">
+      <div className="qr-livecell">
+        <span className="qr-label">FL</span>
+        <Dash v={live?.flightLevel != null ? `FL${live.flightLevel}` : null} />
+        <span className="qr-livecell__sub">
+          {live?.altDeviation != null ? `${live.altDeviation >= 0 ? "+" : ""}${live.altDeviation} vs plan` : "vs plan —"}
+        </span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">MACH</span>
+        <Dash v={live?.mach != null ? live.mach.toFixed(3) : null} />
+        <span className="qr-livecell__sub">
+          {live?.groundSpeedKt != null ? `GS ${Math.round(live.groundSpeedKt)} kt` : "GS —"}
+        </span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">WIND</span>
+        <Dash
+          v={
+            live?.windComponentKt != null
+              ? `${live.windComponentKt >= 0 ? "TW" : "HW"} ${Math.abs(Math.round(live.windComponentKt))}`
+              : null
+          }
+          unit=" kt"
+        />
+        <span className="qr-livecell__sub">along track</span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">FUEL</span>
+        <Dash v={live?.fuelRemainingKg != null ? (live.fuelRemainingKg / 1000).toFixed(1) : null} unit=" t" />
+        <span className="qr-livecell__sub">on board</span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">FUEL FLOW</span>
+        <Dash v={live?.fuelFlowKgH != null ? Math.round(live.fuelFlowKgH) : null} unit=" kg/h" />
+        <span className="qr-livecell__sub">
+          {live?.fuelFlowKgH == null
+            ? "live data unavailable"
+            : live?.fuelFlowSource
+              ? String(live.fuelFlowSource).toUpperCase()
+              : "SIMCONNECT"}
+        </span>
+      </div>
+      <div className="qr-livecell qr-livecell--dev">
+        <span className="qr-label">ETE / FUEL Δ</span>
+        <span className="mono qr-value">
+          {timing?.ete || "—"}
+          {timing?.deltaMin != null && (
+            <span className={`qr-unit ${timing.deltaMin > 0 ? "qr-value--neg" : "qr-value--pos"}`}>
+              {" "}
+              {timing.deltaMin >= 0 ? "+" : ""}
+              {timing.deltaMin} min
+            </span>
+          )}
+        </span>
+        <span className="qr-livecell__sub">
+          {dev != null ? (
+            <span className={dev.kg >= 0 ? "qr-value--pos" : "qr-value--neg"}>
+              {dev.kg >= 0 ? "+" : ""}
+              {dev.t} t vs planned LDG
+            </span>
+          ) : (
+            "fuel deviation —"
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Optimizer recommendation card with the Apply-into-the-sim button.
+ *
+ * `rec` comes from mapApplyTargets(/api/optimize response). The button is
+ * disabled whenever the recommendation is not applyable or the sim is not
+ * connected — no dead buttons, and the backend's error text is shown verbatim.
+ */
+function RecommendPanel({ rec, connected, onApply, applyState, busy, error }) {
+  if (!connected) return null;
+  const applyable = Boolean(rec?.applyable);
+  return (
+    <div className="qr-recommend">
+      <div className="qr-recommend__head">
+        <Gauge size={15} />
+        <h3>OPTIMIZER RECOMMENDATION</h3>
+      </div>
+      {busy && <div className="qr-recommend__summary">Optimizing against live sim state…</div>}
+      {error && <div className="qr-recommend__status qr-recommend__status--err">{error}</div>}
+      {!busy && !error && !rec && (
+        <div className="qr-recommend__summary">
+          No recommendation yet — live telemetry is still warming up.
+        </div>
+      )}
+      {rec?.line && <div className="qr-recommend__line mono">{rec.line}</div>}
+      {rec?.summary && <div className="qr-recommend__summary">{rec.summary}</div>}
+      {rec?.recommendation && <div className="qr-recommend__summary">{rec.recommendation}</div>}
+      {rec?.aircraftConfig && (
+        <div className="qr-recommend__summary mono">
+          PERF {String(rec.aircraftConfig).toUpperCase()}
+          {rec.aircraftConfigSource ? ` · from ${rec.aircraftConfigSource}` : ""}
+        </div>
+      )}
+      {rec && (
+        <div className="qr-recommend__actions">
+          <button
+            className="qr-goldbtn"
+            disabled={!applyable || applyState?.busy}
+            onClick={() =>
+              onApply({
+                flightLevel: rec.targets?.flightLevel ?? null,
+                mach: rec.targets?.mach ?? null,
+                reason: rec.line || null,
+              })
+            }
+          >
+            {applyState?.busy ? "Applying…" : "Apply to Sim"}
+          </button>
+          {!applyable && (
+            <span className="qr-recommend__status">
+              Current profile is already optimal (or the best strategy is not allowed).
+            </span>
+          )}
+          {applyState && !applyState.busy && applyState.applied && (
+            <span className="qr-recommend__status qr-recommend__status--ok">
+              <CheckCircle2 size={13} /> Target set in the sim.
+            </span>
+          )}
+          {applyState && !applyState.busy && applyState.error && (
+            <span className="qr-recommend__status qr-recommend__status--err">
+              <XCircle size={13} /> {applyState.error}
+            </span>
+          )}
+        </div>
+      )}
+      {Array.isArray(rec?.warnings) && rec.warnings.length > 0 && (
+        <div className="qr-recommend__summary">{rec.warnings.join(" · ")}</div>
+      )}
+    </div>
+  );
+}
+
+/* ─── shell ────────────────────────────────────────────────────────── */
+
+const SMARTOPS_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "times", label: "Times" },
+  { id: "flightplan", label: "Flightplan" },
+  { id: "route", label: "Route" },
+  { id: "runways", label: "Runways" },
+  { id: "weather", label: "Weather" },
+  { id: "briefing", label: "Briefing" },
+  { id: "edto", label: "EDTO" },
+];
+
+export default function QatarShell({ onOpenOptimizer }) {
+  const { selectedProvider, apiBase } = useCrewPlatform();
+  const utc = useUtcClock();
+
+  // M2b: VA crew login gate — persisted session (crewAuth) from a previous
+  // app start, or a fresh login screen when absent.
+  const [crewSession, setCrewSession] = useState(() => loadSession());
+
+  const [screen, setScreen] = useState("home"); // home | crewdesk | profile | smartops
+  const [tab, setTab] = useState("flightplan");
+  const [flight, setFlight] = useState(null);
+  const [ofp, setOfp] = useState(null);
+  const [ofpError, setOfpError] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [boarding, setBoarding] = useState(false);
+  const [lastPlan, setLastPlan] = useState(null);
+  const ofpFlightRef = useRef(null);
+
+  const { checkIn, checkedIn, record: checkinRecord } = useFlightCheckins();
+
+  function handleLogout() {
+    clearSession();
+    setCrewSession(null);
+    setScreen("home");
+    setFlight(null);
+  }
+
+  // The last saved SimBrief plan is loaded at app start (spec 4/4): the
+  // first flight the crew opens then shows that plan instead of re-fetching.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${apiBase}/api/simbrief/flightplans`);
+        if (!resp.ok) return;
+        const body = await resp.json();
+        const key = body?.last_plan;
+        if (!key) return;
+        const planResp = await fetch(`${apiBase}/api/simbrief/flightplans/${encodeURIComponent(key)}`);
+        if (!planResp.ok) return;
+        const plan = await planResp.json();
+        if (!cancelled && plan?.flightplan) setLastPlan(plan.flightplan);
+      } catch {
+        /* no saved plans yet — live fetch remains the source */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase]);
+
+  // OFP load: the live SimBrief OFP is fetched once per session (it is a
+  // single "current flight" document). The first flight open triggers it;
+  // later picks reuse the cached plan.
+  async function loadLiveFlightplan() {
+    setOfpError(null);
+    try {
+      const resp = await fetch(`${apiBase}/api/simbrief/flightplan/live`);
+      if (resp.ok) {
+        setOfp({ ofp_data: await resp.json() });
+      } else if (resp.status === 503) {
+        // No SIMBRIEF_USER on the bridge — local demo mode keeps working.
+        setOfpError("SimBrief bridge not configured (SIMBRIEF_USER) — local flight demo only.");
+      } else {
+        setOfpError(`SimBrief OFP unavailable (HTTP ${resp.status}).`);
+      }
+    } catch (e) {
+      setOfpError(String(e.message || e));
+    }
+  }
+
+  async function doImportNewPlan() {
+    setImporting(true);
+    try {
+      const resp = await fetch(`${apiBase}/api/simbrief/flightplan/import`, { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      if (resp.ok) {
+        setOfp({ ofp_data: body.flightplan });
+        setOfpError(null);
+      } else {
+        setOfpError(body?.detail || `SimBrief import failed (HTTP ${resp.status}).`);
+      }
+    } catch (e) {
+      setOfpError(String(e.message || e));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // My Flights "LOAD FLIGHTS": re-fetch the current SimBrief OFP in the
+  // background and persist it to the plan store (same import endpoint as
+  // "Import New Plan"). On success the freshly saved plan becomes the
+  // last-plan used when the next flight is opened.
+  async function loadFlights() {
+    try {
+      const resp = await fetch(`${apiBase}/api/simbrief/flightplan/import`, { method: "POST" });
+      const body = await resp.json().catch(() => ({}));
+      if (resp.ok && body?.flightplan) {
+        setLastPlan(body.flightplan);
+        return { ok: true, key: body.key };
+      }
+      return { ok: false, detail: body?.detail || `SimBrief fetch failed (HTTP ${resp.status}).` };
+    } catch (e) {
+      return { ok: false, detail: String(e.message || e) };
+    }
+  }
+
+  // Opening a flight loads a plan: an explicitly passed saved plan wins,
+  // then the last saved plan (loaded at app start), then the live SimBrief
+  // OFP (a single "current flight" document, fetched once per session).
+  async function openFlight(f, savedPlan) {
+    setFlight(f);
+    setScreen("smartops");
+    setOfpError(null);
+    ofpFlightRef.current = f.flight_id;
+    if (savedPlan) {
+      setOfp({ ofp_data: savedPlan });
+      return;
+    }
+    if (!ofp) {
+      if (lastPlan) {
+        setOfp({ ofp_data: lastPlan });
+      } else {
+        await loadLiveFlightplan();
+      }
+    }
+  }
+
+  if (!selectedProvider) return null;
+
+  // M2b: every app start lands on the crew login until a session exists.
+  if (!crewSession) {
+    return (
+      <div className="qr-shell">
+        <CrewLogin session={crewSession} onLoggedIn={setCrewSession} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="qr-shell">
+      {screen === "home" && (
+        <HomeScreen
+          utc={utc}
+          session={crewSession}
+          onNavigate={setScreen}
+          onOpenFlight={(f, savedPlan) => openFlight(f, savedPlan)}
+          onBoarding={(f) => {
+            setFlight(f);
+            setBoarding(true);
+          }}
+          checkIn={checkIn}
+          checkedIn={checkedIn}
+          checkinRecord={checkinRecord}
+          loadFlights={loadFlights}
+        />
+      )}
+
+      {screen === "crewdesk" && (
+        <CrewDeskScreen
+          utc={utc}
+          onNavigate={setScreen}
+          pilotName={crewSession.pilotId}
+        />
+      )}
+
+      {screen === "profile" && (
+        <ProfileScreen
+          utc={utc}
+          onBack={() => setScreen("home")}
+          onOpenOptimizer={onOpenOptimizer}
+          crewSession={crewSession}
+          onLogout={handleLogout}
+        />
+      )}
+
+      {screen === "smartops" && flight && (
+        <SmartOpsScreen
+          utc={utc}
+          flight={flight}
+          ofp={ofp}
+          ofpError={ofpError}
+          importing={importing}
+          tab={tab}
+          setTab={setTab}
+          onImportNewPlan={doImportNewPlan}
+          onBack={() => setScreen("home")}
+        />
+      )}
+
+      {boarding && (
+        <BoardingPanel
+          flightId={flight?.flight_id || "default"}
+          onClose={() => setBoarding(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── shared sidebar (Home / Crew Desk) ───────────────────────────── */
+
+function Sidebar({ active, onNavigate, pilotName }) {
+  return (
+    <aside className="qr-sidebar">
+      <button
+        className={`qr-side-item ${active === "home" ? "qr-side-item--active" : ""}`}
+        onClick={() => onNavigate("home")}
+      >
+        <Plane size={17} />
+        Home
+      </button>
+      <button
+        className={`qr-side-item ${active === "crewdesk" ? "qr-side-item--active" : ""}`}
+        onClick={() => onNavigate("crewdesk")}
+      >
+        <Inbox size={17} />
+        Crew Desk
+      </button>
+      <button
+        className={`qr-side-item ${active === "profile" ? "qr-side-item--active" : ""}`}
+        onClick={() => onNavigate("profile")}
+      >
+        <User size={17} />
+        Profile
+      </button>
+      {pilotName && <span className="qr-sidebar__pilot mono">{pilotName}</span>}
+      <div className="qr-sidebar__brand">
+        <QrLogo />
+      </div>
+    </aside>
+  );
+}
+
+/* ─── Company News (placeholder, M2b) ─────────────────────────────── */
+
+// Placeholder announcements for the Home screen — the live company feed
+// replaces this list later; the panel keeps its structure and look.
+const PLACEHOLDER_NEWS = [
+  {
+    id: "n-airac",
+    kind: "NOTICE",
+    badge_class: "badge--dispatch",
+    time: "06:40Z",
+    title: "AIRAC 2610 now effective",
+    preview:
+      "New cycle in NAV data from 26 OCT — check updated charts and route notes for your next flight.",
+  },
+  {
+    id: "n-duty",
+    kind: "OPS",
+    badge_class: "badge--notam",
+    time: "05:10Z",
+    title: "QR815 DOH → LHR duty extension",
+    preview:
+      "Duty time extended to 13:30Z for the 05 OCT rotation. Report time at DOH unchanged.",
+  },
+  {
+    id: "n-maint",
+    kind: "MAINT",
+    badge_class: "badge--ok",
+    time: "22:40Z",
+    title: "A6713 A-check completed",
+    preview:
+      "Back in service 04 OCT — Tech Log entry updated, no open defects on the aircraft.",
+  },
+];
+
+function CompanyNewsPanel() {
+  return (
+    <section className="qr-news">
+      <div className="qr-news__head">
+        <h3>COMPANY NEWS</h3>
+        <span className="qr-badge badge--dispatch">PLACEHOLDER</span>
+      </div>
+      {PLACEHOLDER_NEWS.map((n) => (
+        <div className="qr-news__item" key={n.id}>
+          <div className="qr-news__top">
+            <span className={`qr-badge ${n.badge_class}`}>{n.kind}</span>
+            <span className="qr-news__time mono">{n.time}</span>
+          </div>
+          <div className="qr-news__title">{n.title}</div>
+          <div className="qr-news__preview">{n.preview}</div>
+        </div>
+      ))}
+      <div className="qr-news__foot">
+        Placeholder items — the live company announcement feed lands in a later milestone.
+      </div>
+    </section>
+  );
+}
+
+/* ─── Crew Desk (qatar-02) ─────────────────────────────────────────── */
+
+function CrewDeskScreen({ utc, onNavigate, pilotName }) {
+  const { session, apiBase } = useCrewPlatform();
+  const [tab, setTab] = useState("inbox");
+  const [notifications, setNotifications] = useState([]);
+  const [selectedMsg, setSelectedMsg] = useState(null);
+
+  async function loadNotifications() {
+    if (!session?.session_id) return;
+    try {
+      const resp = await fetch(
+        `${apiBase}/api/crew/notifications?session_id=${session.session_id}`
+      );
+      if (resp.ok) setNotifications((await resp.json()).map(mapNotification));
+    } catch {
+      /* pass */
+    }
+  }
+
+  async function clearAll() {
+    if (!session?.session_id) return;
+    try {
+      await fetch(
+        `${apiBase}/api/crew/notifications/clear?session_id=${session.session_id}`,
+        { method: "POST" }
+      );
+      setNotifications([]);
+      setSelectedMsg(null);
+    } catch {
+      /* pass */
+    }
+  }
+
+  const messages = notifications.length ? notifications : defaultInboxMessages(null);
+
+  const TABS = [
+    { id: "inbox", label: "Inbox", icon: Mail },
+    { id: "trash", label: "Trash", icon: Trash2 },
+    { id: "preflight", label: "Preflight", icon: ClipboardCheck },
+    { id: "weather", label: "Weather", icon: Cloud },
+    { id: "techlog", label: "Tech Log", icon: Wrench },
+  ];
+
+  return (
+    <div className="qr-screen qr-crewdesk">
+      <TopHeader
+        utc={utc}
+        center={
+          <div className="qr-tabstrip">
+            <PillTabs tabs={TABS} active={tab} onSelect={setTab} />
+          </div>
+        }
+        right={<QrLogo small />}
+      />
+
+      <div className="qr-crewdesk__body">
+        <Sidebar active="crewdesk" onNavigate={onNavigate} pilotName={pilotName} />
+
+        <section className="qr-inbox">
+          <div className="qr-inbox__head">
+            <span className="qr-label">
+              INBOX — {messages.length} MESSAGES
+            </span>
+            <span style={{ display: "flex", gap: 4 }}>
+              <button className="qr-linkbtn" onClick={loadNotifications}>
+                REFRESH
+              </button>
+              <button className="qr-linkbtn" onClick={clearAll}>
+                MARK ALL READ
+              </button>
+            </span>
+          </div>
+          <div className="qr-inbox__list">
+            {tab === "techlog" ? (
+              <TechPanel embedded />
+            ) : tab === "trash" ? (
+              <div className="qr-empty">Trash is empty.</div>
+            ) : tab === "preflight" ? (
+              <PreflightBriefing onOpenTech={() => setTab("techlog")} />
+            ) : tab === "weather" ? (
+              <WeatherBriefing />
+            ) : (
+              messages.map((m) => (
+                <button
+                  key={m.id}
+                  className={`qr-msg ${selectedMsg?.id === m.id ? "qr-msg--selected" : ""}`}
+                  onClick={() => setSelectedMsg(m)}
+                >
+                  <div className="qr-msg__top">
+                    <span className={`qr-badge ${m.badge_class}`}>{m.kind}</span>
+                    <span className="qr-msg__time mono">
+                      {m.timestamp ? new Date(m.timestamp * 1000).toISOString().slice(11, 16) + "z" : "—"}
+                    </span>
+                  </div>
+                  <div className="qr-msg__title">{m.title}</div>
+                  <div className="qr-msg__sender">{m.sender}</div>
+                  <div className="qr-msg__preview">{m.preview}</div>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="qr-detail">
+          {selectedMsg ? (
+            <>
+              <span className={`qr-badge ${selectedMsg.badge_class}`}>{selectedMsg.kind}</span>
+              <h2>{selectedMsg.title}</h2>
+              <div className="qr-detail__meta">{selectedMsg.sender}</div>
+              <p>{selectedMsg.body}</p>
+            </>
+          ) : (
+            <div className="qr-detail__empty">
+              <Mail size={44} />
+              <h2>No message selected.</h2>
+              <span>Choose a message on the left.</span>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function PreflightBriefing({ onOpenTech }) {
+  return (
+    <div className="qr-briefing">
+      <h3>PREFLIGHT CHECKLIST</h3>
+      {[
+        ["eDesk check-in", "Validate flight in My Flights"],
+        ["OFP loaded", "SimBrief OFP linked (Flightplan tab)"],
+        ["Aircraft tech status", "TECH area — Tech Log"],
+        ["NOTAMs reviewed", "Inbox — NOTAM briefing"],
+        ["Weather reviewed", "Inbox — WX briefing"],
+      ].map(([title, sub]) => (
+        <div className="qr-brief-item" key={title}>
+          <CheckCircle2 size={15} className="qr-brief-ok" />
+          <div>
+            <div>{title}</div>
+            <div className="qr-brief-sub">{sub}</div>
+          </div>
+        </div>
+      ))}
+      <button className="qr-goldbtn" onClick={onOpenTech}>
+        <Wrench size={15} /> Open Tech Log
+      </button>
+    </div>
+  );
+}
+
+function WeatherBriefing() {
+  return (
+    <div className="qr-briefing">
+      <h3>WEATHER BRIEFING</h3>
+      <div className="qr-brief-item">
+        <CloudRain size={15} className="qr-brief-ok" />
+        <div>
+          <div>WX briefing available in Inbox</div>
+          <div className="qr-brief-sub">Enroute + destination MET/TAF per flight</div>
+        </div>
+      </div>
+      <div className="qr-notice">Live METAR/TAF feed is not connected yet — briefing content follows from the selected flight's OFP.</div>
+    </div>
+  );
+}
+
+/* ─── Home (M2b): Company News + My Flights + check-in ────────────── */
+
+function HomeScreen({
+  utc,
+  session,
+  onNavigate,
+  onOpenFlight,
+  onBoarding,
+  checkIn,
+  checkedIn,
+  loadFlights,
+}) {
+  const {
+    session: platformSession,
+    configReady,
+    loading,
+    error,
+    startAuth,
+    apiBase,
+  } = useCrewPlatform();
+  const [flights, setFlights] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [plansTick, setPlansTick] = useState(0);
+  const [manual, setManual] = useState({
+    flight_number: "QR815",
+    departure_icao: "DOH",
+    arrival_icao: "LHR",
+    aircraft_icao: "B777-300ER",
+    callsign: "QTR815",
+  });
+  const [result, setResult] = useState(null);
+  const [checkinError, setCheckinError] = useState(null);
+  const [loadBusy, setLoadBusy] = useState(false);
+  const [loadMsg, setLoadMsg] = useState(null);
+
+  // Roster: fetch when the screen mounts / platform session is up
+  // (subscription-style — setState only in the async callback).
+  useEffect(() => {
+    if (!platformSession?.authenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(
+          `${apiBase}/api/crew/session/${platformSession.session_id}/flights`
+        );
+        if (!cancelled && resp.ok) setFlights(await resp.json());
+      } catch {
+        /* pass */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [platformSession?.authenticated, platformSession?.session_id, apiBase]);
+
+  // Saved SimBrief flightplans: subscription-style fetch; REFRESH /
+  // delete bump the tick to re-run it.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${apiBase}/api/simbrief/flightplans`);
+        if (!cancelled && resp.ok) {
+          const body = await resp.json();
+          setPlans(Array.isArray(body?.plans) ? body.plans : []);
+        }
+      } catch {
+        /* pass */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, plansTick]);
+
+  async function deletePlan(key) {
+    try {
+      await fetch(`${apiBase}/api/simbrief/flightplans/${encodeURIComponent(key)}`, {
+        method: "DELETE",
+      });
+      setPlansTick((t) => t + 1);
+    } catch {
+      /* pass */
+    }
+  }
+
+  // My Flights "LOAD FLIGHTS" — re-fetch the current SimBrief OFP in the
+  // background; the saved-plan list refreshes when the fetch lands.
+  async function doLoadFlights() {
+    if (loadBusy) return;
+    setLoadBusy(true);
+    setLoadMsg(null);
+    const r = await loadFlights?.();
+    setLoadBusy(false);
+    if (r?.ok) {
+      setPlansTick((t) => t + 1);
+      setLoadMsg({ ok: true, text: `Loaded ${r.key} from SimBrief.` });
+    } else {
+      setLoadMsg({ ok: false, text: r?.detail || "SimBrief fetch failed." });
+    }
+  }
+
+  // Transient LOAD FLIGHTS status clears itself.
+  useEffect(() => {
+    if (!loadMsg) return;
+    const id = setTimeout(() => setLoadMsg(null), 5000);
+    return () => clearTimeout(id);
+  }, [loadMsg]);
+
+  // M2b check-in: the local record is the source of truth for the
+  // "CHECKED IN" status (crewCheckin). With a platform session the M2
+  // backend validation still runs as a best-effort supplement.
+  async function doCheckin(f) {
+    setResult(null);
+    setCheckinError(null);
+    const local = checkIn(f.flight_id, session);
+    if (!local.ok) {
+      setCheckinError(local.error);
+      return;
+    }
+    if (!platformSession?.authenticated) return;
+    try {
+      const resp = await fetch(`${apiBase}/api/crew/checkin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: platformSession.session_id,
+          flight_id: f.flight_id,
+          flight_number: f.flight_number,
+          simbrief_departure: f.departure_icao,
+          simbrief_arrival: f.arrival_icao,
+          simbrief_callsign: f.callsign,
+          simbrief_aircraft: f.aircraft_icao,
+        }),
+      });
+      if (resp.ok) setResult(await resp.json());
+      else setCheckinError(await resp.text());
+    } catch (e) {
+      setCheckinError(String(e.message || e));
+    }
+  }
+
+  return (
+    <div className="qr-screen qr-home">
+      <TopHeader
+        utc={utc}
+        center={<span className="qr-topbar__title">HOME</span>}
+        right={<QrLogo small />}
+      />
+      <div className="qr-home__body">
+        <Sidebar active="home" onNavigate={onNavigate} pilotName={session?.pilotId} />
+
+        <div className="qr-home__col">
+          <CompanyNewsPanel />
+
+          <div className="qr-section-head">
+            <h3>MY FLIGHTS</h3>
+            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                className="qr-goldbtn qr-goldbtn--sm"
+                onClick={doLoadFlights}
+                disabled={loadBusy}
+                title="Re-fetch flightplans from SimBrief (background)"
+              >
+                {loadBusy ? (
+                  <RefreshCw size={12} className="qr-spin" />
+                ) : (
+                  <Download size={12} />
+                )}
+                {loadBusy ? "LOADING…" : "LOAD FLIGHTS"}
+              </button>
+              <span className="qr-label">
+                CHECK-IN BEFORE YOU OPEN THE FLIGHT
+              </span>
+            </span>
+          </div>
+
+          {loadMsg && (
+            <div className={loadMsg.ok ? "qr-notice" : "qr-error"}>
+              {loadMsg.ok && <CheckCircle2 size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />}
+              {loadMsg.text}
+            </div>
+          )}
+
+          {!platformSession?.authenticated && (
+            <div className="qr-notice">
+              {configReady?.ready ? (
+                <button className="qr-goldbtn" onClick={startAuth} disabled={loading}>
+                  <LogIn size={15} /> {loading ? "Connecting…" : "Sign in with vAMSYS"}
+                </button>
+              ) : (
+                "Roster syncs through the crew session — or enter a flight manually below."
+              )}
+              {error && <div className="qr-error">{error}</div>}
+            </div>
+          )}
+
+          {platformSession?.authenticated && (
+            <>
+              <div className="qr-section-head qr-section-head--compact">
+                <h4>FLIGHT ROSTER</h4>
+                <button
+                  className="qr-linkbtn"
+                  onClick={() =>
+                    fetch(
+                      `${apiBase}/api/crew/session/${platformSession.session_id}/flights`
+                    )
+                      .then((r) => (r.ok ? r.json() : null))
+                      .then((d) => d && setFlights(d))
+                      .catch(() => {})
+                  }
+                >
+                  REFRESH
+                </button>
+              </div>
+              {flights.length === 0 && (
+                <div className="qr-notice">
+                  No flights in the roster{platformSession.local ? " (local session)" : ""} — use manual entry below.
+                </div>
+              )}
+              {flights.map((f) => (
+                <button
+                  key={f.flight_id}
+                  className="qr-flight-row"
+                  onClick={() => onOpenFlight(f)}
+                >
+                  <span className="mono qr-flight-row__no">
+                    {f.flight_number || f.callsign || "—"}
+                  </span>
+                  <span className="qr-flight-row__route mono">
+                    {f.departure_icao || "?"} <ArrowRight size={12} /> {f.arrival_icao || "?"}
+                  </span>
+                  <span className="qr-flight-row__type">{f.aircraft_icao || "—"}</span>
+                  {checkedIn(f.flight_id) ? (
+                    <span className="qr-flight-row__status qr-flight-row__status--checked">
+                      <CheckCircle2 size={12} /> CHECKED IN
+                    </span>
+                  ) : (
+                    <span className="qr-flight-row__status">{f.status || "—"}</span>
+                  )}
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <span
+                      className={`qr-chip ${checkedIn(f.flight_id) ? "qr-chip--done" : "qr-chip--ghost"}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        doCheckin(f);
+                      }}
+                    >
+                      {checkedIn(f.flight_id) ? "✓ CHECKED IN" : "CHECK IN"}
+                    </span>
+                    <span
+                      className="qr-chip qr-chip--ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onBoarding(f);
+                      }}
+                    >
+                      BOARDING
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
+
+          <div className="qr-section-head qr-section-head--compact">
+            <h4>SAVED FLIGHTPLANS</h4>
+            <button className="qr-linkbtn" onClick={() => setPlansTick((t) => t + 1)}>
+              REFRESH
+            </button>
+          </div>
+          {plans.length === 0 ? (
+            <div className="qr-notice">
+              No saved SimBrief plans yet — press “LOAD FLIGHTS” above (or “Import New Plan” on the Flightplan screen) to pull your current OFP.
+            </div>
+          ) : (
+            plans.map((p) => {
+              const plan = p.flightplan || {};
+              const f = {
+                flight_id: p.key,
+                flight_number: plan.flight_number || null,
+                departure_icao: plan.origin || null,
+                arrival_icao: plan.destination || null,
+                aircraft_icao: plan.aircraft_icao || plan.aircraft || null,
+                callsign: plan.callsign || null,
+                status: "SAVED",
+              };
+              return (
+                <button
+                  key={p.key}
+                  className="qr-flight-row"
+                  onClick={() => onOpenFlight(f, plan)}
+                >
+                  <span className="mono qr-flight-row__no">{plan.flight_number || "—"}</span>
+                  <span className="qr-flight-row__route mono">
+                    {plan.origin || "?"} <ArrowRight size={12} /> {plan.destination || "?"}
+                  </span>
+                  <span className="qr-flight-row__type">
+                    {plan.aircraft_icao || plan.aircraft || "—"}
+                  </span>
+                  {checkedIn(p.key) ? (
+                    <span className="qr-flight-row__status qr-flight-row__status--checked">
+                      <CheckCircle2 size={12} /> CHECKED IN
+                    </span>
+                  ) : (
+                    <span className="qr-flight-row__status">SAVED</span>
+                  )}
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <span
+                      className={`qr-chip ${checkedIn(p.key) ? "qr-chip--done" : "qr-chip--ghost"}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        doCheckin(f);
+                      }}
+                    >
+                      {checkedIn(p.key) ? "✓ CHECKED IN" : "CHECK IN"}
+                    </span>
+                    <span
+                      className="qr-chip qr-chip--ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deletePlan(p.key);
+                      }}
+                    >
+                      <Trash2 size={12} />
+                    </span>
+                  </span>
+                </button>
+              );
+            })
+          )}
+
+          <div className="qr-section-head qr-section-head--compact">
+            <h4>MANUAL FLIGHT ENTRY</h4>
+          </div>
+          <div className="qr-manual-grid">
+            <label><span>Flight No.</span>
+              <input value={manual.flight_number} onChange={(e) => setManual({ ...manual, flight_number: e.target.value })} placeholder="QR815" />
+            </label>
+            <label><span>Dep ICAO</span>
+              <input value={manual.departure_icao} onChange={(e) => setManual({ ...manual, departure_icao: e.target.value.toUpperCase() })} placeholder="DOH" maxLength={4} />
+            </label>
+            <label><span>Arr ICAO</span>
+              <input value={manual.arrival_icao} onChange={(e) => setManual({ ...manual, arrival_icao: e.target.value.toUpperCase() })} placeholder="LHR" maxLength={4} />
+            </label>
+            <label><span>Aircraft</span>
+              <input value={manual.aircraft_icao} onChange={(e) => setManual({ ...manual, aircraft_icao: e.target.value.toUpperCase() })} placeholder="B777-300ER" />
+            </label>
+            <label><span>Callsign</span>
+              <input value={manual.callsign} onChange={(e) => setManual({ ...manual, callsign: e.target.value.toUpperCase() })} placeholder="QTR815" />
+            </label>
+            <div className="qr-manual-grid__action">
+              <button
+                className="qr-goldbtn"
+                disabled={!manual.departure_icao || !manual.arrival_icao}
+                onClick={() => {
+                  const f = {
+                    flight_id:
+                      manual.departure_icao + "-" + manual.arrival_icao + "-" +
+                      (manual.callsign || manual.flight_number || "LOCAL"),
+                    ...manual,
+                  };
+                  onOpenFlight(f);
+                }}
+              >
+                <PlaneTakeoff size={15} /> OPEN FLIGHT
+              </button>
+            </div>
+          </div>
+
+          {result && (
+            <div className={`qr-result ${result.valid ? "qr-result--ok" : "qr-result--fail"}`}>
+              <div className="qr-result__title">
+                {result.valid ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                {result.valid ? "CHECK-IN VALID" : "CHECK-IN FAILED"}
+              </div>
+              {result.errors?.map((e, i) => (<div key={i}>• {e}</div>))}
+              {result.warnings?.map((w, i) => (<div key={i} className="qr-result__warn">• {w}</div>))}
+            </div>
+          )}
+          {checkinError && <div className="qr-error">{checkinError}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Profile (Setup functionality, Qatar look) ────────────────────── */
+
+function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) {
+  const { session, selectedProvider, configReady, logout } = useCrewPlatform();
+  return (
+    <div className="qr-screen">
+      <TopHeader
+        utc={utc}
+        center={<span className="qr-topbar__title">PROFILE</span>}
+        right={<QrLogo small />}
+      />
+      <div className="qr-screen__body">
+        <div className="qr-hero-card">
+          <button className="qr-linkbtn" onClick={onBack}>← HOME</button>
+          <h3>PILOT PROFILE</h3>
+          <div className="qr-idgrid">
+            <div><span className="qr-label">PILOT ID</span><strong className="mono">{crewSession?.pilotId || "—"}</strong></div>
+            <div><span className="qr-label">NAME</span><strong>{session?.display_name || "Local Pilot"}</strong></div>
+            <div><span className="qr-label">CREW ID</span><strong className="mono">{session?.crew_id || "—"}</strong></div>
+            <div><span className="qr-label">RANK</span><strong>{session?.rank || "—"}</strong></div>
+            <div><span className="qr-label">AIRLINE</span><strong>{selectedProvider?.display_name || "—"}</strong></div>
+          </div>
+
+          <h3>CONFIGURATION READINESS</h3>
+          <div className="qr-configlist">
+            {[
+              ["vAMSYS Client ID", configReady?.vamsys_client_id_set],
+              ["vAMSYS Redirect URI", configReady?.vamsys_redirect_uri_set],
+              ["Redirect URI HTTPS (v3)", configReady?.vamsys_redirect_uri_https],
+              ["Session Secret", configReady?.session_secret_set],
+            ].map(([label, set]) => (
+              <div key={label} className="qr-configrow">
+                <span className={set ? "qr-cfg-ok" : "qr-cfg-miss"}>{set ? "✓" : "✗"}</span>
+                <span>{label}</span>
+                <span className="qr-configrow__note">{set ? "Set (value hidden)" : "Not configured"}</span>
+              </div>
+            ))}
+          </div>
+          {configReady && (
+            <div className={`qr-readiness ${configReady.ready ? "qr-readiness--ok" : "qr-readiness--warn"}`}>
+              {configReady.ready ? "✓ All configured" : "⚠ Missing configuration"}
+            </div>
+          )}
+
+          <div className="qr-profile__actions">
+            <button className="qr-goldbtn" onClick={() => onOpenOptimizer?.(null)}>
+              <Gauge size={15} /> Open CI Optimizer
+            </button>
+            {session?.authenticated && (
+              <button className="qr-ghostbtn" onClick={logout}>
+                <LogOut size={14} /> SIGN OUT
+              </button>
+            )}
+            {crewSession && (
+              <button className="qr-ghostbtn" onClick={onLogout}>
+                <LogOut size={14} /> LOG OUT
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
+
+function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
+  const { apiBase } = useCrewPlatform();
+  const ofpData = ofp?.ofp_data || null;
+  const hero = useMemo(() => mapOfpHero(flight, ofpData), [flight, ofpData]);
+  const simPlan = useMemo(
+    () => (ofpData ? null : modelSimPlan(flight)),
+    [ofpData, flight]
+  );
+  const waypoints = useMemo(() => {
+    if (ofpData) return { derived: false, rows: mapOfpWaypoints(ofpData) };
+    return simPlan ? { derived: true, rows: simPlan.rows } : null;
+  }, [ofpData, simPlan]);
+  const fuel = (ofpData ? hero.fuel : simPlan?.fuel) || {};
+  const weights = (ofpData ? hero.weights : simPlan?.weights) || {};
+  const distanceNm =
+    (ofpData?.route_distance_nm ??
+      (ofpData?.general?.route_distance ? Number(String(ofpData.general.route_distance).replace(/[,\\s]/g, "")) : null)) ??
+    simPlan?.distance_nm ??
+    null;
+
+  const dateLabel = useMemo(() => {
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const d = new Date();
+    return `${days[d.getUTCDay()]}, ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  }, []);
+
+  /* ── M3: live SimConnect telemetry + optimizer apply ───────────── */
+
+  // Destination coordinates let the backend derive live remaining distance
+  // when no SimBrief route profile is synced.
+  const destPos = useMemo(() => (hero.arrival ? icaoLatlon(hero.arrival) : null), [hero.arrival]);
+  const { telemetry, reachable, apply, applyState } = useSimTelemetry({
+    apiBase,
+    destinationLat: destPos?.[0],
+    destinationLon: destPos?.[1],
+  });
+
+  const simStatus = useMemo(() => mapSimStatus(telemetry, { reachable }), [telemetry, reachable]);
+  const simConnected = simStatus.status === "connected";
+
+  const live = useMemo(
+    () => mapLiveStrip(telemetry, { fuelLandingT: fuel.landing, cruiseAlt: null }),
+    [telemetry, fuel.landing]
+  );
+  const timing = useMemo(
+    () => mapLiveTiming(telemetry, { plannedBlockMin: hero.block_min, sta: hero.eet }),
+    [telemetry, hero.block_min, hero.eet]
+  );
+
+  // Optimizer re-run against live state. Fires only when the sim is
+  // connected — never against invented values (AGENTS.md).
+  const [optimizeResult, setOptimizeResult] = useState(null);
+  const [optimizeBusy, setOptimizeBusy] = useState(false);
+  const [optimizeError, setOptimizeError] = useState(null);
+  const lastOptimizeKeyRef = useRef(null);
+
+  const runOptimize = useCallback(async () => {
+    const body = buildLiveOptimizeRequest(telemetry, { flight, ofpData });
+    if (!body) {
+      // Live state is incomplete (no altitude/weight/Mach/distance yet).
+      // Clear instead of leaving a stale recommendation or error on screen;
+      // the panel then shows its "telemetry warming up" line.
+      setOptimizeResult(null);
+      setOptimizeError(null);
+      return;
+    }
+    setOptimizeBusy(true);
+    setOptimizeError(null);
+    try {
+      const resp = await fetch(`${apiBase}/api/optimize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const detail = await resp.json().catch(() => ({}));
+        setOptimizeError(formatApiError(detail, resp.status));
+        setOptimizeResult(null);
+        return;
+      }
+      setOptimizeResult(await resp.json());
+    } catch (e) {
+      setOptimizeError(String(e?.message || e));
+      setOptimizeResult(null);
+    } finally {
+      setOptimizeBusy(false);
+    }
+  }, [apiBase, telemetry, flight, ofpData]);
+
+  // Re-optimize when the live state changed materially (FL / Mach / weight /
+  // remaining distance), not on every 5 s poll.
+  useEffect(() => {
+    if (!simConnected) {
+      lastOptimizeKeyRef.current = null;
+      return;
+    }
+    const p = telemetry?.flightStatePatch || {};
+    const key = [
+      p.altitudeFt != null ? Math.round(p.altitudeFt / 500) : "x",
+      p.mach != null ? p.mach.toFixed(2) : "x",
+      p.grossWeightKg != null ? Math.round(p.grossWeightKg / 2000) : "x",
+      p.remainingDistanceNm != null ? Math.round(p.remainingDistanceNm / 50) : "x",
+    ].join("|");
+    if (key === lastOptimizeKeyRef.current) return;
+    lastOptimizeKeyRef.current = key;
+    runOptimize();
+  }, [simConnected, telemetry, runOptimize]);
+
+  const recommendation = useMemo(
+    () => (optimizeResult ? mapApplyTargets(optimizeResult, { liveFlightLevel: live.flightLevel }) : null),
+    [optimizeResult, live.flightLevel]
+  );
+
+  return (
+    <div className="qr-screen qr-smartops">
+      <TopHeader
+        utc={utc}
+        center={
+          <div className="qr-tabstrip qr-tabstrip--pillbar">
+            <PillTabs tabs={SMARTOPS_TABS} active={tab} onSelect={setTab} />
+          </div>
+        }
+        right={
+          <>
+            <SimChip status={simStatus} />
+            <Sun size={16} className="qr-topbar__icon" />
+            <RefreshCw size={16} className="qr-topbar__icon" />
+            <MoreVertical size={16} className="qr-topbar__icon" />
+          </>
+        }
+      />
+      <div className="qr-smartops__brand">
+        <QrLogo />
+        {onBack && (
+          <button className="qr-linkbtn qr-smartops__back" onClick={onBack}>
+            ← HOME
+          </button>
+        )}
+      </div>
+
+      {(tab === "flightplan" || tab === "overview" || tab === "times" || tab === "briefing") && (
+        <>
+          <div className="qr-hero">
+            <div className="qr-hero__left">
+              <div className="qr-hero__no mono">{hero.flight_number || "—"}</div>
+              <div className="qr-hero__route mono">
+                {hero.departure || "—"} <span className="qr-hero__arrow">→</span> {hero.arrival || "—"}
+              </div>
+              <div className="qr-hero__sub">
+                {hero.airline} &nbsp;|&nbsp; {hero.aircraft_type || flight?.aircraft_icao || "—"}
+              </div>
+            </div>
+            <div className="qr-hero__right">
+              <div>{dateLabel}</div>
+              <div>
+                {hero.departure_name || hero.departure || "—"} → {hero.arrival_name || hero.arrival || "—"}
+              </div>
+              <div className="mono">
+                STD {hero.std || "—"} &nbsp;|&nbsp; STA {hero.sta || "—"} &nbsp;|&nbsp; EET {hero.eet || "—"}
+              </div>
+            </div>
+          </div>
+
+          <div className="qr-ofp-banner">
+            <div className="qr-ofp-banner__text">
+              <strong>
+                {ofpData ? "Operational flightplan (OFP) loaded from SimBrief." : simPlan ? "Sim-planned flight (SIM PLANNED) — no OFP linked yet." : "No flightplan data available."}
+              </strong>
+              <span className="qr-ofp-banner__sub">
+                {ofpData
+                  ? `Generated ${ofpData.generated_at ? new Date(ofpData.generated_at).toISOString().slice(5, 16).replace("T", " ") + " Z" : ofp?.created_at ? new Date(ofp.created_at).toISOString().slice(11, 16) + " Z" : "—"} · NAV data AIRAC ${ofpData.airac || "—"}`
+                  : simPlan
+                    ? "Derived from entered ICAOs + a light fuel model — for display only, never presented as real OFP values."
+                    : "Select a flight with a linked SimBrief OFP, or import one below."}
+              </span>
+              {ofpError && <span className="qr-ofp-banner__err">{ofpError}</span>}
+            </div>
+            <div className="qr-ofp-banner__actions">
+              <button className="qr-goldbtn" onClick={onImportNewPlan} disabled={importing}>
+                {importing ? "Importing…" : "Import New Plan"}
+              </button>
+              {ofpData?.pdf_url && (
+                <a className="qr-linkbtn" href={ofpData.pdf_url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink size={13} /> OFP PDF
+                </a>
+              )}
+            </div>
+          </div>
+
+          <LiveStrip live={live} timing={timing} connected={simConnected} />
+
+          <RecommendPanel
+            rec={recommendation}
+            connected={simConnected}
+            onApply={apply}
+            applyState={applyState}
+            busy={optimizeBusy}
+            error={optimizeError}
+          />
+
+          <div className="qr-fuelrow">
+            <div className="qr-fuelcell">
+              <span className="qr-label">DEVIATION</span>
+              <Dash
+                v={
+                  live.deviation
+                    ? `${live.deviation.kg >= 0 ? "+" : ""}${live.deviation.t} t`
+                    : fuel.deviation
+                }
+              />
+              <span className="qr-fuelcell__sub">
+                {live.deviation ? "live vs planned LDG" : simConnected ? "live data unavailable" : "No active check"}
+              </span>
+            </div>
+            <div className="qr-fuelcell">
+              <span className="qr-label">BLOCK FUEL</span>
+              <Dash v={fuel.block} unit=" t" />
+              <span className="qr-fuelcell__sub">TAXI {fuel.taxi != null ? `${fuel.taxi} t` : "—"}</span>
+            </div>
+            <div className="qr-fuelcell">
+              <span className="qr-label">TAKEOFF FUEL</span>
+              <Dash v={fuel.takeoff} unit=" t" />
+            </div>
+            <div className="qr-fuelcell">
+              <span className="qr-label">TRIP FUEL</span>
+              <Dash v={fuel.trip} unit=" t" />
+            </div>
+            <div className="qr-fuelcell">
+              <span className="qr-label">PLANNED LDG FUEL</span>
+              <Dash v={fuel.landing} unit=" t" />
+            </div>
+            <div className="qr-fuelcell">
+              <span className="qr-label">EXTRA FUEL</span>
+              <Dash v={fuel.extra} />
+            </div>
+            <div className="qr-fuelcell">
+              <span className="qr-label">RES + ALTN</span>
+              <Dash v={fuel.reserve_alt} unit=" t" />
+            </div>
+            <div className="qr-fuelcell qr-fuelcell--toggle">
+              <div className="qr-toggle">
+                <span className="qr-toggle__btn qr-toggle__btn--active">t</span>
+                <span className="qr-toggle__btn">kg</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="qr-weights mono">
+            <span>TOW {weights.tow != null ? `${weights.tow} t` : "—"}</span>
+            <span>ZFW {weights.zfw != null ? `${weights.zfw} t` : "—"}</span>
+            <span>LDW {weights.ldw != null ? `${weights.ldw} t` : "—"}</span>
+            <span>PAX {hero.pax != null ? hero.pax : "—"}</span>
+            {distanceNm != null && <span>DIST {distanceNm} NM</span>}
+          </div>
+
+          {waypoints?.rows ? (
+            <table className="qr-wpt-table">
+              <thead>
+                <tr>
+                  <th>WPT</th><th>AWY</th><th>FIR</th><th>LEG NM</th><th>REM NM</th>
+                  <th>ETE</th><th>LEG ETE</th><th>ALT</th><th>WIND</th><th>BURN</th>
+                  <th>PLN FUEL</th><th>ATO</th><th>ACT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {waypoints.rows.map((w, i) => (
+                  <tr key={i} className={i === 0 || w.ident === hero.arrival ? "qr-wpt-table--ap" : ""}>
+                    <td>
+                      <span className="mono qr-wpt__ident">{w.ident || `WP${i - 1}`}</span>
+                      {w.name && <span className="qr-wpt__name">{w.name}</span>}
+                    </td>
+                    <td className="mono">{w.airway || "—"}</td>
+                    <td className="mono">{w.fir || "—"}</td>
+                    <td className="mono">{w.legNm != null ? w.legNm : "—"}</td>
+                    <td className="mono">{w.remNm != null ? w.remNm : "—"}</td>
+                    <td className="mono">{w.ete || "—"}</td>
+                    <td className="mono">{w.legEte || "—"}</td>
+                    <td className="mono">{w.alt != null ? `FL${w.alt}` : "—"}</td>
+                    <td className="mono">{w.wind || "—"}</td>
+                    <td className="mono">{w.burn != null ? `${Math.round(w.burn / 100) / 10} t` : "—"}</td>
+                    <td className="mono qr-wpt__fuel">{w.planFuel != null ? `${w.planFuel} t` : "—"}</td>
+                    <td className="mono">—</td>
+                    <td className="mono">—</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="qr-notice">
+              No waypoint table available — enter a flight in My Flights with known departure/arrival ICAOs.
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "route" && (
+        <RouteScreen
+          flight={flight}
+          ofpData={ofpData}
+          distanceNm={distanceNm}
+          utc={utc}
+          telemetry={telemetry}
+          simConnected={simConnected}
+          live={live}
+          timing={timing}
+        />
+      )}
+
+      {tab === "edto" && (
+        <EdtoScreen flight={flight} ofpData={ofpData} />
+      )}
+
+      {(tab === "runways" || tab === "weather") && (
+        <div className="qr-notice qr-notice--center">
+          {tab === "runways" ? "Runway data follows from the OFP (arrival/departure runways) — not linked to this booking yet." : "Live weather overlay — WX TIME playback and ATC sectors are available on the Route tab."}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Route (qatar-04) ─────────────────────────────────────────────── */
+
+function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
+  const [wxPlaying, setWxPlaying] = useState(false);
+  const [wxOffset, setWxOffset] = useState(0);
+  const [altMode, setAltMode] = useState("AUTO");
+
+  // WX TIME playback: Play steps the forecast offset forward one hour per
+  // 1.5 s and wraps at +12 h; Pause freezes it. The offset is the hour the
+  // overlay represents (0 = NOW).
+  useEffect(() => {
+    if (!wxPlaying) return undefined;
+    const id = setInterval(() => {
+      setWxOffset((v) => (v >= 12 ? -12 : v + 1));
+    }, 1500);
+    return () => clearInterval(id);
+  }, [wxPlaying]);
+
+  const view = useMemo(() => {
+    const v = mapRouteView(flight, ofpData);
+    const pts = v.points
+      .map((p) => ({ ...p, xy: projectMap(p.lat, p.lon) }))
+      .filter((p) => p.xy);
+    // Fit: keep all points inside the 1000x560 box with margin.
+    const xs = pts.map((p) => p.xy.x);
+    const ys = pts.map((p) => p.xy.y);
+    const pad = 60;
+    const minx = Math.max(0, Math.min(...xs) - pad);
+    const maxx = Math.min(1000, Math.max(...xs) + pad);
+    const miny = Math.max(0, Math.min(...ys) - pad);
+    const maxy = Math.min(560, Math.max(...ys) + pad);
+    return { ...v, pts, vb: { minx, miny, w: Math.max(200, maxx - minx), h: Math.max(140, maxy - miny) } };
+  }, [flight, ofpData]);
+
+  const routeString = view.route_string ||
+    (view.hero.departure && view.hero.arrival
+      ? `${view.hero.departure} DCT ${view.hero.arrival}`
+      : null);
+
+  // M3 live overlay: aircraft position projected onto the planned route +
+  // the set of waypoints already passed. Everything comes from SimConnect;
+  // without a live position the overlay simply is not drawn.
+  const livePos = useMemo(() => {
+    const rs = telemetry?.rawSummary || {};
+    const lat = rs.latitude ?? null;
+    const lon = rs.longitude ?? null;
+    if (!simConnected || lat == null || lon == null) return null;
+    return { latitude: lat, longitude: lon };
+  }, [telemetry, simConnected]);
+
+  const routeLive = useMemo(
+    () => mapRouteLive(view.points, livePos),
+    [view.points, livePos]
+  );
+  const passedIdents = useMemo(
+    () => new Set(routeLive.passedIdents || []),
+    [routeLive.passedIdents]
+  );
+  const acXy = useMemo(
+    () => (livePos ? projectMap(livePos.latitude, livePos.longitude) : null),
+    [livePos]
+  );
+
+  return (
+    <div className="qr-route">
+      <div className="qr-route__map">
+        <svg viewBox={`${view.vb.minx} ${view.vb.miny} ${view.vb.w} ${view.vb.h}`} className="qr-route__svg" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <radialGradient id="qr-mapglow" cx="50%" cy="40%" r="80%">
+              <stop offset="0%" className="qr-svg-fill-a" />
+              <stop offset="100%" className="qr-svg-fill-b" />
+            </radialGradient>
+          </defs>
+          <rect x={view.vb.minx - 50} y={view.vb.miny - 50} width={view.vb.w + 100} height={view.vb.h + 100} fill="url(#qr-mapglow)" />
+          {/* graticule */}
+          {Array.from({ length: 13 }).map((_, i) => (
+            <line key={`g${i}`} x1={i * 100} y1={view.vb.miny - 50} x2={i * 100} y2={view.vb.miny + view.vb.h + 50} className="qr-svg-grat" strokeWidth="1" />
+          ))}
+          {Array.from({ length: 7 }).map((_, i) => (
+            <line key={`gh${i}`} x1={view.vb.minx - 50} y1={i * 100} x2={view.vb.minx + view.vb.w + 50} y2={i * 100} className="qr-svg-grat" strokeWidth="1" />
+          ))}
+
+          {/* route polyline */}
+          {view.pts.length > 1 && (
+            <polyline
+              points={view.pts.map((p) => `${p.xy.x},${p.xy.y}`).join(" ")}
+              fill="none"
+              className="qr-svg-route"
+              strokeWidth="2"
+            />
+          )}
+
+          {/* waypoints */}
+          {view.pts.map((p, i) => {
+            const isEnd = p.end === "dep" || p.end === "arr";
+            const passed = p.ident ? passedIdents.has(p.ident) : false;
+            return (
+              <g key={i}>
+                {isEnd ? (
+                  <>
+                    <circle cx={p.xy.x} cy={p.xy.y} r="6" fill="none" className="qr-svg-end" strokeWidth="2" />
+                    <circle cx={p.xy.x} cy={p.xy.y} r="2" className="qr-svg-end-fill" />
+                  </>
+                ) : (
+                  <>
+                    <circle cx={p.xy.x} cy={p.xy.y} r="2.5" className={`qr-svg-wp ${passed ? "qr-svg-wp--passed" : ""}`} />
+                    <path
+                      d={`M ${p.xy.x - 5} ${p.xy.y - 12} L ${p.xy.x + 5} ${p.xy.y - 12} L ${p.xy.x} ${p.xy.y - 4} Z`}
+                      className={`qr-svg-wp-tri ${passed ? "qr-svg-tri--passed" : ""}`}
+                    />
+                  </>
+                )}
+                {p.ident && (
+                  <text x={p.xy.x + 8} y={p.xy.y - 8} className={`qr-wp-label mono ${passed ? "qr-wp-label--passed" : ""}`}>
+                    {p.ident}
+                    {p.fl ? ` FL${p.fl}` : ""}
+                    {passed ? " ✓" : ""}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* live aircraft symbol (SimConnect position) */}
+          {acXy && (
+            <g>
+              <circle cx={acXy.x} cy={acXy.y} r="11" className="qr-svg-aircraft-halo" />
+              <path
+                d={`M ${acXy.x} ${acXy.y - 8} L ${acXy.x + 7} ${acXy.y + 7} L ${acXy.x} ${acXy.y + 3} L ${acXy.x - 7} ${acXy.y + 7} Z`}
+                className="qr-svg-aircraft"
+              />
+              <text x={acXy.x + 14} y={acXy.y + 4} className="qr-wp-label mono">
+                {live?.flightLevel != null ? `FL${live.flightLevel}` : "LIVE"}
+              </text>
+            </g>
+          )}
+        </svg>
+
+        <div className="qr-route__layers">
+          <span className="qr-chip">Layers</span>
+        </div>
+        <div className="qr-route__terrain">
+          <Mountain size={18} />
+          <div>
+            <strong>ROUTE TERRAIN</strong>
+            <span>Terrain data available</span>
+          </div>
+          <ChevronRight size={16} />
+        </div>
+
+        <div className="qr-route__wxpanel">
+          <div className="qr-route__wxhead">
+            <span className="qr-label">WX TIME</span>
+            <span className="mono">{utc.time} z • {wxOffset === 0 ? "NOW" : `${wxOffset > 0 ? "+" : ""}${wxOffset}h`}</span>
+          </div>
+          <div className="qr-route__wxrow">
+            <button className="qr-wxbtn" onClick={() => setWxPlaying((v) => !v)}>
+              {wxPlaying ? <Pause size={13} /> : <Play size={13} />}
+            </button>
+            <span className="qr-wxbtn qr-wxbtn--static">-12h</span>
+            <input
+              type="range"
+              min={-12}
+              max={12}
+              value={wxOffset}
+              onChange={(e) => setWxOffset(Number(e.target.value))}
+              className="qr-slider"
+            />
+            <span className="qr-wxbtn qr-wxbtn--static">+12h</span>
+            <span className={`qr-wxbtn ${wxOffset === 0 ? "qr-wxbtn--on" : ""}`} onClick={() => setWxOffset(0)}>NOW</span>
+          </div>
+          <div className="qr-route__atc">
+            <div className="qr-route__wxhead">
+              <span className="qr-label">ATC SECTORS</span>
+              <span className="qr-badge badge--vatsim">VATSIM</span>
+              <span className="mono">FL390</span>
+            </div>
+            <div className="qr-route__wxrow">
+              <input type="range" min={0} max={100} defaultValue={60} className="qr-slider" />
+              <span className="qr-label">DISPLAY ALTITUDE</span>
+              <button className={`qr-wxbtn ${altMode === "AUTO" ? "qr-wxbtn--on" : ""}`} onClick={() => setAltMode("AUTO")}>AUTO</button>
+              <button className={`qr-wxbtn ${altMode === "OFF" ? "qr-wxbtn--on" : ""}`} onClick={() => setAltMode("OFF")}>OFF FL320</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="qr-route__legend">
+          <span className="qr-label">PRECIP</span>
+          {[["#4a2230", "None"], ["#2563eb", "Light"], ["#e8a838", "Moderate"], ["#ef4444", "Heavy"], ["#c74a6a", "CB"]].map(([c, l]) => (
+            <span key={l} className="qr-legend__item"><i style={{ background: c }} />{l}</span>
+          ))}
+          <span className="qr-legend__sep" />
+          <span className="qr-label">SIGMET</span>
+          {[["#ef4444", "Thunderstorm"], ["#e8a838", "Turbulence"], ["#38bdf8", "Icing"], ["#c74a6a", "Volcanic Ash"], ["#4ade80", "TS (Tropical)"]].map(([c, l]) => (
+            <span key={l} className="qr-legend__item"><i style={{ background: c }} />{l}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="qr-route__meta">
+        <div className="mono">{routeString}</div>
+        <div>
+          {distanceNm != null ? `${distanceNm} NM` : "—"} &nbsp;•&nbsp; {view.block_label || "—"}
+          {simConnected ? (
+            routeLive.remainingNm != null ? (
+              <>
+                {" "}&nbsp;•&nbsp; LIVE REM {routeLive.remainingNm} NM
+                {timing?.ete ? ` • ETE ${timing.ete}` : ""}
+              </>
+            ) : (
+              <> &nbsp;•&nbsp; live position unavailable</>
+            )
+          ) : (
+            <> &nbsp;•&nbsp; SIM DISCONNECTED — plan only</>
+          )}
+        </div>
+        <div className="qr-route__alt">LHR / LGW</div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── EDTO + Risks (qatar-05) ──────────────────────────────────────── */
+
+function EdtoScreen({ flight, ofpData }) {
+  const view = useMemo(() => mapEdtoView(flight, ofpData), [flight, ofpData]);
+  return (
+    <div className="qr-edto">
+      <div className="qr-edto__map">
+        <svg viewBox="140 40 720 460" className="qr-route__svg" preserveAspectRatio="xMidYMid meet">
+          <rect x="90" y="10" width="820" height="540" className="qr-svg-bg" />
+          {(() => {
+            const dep = projectMap(25.2731, 51.1671);
+            const arr = projectMap(51.47, -0.4543);
+            return (
+              <>
+                <polyline
+                  points={[dep, ...Array.from({ length: 5 }, (_, i) => {
+                    const [la, lo] = [25.2731 + (51.47 - 25.2731) * ((i + 1) / 6), 51.1671 + (-0.4543 - 51.1671) * ((i + 1) / 6)];
+                    return projectMap(la, lo);
+                  }), arr].map((p) => `${p.x},${p.y}`).join(" ")}
+                  fill="none" className="qr-svg-route" strokeWidth="2"
+                />
+                <circle cx={dep.x} cy={dep.y} r="6" fill="none" className="qr-svg-end" strokeWidth="2" />
+                <circle cx={dep.x} cy={dep.y} r="2" className="qr-svg-end-fill" />
+                <text x={dep.x + 10} y={dep.y + 4} className="qr-wp-label mono">DOH</text>
+                <circle cx={arr.x} cy={arr.y} r="6" fill="none" className="qr-svg-end" strokeWidth="2" />
+                <circle cx={arr.x} cy={arr.y} r="2" className="qr-svg-end-fill" />
+                <text x={arr.x + 10} y={arr.y + 4} className="qr-wp-label mono">LHR</text>
+              </>
+            );
+          })()}
+        </svg>
+        <div className="qr-edto__routeinfo">
+          <div className="mono">{view.route_string || "DOH – LHR"}</div>
+          <div className="qr-edto__stats">
+            {view.distance_nm != null && <span>{view.distance_nm} NM</span>}
+            {view.block_label && <span>{view.block_label}</span>}
+            <span>LHR / LGW</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="qr-edto__risks">
+        <section className="qr-risk-section">
+          <div className="qr-risk-section__head">
+            <h3>OPERATIONAL RISK INFORMATION</h3>
+          </div>
+          <div className="qr-risk-sub">
+            <span className="qr-label">OFFICIAL RISK NOTICES</span>
+            <span className="mono">{view.generated}</span>
+            <span className="qr-badge badge--ok">CURRENT</span>
+          </div>
+          {view.official_notices.map((n) => (
+            <div key={n.region} className="qr-risk-row qr-risk-row--active">
+              <AlertTriangle size={15} className="qr-risk-row__icon" />
+              <div>
+                <strong>AIRSPACE {n.region}</strong>
+                <span className="qr-risk-row__status">{n.status}</span>
+              </div>
+            </div>
+          ))}
+          <div className="qr-risk-sub">
+            <span className="qr-label">OPERATOR RISK INFORMATION</span>
+            <span className="mono">{view.generated}</span>
+            <span className="qr-badge badge--ok">CURRENT</span>
+          </div>
+          {view.operator_risks.map((r) => (
+            <div key={r.country} className="qr-risk-row">
+              <div className="qr-risk-row__thumb" />
+              <div className="qr-risk-row__body">
+                <strong>{r.country}</strong>
+                <span className="qr-risk-row__status">{r.level}</span>
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <section className="qr-risk-section">
+          <div className="qr-risk-sub">
+            <span className="qr-label">NAT TRACKS</span>
+            <span className="mono">15:54Z</span>
+          </div>
+          {view.nat_tracks.map((t) => (
+            <div key={t.name} className="qr-nat">
+              <div className="qr-nat__head">
+                <strong>{t.name} {t.direction}</strong>
+                <span className="mono qr-nat__valid">{t.valid}</span>
+              </div>
+              <div className="mono qr-nat__track">{t.track}</div>
+            </div>
+          ))}
+        </section>
+      </div>
+    </div>
+  );
+}

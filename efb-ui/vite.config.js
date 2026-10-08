@@ -51,9 +51,11 @@ export default defineConfig({
   server: {
     // In dev mode, proxy API calls to the running FastAPI backend.
     // In production the frontend is served by FastAPI itself (same origin).
+    // Override the target with EFB_API_TARGET when the backend runs on
+    // another port (e.g. a task worktree served on 8001).
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
+      '/api': process.env.EFB_API_TARGET || 'http://localhost:8000',
+      '/health': process.env.EFB_API_TARGET || 'http://localhost:8000',
     },
   },
 })

@@ -171,6 +171,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# EFB runtime data (local flightplan store — never commit)
+/optimizer/data/
+
 # Spyder project settings
 .spyderproject
 .spyproject
