@@ -38,7 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from data_fetcher.sim import simconnect_client as simconnect_client_module
+from data_fetcher.sim import simconnect_client as simconnect_client_module  # noqa: E402
 
 
 class _MockAircraftRequests:
