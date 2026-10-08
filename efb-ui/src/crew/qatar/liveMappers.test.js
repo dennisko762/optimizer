@@ -10,6 +10,7 @@ import {
   mapRouteLive,
   mapApplyTargets,
   buildLiveOptimizeRequest,
+  formatApiError,
 } from "./liveMappers.js";
 
 /* ── mapSimStatus ───────────────────────────────────────────────────── */
@@ -308,4 +309,29 @@ test("buildLiveOptimizeRequest never invents a fuel flow when SimConnect has non
   });
   assert.equal(body.flightState.fuelFlowKgH, null);
   assert.equal(body.flightState.fuelFlowSource, null);
+});
+
+/* ── formatApiError (FastAPI envelopes must never render [object Object]) ── */
+
+test("formatApiError renders a FastAPI 422 validation array as readable text", () => {
+  const payload = {
+    detail: [
+      { type: "missing", loc: ["body", "action"], msg: "Field required" },
+      { type: "missing", loc: ["body", "flightState"], msg: "Field required" },
+    ],
+  };
+  const out = formatApiError(payload, 422);
+  assert.ok(!out.includes("[object Object]"), "must never leak [object Object] into the UI");
+  assert.match(out, /action: Field required/);
+  assert.match(out, /flightState: Field required/);
+});
+
+test("formatApiError passes an HTTPException string detail through", () => {
+  assert.equal(formatApiError({ detail: "Optimizer engine offline" }, 503), "Optimizer engine offline");
+});
+
+test("formatApiError falls back cleanly for an empty or odd body", () => {
+  assert.equal(formatApiError({}, 500), "Optimizer unavailable (HTTP 500).");
+  assert.equal(formatApiError(null, 500), "Optimizer unavailable (HTTP 500).");
+  assert.ok(!formatApiError({ detail: [{}] }, 422).includes("[object Object]"));
 });

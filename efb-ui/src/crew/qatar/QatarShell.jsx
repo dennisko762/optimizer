@@ -65,6 +65,7 @@ import {
   mapApplyTargets,
   mapRouteLive,
   buildLiveOptimizeRequest,
+  formatApiError,
 } from "./liveMappers.js";
 import { useSimTelemetry } from "./useSimTelemetry.js";
 import CrewLogin from "./CrewLogin.jsx";
@@ -1321,7 +1322,7 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       });
       if (!resp.ok) {
         const detail = await resp.json().catch(() => ({}));
-        setOptimizeError(detail?.detail ? String(detail.detail) : `Optimizer unavailable (HTTP ${resp.status}).`);
+        setOptimizeError(formatApiError(detail, resp.status));
         setOptimizeResult(null);
         return;
       }

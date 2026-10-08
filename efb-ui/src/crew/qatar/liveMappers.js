@@ -57,6 +57,36 @@ export function mapSimStatus(telemetry, { reachable = true } = {}) {
   };
 }
 
+/* ── API error formatting ───────────────────────────────────────────── */
+
+/**
+ * Turn a FastAPI error envelope into one human-readable line.
+ *
+ * FastAPI 422 returns `detail` as an ARRAY of validation objects
+ * ({type, loc, msg, input}); a plain `String(detail)` renders the useless
+ * "[object Object]" in the UI. HTTPException returns `detail` as a string.
+ * Both shapes (plus an empty body) must produce readable crew-facing text.
+ */
+export function formatApiError(payload, status) {
+  const fallback = `Optimizer unavailable (HTTP ${status}).`;
+  const detail = payload?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((d) => {
+        if (typeof d === "string") return d;
+        const field = Array.isArray(d?.loc) ? d.loc.filter((s) => s !== "body").join(".") : null;
+        const msg = d?.msg || d?.type || null;
+        if (field && msg) return `${field}: ${msg}`;
+        return msg || field || null;
+      })
+      .filter(Boolean);
+    if (parts.length) return `${fallback} ${parts.join("; ")}`;
+  }
+  return fallback;
+}
+
 /* ── Live strip (FL / speed / fuel / fuel flow / wind) ──────────────── */
 
 /**
