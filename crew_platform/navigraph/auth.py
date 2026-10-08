@@ -24,6 +24,7 @@ token or the session is lost.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -227,6 +228,8 @@ class DeviceFlowState:
     interval: int
     expires_at: float
     code_verifier: str
+    next_poll_at: float = 0.0
+    poll_interval: int = 5
 
     @property
     def expired(self) -> bool:
@@ -253,6 +256,8 @@ class NavigraphAuth:
     def __init__(self, config: NavigraphConfig, timeout: float = 15.0):
         self.config = config
         self._timeout = timeout
+        self._poll_lock = asyncio.Lock()
+        self._tile_cookies: dict[str, str] = {}
 
     # -- flow -------------------------------------------------------------
 
@@ -310,8 +315,13 @@ class NavigraphAuth:
         respect ``flow.interval`` between polls (and lengthen it on
         ``slow_down``) — Navigraph rate-limits the token endpoint too.
         """
-        if flow.expired:
-            return "expired", None
+        async with self._poll_lock:
+            if flow.expired:
+                return "expired", None
+            now = time.time()
+            if now < flow.next_poll_at:
+                return "pending", None
+            flow.next_poll_at = now + max(1, flow.poll_interval)
         form = {
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             "device_code": flow.device_code,
@@ -327,7 +337,9 @@ class NavigraphAuth:
             # If tile cookies delivered via set-cookie, merge those in
             cookies = parse_set_cookies(resp)
             if cookies:
-                tokens.tile_cookies.update({k: v for k, v in cookies.items() if k in _TILE_COOKIE_NAMES})
+                self._tile_cookies.update({k: v for k, v in cookies.items() if k in _TILE_COOKIE_NAMES})
+            self._tile_cookies.update(tokens.tile_cookies)
+            tokens.tile_cookies.update(self._tile_cookies)
             self.store_refresh_token(tokens.refresh_token)
             return "authorized", tokens
         try:
@@ -337,6 +349,8 @@ class NavigraphAuth:
         if error == "authorization_pending":
             return "pending", None
         if error == "slow_down":
+            flow.poll_interval += 5
+            flow.next_poll_at = time.time() + flow.poll_interval
             return "slow_down", None
         if error == "expired_token":
             return "expired", None
@@ -367,7 +381,9 @@ class NavigraphAuth:
         # Merge tile cookies from Set-Cookie too, if present
         cookies = parse_set_cookies(resp)
         if cookies:
-            tokens.tile_cookies.update({k: v for k, v in cookies.items() if k in _TILE_COOKIE_NAMES})
+            self._tile_cookies.update({k: v for k, v in cookies.items() if k in _TILE_COOKIE_NAMES})
+        self._tile_cookies.update(tokens.tile_cookies)
+        tokens.tile_cookies.update(self._tile_cookies)
         self.store_refresh_token(tokens.refresh_token)
         return tokens
 

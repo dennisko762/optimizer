@@ -7,8 +7,9 @@
  * - status is fetched once per mount and after a sign-in
  * - NOTAMs are fetched once per station set (and on explicit refresh)
  * - the risk bulletin is fetched once per mount, refreshed every 15 min
- * - tiles/charts are plain <img> loads against the backend proxy, which
- *   caches them, so the browser never touches api.navigraph.com
+ * - tiles/charts are plain <img> loads against the backend proxy and are
+ *   never cached, because Navigraph terms prohibit storage; the browser
+ *   never touches api.navigraph.com
  *
  * Nothing here throws: a failed fetch resolves to a degraded envelope so
  * the mappers can label the screen instead of blanking it.
@@ -153,7 +154,7 @@ export function useNavigraph({ apiBase, stations = [], enabled = true } = {}) {
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
-      clearInterval(pollRef.current);
+      clearTimeout(pollRef.current);
       pollRef.current = null;
     }
   }, []);
@@ -169,8 +170,10 @@ export function useNavigraph({ apiBase, stations = [], enabled = true } = {}) {
       setSignIn(body);
       if (body.status !== "pending" || !body.user_code) return body;
 
-      const intervalMs = Math.max(2, Number(body.interval) || 5) * 1000;
-      pollRef.current = setInterval(async () => {
+      let delayMs = Math.max(2, Number(body.interval) || 5) * 1000;
+      let cancelled = false;
+      const pollOnce = async () => {
+        if (cancelled) return;
         const poll = await fetch(
           `${base}/api/crew/navigraph/auth/device/poll?user_code=${encodeURIComponent(
             body.user_code
@@ -182,9 +185,14 @@ export function useNavigraph({ apiBase, stations = [], enabled = true } = {}) {
         setSignIn((prev) => ({ ...(prev || {}), ...poll }));
         if (poll.status !== "pending" && poll.status !== "slow_down") {
           stopPolling();
+          cancelled = true;
           if (poll.status === "authorized") await refreshAll();
+          return;
         }
-      }, intervalMs);
+        if (poll.status === "slow_down") delayMs += 5000;
+        pollRef.current = setTimeout(pollOnce, delayMs);
+      };
+      pollRef.current = setTimeout(pollOnce, delayMs);
       return body;
     } finally {
       setBusy(false);

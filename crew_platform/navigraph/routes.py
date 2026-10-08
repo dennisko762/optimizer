@@ -154,7 +154,7 @@ async def poll_device_auth(user_code: str = Query(...)) -> DevicePollOut:
 async def navigraph_signout() -> dict[str, Any]:
     """Forget the in-memory tokens (the cache is kept for offline use)."""
     client = get_client()
-    client.set_tokens(None)
+    client.sign_out()
     async with _flow_lock:
         _pending_flows.clear()
     return {"status": "signed_out"}
@@ -187,11 +187,11 @@ async def navigraph_charts(
 
 @router.get("/charts/{icao}/{filename}")
 async def navigraph_chart_image(icao: str, filename: str) -> Response:
-    """Proxy one chart image, served from cache whenever possible.
+    """Proxy one live chart image without retaining or browser-caching it.
 
     Proxying (rather than handing the UI a Navigraph URL) is required:
-    the access token must not leave the backend, and the cache is what
-    keeps the EFB inside the rate limits.
+    the access token must not leave the backend, while the chart terms
+    require live authenticated delivery only.
     """
     client = get_client()
     result = await _guard("chart_image")(client.chart_image(icao, filename))
@@ -211,7 +211,7 @@ async def navigraph_chart_image(icao: str, filename: str) -> Response:
         headers={
             "X-Navigraph-Status": str(result.get("status")),
             "X-Navigraph-Age": str(result.get("age_seconds")),
-            "Cache-Control": "private, max-age=3600",
+            "Cache-Control": "no-store",
         },
     )
 
@@ -237,7 +237,7 @@ async def navigraph_tile(
         media_type="image/png",
         headers={
             "X-Navigraph-Status": str(result.get("status")),
-            "Cache-Control": "private, max-age=86400",
+            "Cache-Control": "no-store",
         },
     )
 

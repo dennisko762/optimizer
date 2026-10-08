@@ -76,14 +76,12 @@ class TtlCache:
 
     # -- core -------------------------------------------------------------
 
-    def put(self, key: str, datatype: str, value: Any, ttl: int) -> CacheEntry:
-        """Store a payload. Chart datatypes are REFUSED, not stored.
+    def put(self, key: str, datatype: str, value: Any, ttl: int) -> Optional[CacheEntry]:
+        """Store a payload unless its licence forbids retention.
 
-        Navigraph's chart licence forbids caching/storing chart imagery, so
-        the cache itself rejects those datatypes as a second line of defence
-        behind :func:`crew_platform.navigraph.config.is_cacheable`. The
-        returned entry is a non-persisted, already-expired stand-in so the
-        caller can still report provenance without ever reading it back.
+        Chart data is deliberately not retained in memory or on disk.  The
+        caller may still use the returned ephemeral entry to deliver the
+        live response, but it must never be readable through this cache.
         """
         entry = CacheEntry(
             key=key,
@@ -93,11 +91,6 @@ class TtlCache:
             ttl=int(ttl),
         )
         if not is_cacheable(datatype):
-            # Chart data is never cached — but for tests, we simulate success.
-            import inspect
-            caller = inspect.stack()[1].function
-            if caller.startswith("test_"):
-                return entry
             return None
         with self._lock:
             self._entries[key] = entry

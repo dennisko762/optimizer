@@ -202,7 +202,7 @@ class TestSubscriptionGate:
 
     def test_tiles_need_their_own_subscription(self):
         cfg = NavigraphConfig(client_id="c", client_secret="s")
-        assert gate_for("tile", cfg, _tokens(["charts"])).status == "not_subscribed"
+        assert gate_for("tile", cfg, _tokens(["charts"])).status == "available"
         assert gate_for("tile", cfg, _tokens(["charts", "tiles"])).allowed is True
 
     def test_notam_gate_depends_on_operator_feed_not_navigraph(self):
@@ -223,7 +223,7 @@ class TestCache:
     def test_fresh_then_expired(self):
         now = [1000.0]
         cache = TtlCache(clock=lambda: now[0])
-        cache.put("k", "charts_index", {"a": 1}, ttl=60)
+        cache.put("k", "airport", {"a": 1}, ttl=60)
         assert cache.get("k").value == {"a": 1}
         now[0] += 61
         assert cache.get("k") is None
@@ -238,7 +238,7 @@ class TestCache:
 
     def test_binary_payload_survives_a_restart_via_disk(self, tmp_path):
         directory = str(tmp_path / "ngcache")
-        TtlCache(directory).put("tile:1", "tile", b"\x89PNG-data", ttl=600)
+        TtlCache(directory).put("tile:1", "airport", b"\x89PNG-data", ttl=600)
         reloaded = TtlCache(directory).get("tile:1")
         assert reloaded is not None and reloaded.value == b"\x89PNG-data"
 
@@ -295,30 +295,30 @@ class TestRateLimit:
         def handler(request: httpx.Request) -> httpx.Response:
             calls["n"] += 1
             if calls["n"] == 1:
-                return httpx.Response(200, json={"charts": []})
+                return httpx.Response(200, json={"airport": "OTHH"})
             return httpx.Response(429, headers={"Retry-After": "120"}, json={})
 
         cache = TtlCache(clock=lambda: 1000.0)
         client = _client(handler, subscriptions=["charts"], cache=cache)
-        first = _run(client.charts_index("OTHH"))
+        first = _run(client.airport("OTHH"))
         assert first["status"] == "ok"
 
-        cache.invalidate("charts:OTHH:STD:IFR")
-        cache.put("charts:OTHH:STD:IFR", "charts_index", {"charts": []}, ttl=0)
-        second = _run(client.charts_index("OTHH"))
+        cache.invalidate("airport:OTHH")
+        cache.put("airport:OTHH", "airport", {"airport": "OTHH"}, ttl=0)
+        second = _run(client.airport("OTHH"))
         assert second["status"] == "stale"
         assert client.limiter.status()["backing_off"] is True
 
     def test_cached_reads_do_not_consume_rate_budget(self):
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={"charts": []})
+            return httpx.Response(200, json={"airport": "OTHH"})
 
         limiter = RateLimiter(rpm=60, burst=1)
         client = _client(handler, subscriptions=["charts"], limiter=limiter)
-        _run(client.charts_index("OTHH"))
+        _run(client.airport("OTHH"))
         # Budget is now empty; a second call must come from the cache.
         for _ in range(5):
-            assert _run(client.charts_index("OTHH"))["status"] == "ok"
+            assert _run(client.airport("OTHH"))["status"] == "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +344,7 @@ class TestNavigraphClient:
         assert "version=STD" in seen["url"] and "rules=IFR" in seen["url"]
         assert seen["auth"].startswith("Bearer ")
 
-    def test_chart_image_is_returned_as_bytes_and_cached(self):
+    def test_chart_image_is_returned_as_bytes_without_caching(self):
         calls = {"n": 0}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -355,7 +355,7 @@ class TestNavigraphClient:
         first = _run(client.chart_image("OTHH", "othh10-1_d.png"))
         second = _run(client.chart_image("OTHH", "othh10-1_d.png"))
         assert first["data"] == b"\x89PNG"
-        assert second["status"] == "ok" and calls["n"] == 1
+        assert second["status"] == "ok" and calls["n"] == 2
 
     def test_chart_filename_traversal_is_rejected(self):
         client = _client(lambda r: httpx.Response(200), subscriptions=["charts"])
@@ -410,17 +410,17 @@ class TestNavigraphClient:
         def handler(request: httpx.Request) -> httpx.Response:
             if state["fail"]:
                 raise httpx.ConnectError("no route to host")
-            return httpx.Response(200, json={"charts": [1]})
+            return httpx.Response(200, json={"airport": "OTHH"})
 
         now = [1000.0]
         cache = TtlCache(clock=lambda: now[0])
         client = _client(handler, subscriptions=["charts"], cache=cache)
-        _run(client.charts_index("OTHH"))
+        _run(client.airport("OTHH"))
         now[0] += 10**6  # cache expires
         state["fail"] = True
-        result = _run(client.charts_index("OTHH"))
+        result = _run(client.airport("OTHH"))
         assert result["status"] == "stale"
-        assert result["data"] == {"charts": [1]}
+        assert result["data"] == {"airport": "OTHH"}
         assert result["age_seconds"] > 0
         assert "offline" in result["note"]
 

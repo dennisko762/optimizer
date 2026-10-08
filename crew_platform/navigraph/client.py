@@ -2,8 +2,8 @@
 
 Request path for every call:
 
-    subscription gate -> fresh cache -> rate limiter -> HTTP
-                      -> on error/429/401: stale cache (labelled)
+    subscription gate -> cache (non-chart data only) -> rate limiter -> HTTP
+                      -> on error/429/401: stale cache (cacheable data only)
                       -> else: a declared status, never an exception
 
 So the three failure modes that matter in a cockpit all degrade
@@ -234,6 +234,7 @@ class NavigraphClient:
         self._transport = transport
         self._timeout = timeout
         self._tokens: Optional[NavigraphTokens] = None
+        self._signed_out = False
         if self.config.access_token:
             from crew_platform.navigraph.auth import decode_subscriptions, token_expiry
 
@@ -253,9 +254,18 @@ class NavigraphClient:
 
     def set_tokens(self, tokens: Optional[NavigraphTokens]) -> None:
         self._tokens = tokens
+        if tokens is not None:
+            self._signed_out = False
+
+    def sign_out(self) -> None:
+        """Forget this session and suppress persisted-token auto reauth."""
+        self._tokens = None
+        self._signed_out = True
 
     async def ensure_tokens(self) -> Optional[NavigraphTokens]:
         """Return usable tokens, refreshing once if they have expired."""
+        if self._signed_out:
+            return None
         tokens = self._tokens
         if tokens and not tokens.expired:
             return tokens
@@ -309,7 +319,12 @@ class NavigraphClient:
             raise NavigraphUnavailable(
                 "upstream_error", f"Navigraph returned HTTP {resp.status_code}"
             )
-        return resp.json()
+        try:
+            return resp.json()
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise NavigraphUnavailable(
+                "upstream_invalid", "Navigraph returned an invalid JSON payload"
+            ) from exc
 
     async def _http_bytes(
         self, url: str, headers: dict[str, str], cookies: Optional[dict[str, str]] = None
@@ -343,17 +358,22 @@ class NavigraphClient:
         """Cached, gated, rate-limited GET returning a wrapped result."""
         tokens = await self.ensure_tokens() if authenticated else None
         gate = gate_for(datatype, self.config, tokens)
+        cacheable = is_cacheable(datatype)
 
-        cached = self.cache.get(cache_key)
-        if cached is not None:
-            return _result(cached, fresh=True, gate=gate)
+        # Chart products are never read from cache, including legacy entries
+        # written by an older version of the connector.
+        if cacheable:
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                return _result(cached, fresh=True, gate=gate)
 
         if not gate.allowed:
-            stale = self.cache.get_stale(cache_key)
-            if stale is not None:
-                return _result(
-                    stale, fresh=False, gate=gate, note=f"{gate.status}: {gate.detail}"
-                )
+            if cacheable:
+                stale = self.cache.get_stale(cache_key)
+                if stale is not None:
+                    return _result(
+                        stale, fresh=False, gate=gate, note=f"{gate.status}: {gate.detail}"
+                    )
             raise NavigraphUnavailable(gate.status, gate.detail)
 
         headers: dict[str, str] = {"Accept": "*/*" if binary else "application/json"}
@@ -369,9 +389,10 @@ class NavigraphClient:
                 else await self._http_json(url, headers, params)
             )
         except (RateLimitExceeded, NavigraphAuthError, NavigraphUnavailable, httpx.HTTPError) as exc:
-            stale = self.cache.get_stale(cache_key)
-            if stale is not None:
-                return _result(stale, fresh=False, gate=gate, note=f"offline: {exc}")
+            if cacheable:
+                stale = self.cache.get_stale(cache_key)
+                if stale is not None:
+                    return _result(stale, fresh=False, gate=gate, note=f"offline: {exc}")
             if isinstance(exc, RateLimitExceeded):
                 raise NavigraphUnavailable("rate_limited", str(exc)) from exc
             if isinstance(exc, NavigraphAuthError):
@@ -381,6 +402,15 @@ class NavigraphClient:
             raise NavigraphUnavailable("offline", f"Navigraph unreachable: {exc}") from exc
 
         entry = self.cache.put(cache_key, datatype, payload, self.config.ttl(datatype))
+        if entry is None:
+            # Non-cacheable chart response: deliver this request only.
+            entry = CacheEntry(
+                key=cache_key,
+                datatype=datatype,
+                value=payload,
+                stored_at=time.time(),
+                ttl=0,
+            )
         return _result(entry, fresh=True, gate=gate)
 
     # -- Navigraph endpoints ---------------------------------------------
