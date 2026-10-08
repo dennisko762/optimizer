@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -38,11 +39,14 @@ def _safe_aircraft_path(aircraft_key: str) -> Path | None:
     if not key or not _AIRCRAFT_KEY_RE.fullmatch(key):
         return None
 
-    aircraft_dir = (CONFIG_DIR / "aircraft").resolve()
-    candidate = (aircraft_dir / f"{key}.yaml").resolve()
-    if aircraft_dir not in candidate.parents:
+    # Strip to a bare filename (CodeQL-recognized sanitizer for path
+    # injection) and require it to be unchanged, so the allowlist-checked
+    # key can never carry a path separator or traversal segment through.
+    safe_name = os.path.basename(key)
+    if safe_name != key:
         return None
-    return candidate
+
+    return CONFIG_DIR / "aircraft" / f"{safe_name}.yaml"
 
 
 def load_aircraft_config(aircraft_key: str) -> dict[str, Any]:
