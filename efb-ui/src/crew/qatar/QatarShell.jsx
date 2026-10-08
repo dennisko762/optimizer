@@ -35,7 +35,6 @@ import {
   LogIn,
   CheckCircle2,
   XCircle,
-  CloudRain,
   Gauge,
   Download,
 } from "lucide-react";
@@ -53,6 +52,7 @@ import {
 } from "./qatarMappers.js";
 import CrewLogin from "./CrewLogin.jsx";
 import MapWeatherPanel from "./MapWeatherPanel.jsx";
+import BriefingPanel from "./BriefingPanel.jsx";
 import BoardingPanel from "../BoardingPanel.jsx";
 import TechPanel from "../tech/TechPanel.jsx";
 
@@ -315,6 +315,7 @@ export default function QatarShell({ onOpenOptimizer }) {
           utc={utc}
           onNavigate={setScreen}
           pilotName={crewSession.pilotId}
+          defaultStation={lastPlan?.origin || flight?.departure_icao || null}
         />
       )}
 
@@ -446,7 +447,7 @@ function CompanyNewsPanel() {
 
 /* ─── Crew Desk (qatar-02) ─────────────────────────────────────────── */
 
-function CrewDeskScreen({ utc, onNavigate, pilotName }) {
+function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
   const { session, apiBase } = useCrewPlatform();
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
@@ -525,7 +526,7 @@ function CrewDeskScreen({ utc, onNavigate, pilotName }) {
             ) : tab === "preflight" ? (
               <PreflightBriefing onOpenTech={() => setTab("techlog")} />
             ) : tab === "weather" ? (
-              <WeatherBriefing />
+              <WeatherBriefing apiBase={apiBase} station={defaultStation} />
             ) : (
               messages.map((m) => (
                 <button
@@ -595,20 +596,8 @@ function PreflightBriefing({ onOpenTech }) {
   );
 }
 
-function WeatherBriefing() {
-  return (
-    <div className="qr-briefing">
-      <h3>WEATHER BRIEFING</h3>
-      <div className="qr-brief-item">
-        <CloudRain size={15} className="qr-brief-ok" />
-        <div>
-          <div>WX briefing available in Inbox</div>
-          <div className="qr-brief-sub">Enroute + destination MET/TAF per flight</div>
-        </div>
-      </div>
-      <div className="qr-notice">Live METAR/TAF feed is not connected yet — briefing content follows from the selected flight's OFP.</div>
-    </div>
-  );
+function WeatherBriefing({ apiBase, station }) {
+  return <BriefingPanel apiBase={apiBase} station={station} />;
 }
 
 /* ─── Home (M2b): Company News + My Flights + check-in ────────────── */

@@ -656,6 +656,57 @@
   color: var(--qr-muted);
 }
 
+/* ─── briefing: aggregated aviation briefing layer (M5-P extension) ── */
+
+.qr-shell .qr-brief-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.qr-shell .qr-brief-section__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--qr-muted);
+  text-transform: uppercase;
+}
+.qr-shell .qr-brief-row__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.qr-shell .qr-brief-raw {
+  font-size: 11px;
+  color: var(--qr-text);
+  word-break: break-word;
+  margin-top: 2px;
+}
+.qr-shell .qr-badge--live {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+}
+.qr-shell .qr-badge--stale {
+  background: rgba(250, 204, 21, 0.18);
+  color: #facc15;
+}
+.qr-shell .qr-badge--disabled,
+.qr-shell .qr-badge--unavailable {
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--qr-muted);
+}
+.qr-shell .qr-badge--error {
+  background: rgba(248, 113, 113, 0.18);
+  color: #f87171;
+}
+.qr-shell .qr-badge--loading {
+  background: rgba(96, 165, 250, 0.18);
+  color: #60a5fa;
+}
+
 /* ─── My Flights ─────────────────────────────────────────────────── */
 
 .qr-shell .qr-flight-row {
