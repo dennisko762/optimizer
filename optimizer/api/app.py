@@ -16,6 +16,8 @@ from optimizer.api.simbrief_routes import router as simbrief_router
 from optimizer.api.trajectory_routes import router as trajectory_router
 
 from crew_platform.routes import router as crew_router, callback_router as crew_callback_router, technical_router as crew_technical_router
+from crew_platform.weather.routes import router as crew_weather_router
+from crew_platform.weather import scheduler as weather_scheduler
 
 
 def _load_dotenv() -> None:
@@ -74,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(trajectory_router)
     app.include_router(crew_router)
     app.include_router(crew_technical_router)
+    app.include_router(crew_weather_router)
     # Browser OAuth callback — must be registered before the catch-all
     # static-file mount below so the redirect URL is not swallowed.
     app.include_router(crew_callback_router)
@@ -81,10 +84,13 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_telemetry() -> None:
         await start_telemetry_hub()
+        # background GFS cycle scheduler (no-op until a route is active)
+        weather_scheduler.start()
 
     @app.on_event("shutdown")
     async def shutdown_telemetry() -> None:
         await stop_telemetry_hub()
+        weather_scheduler.stop()
 
     @app.get("/health")
     def health() -> dict[str, str]:

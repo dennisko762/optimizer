@@ -412,7 +412,7 @@
 .qr-shell .qr-smartops {
   overflow-y: auto;
 }
-.qr-shell .qr-smartops > :not(.qr-route):not(.qr-edto):not(.qr-notice) {
+.qr-shell .qr-smartops > :not(.qr-route):not(.qr-edto):not(.qr-notice):not(.wx-map) {
   flex: 0 0 auto;
 }
 

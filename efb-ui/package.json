@@ -13,6 +13,7 @@
   "dependencies": {
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.14.0",
+    "maplibre-gl": "^6.13.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "vite-plugin-pwa": "^2.0.0"

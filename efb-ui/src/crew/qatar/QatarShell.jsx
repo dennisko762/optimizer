@@ -29,11 +29,7 @@ import {
   Mail,
   User,
   ArrowRight,
-  Play,
-  Pause,
-  ChevronRight,
   ExternalLink,
-  Mountain,
   Wrench,
   LogOut,
   LogIn,
@@ -50,13 +46,13 @@ import {
   mapOfpHero,
   mapOfpWaypoints,
   modelSimPlan,
-  mapRouteView,
   mapEdtoView,
   mapNotification,
   defaultInboxMessages,
   projectMap,
 } from "./qatarMappers.js";
 import CrewLogin from "./CrewLogin.jsx";
+import MapWeatherPanel from "./MapWeatherPanel.jsx";
 import BoardingPanel from "../BoardingPanel.jsx";
 import TechPanel from "../tech/TechPanel.jsx";
 
@@ -1070,6 +1066,7 @@ function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) 
 /* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
 
 function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
+  const { apiBase } = useCrewPlatform();
   const ofpData = ofp?.ofp_data || null;
   const hero = useMemo(() => mapOfpHero(flight, ofpData), [flight, ofpData]);
   const simPlan = useMemo(
@@ -1258,177 +1255,20 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       )}
 
       {tab === "route" && (
-        <RouteScreen flight={flight} ofpData={ofpData} distanceNm={distanceNm} utc={utc} />
+        <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
       )}
 
       {tab === "edto" && (
         <EdtoScreen flight={flight} ofpData={ofpData} />
       )}
 
-      {(tab === "runways" || tab === "weather") && (
-        <div className="qr-notice qr-notice--center">
-          {tab === "runways" ? "Runway data follows from the OFP (arrival/departure runways) — not linked to this booking yet." : "Live weather overlay — WX TIME playback and ATC sectors are available on the Route tab."}
-        </div>
+      {tab === "weather" && (
+        <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
       )}
     </div>
   );
 }
 
-/* ─── Route (qatar-04) ─────────────────────────────────────────────── */
-
-function RouteScreen({ flight, ofpData, distanceNm, utc }) {
-  const [wxPlaying, setWxPlaying] = useState(false);
-  const [wxOffset, setWxOffset] = useState(0);
-  const [altMode, setAltMode] = useState("AUTO");
-
-  const view = useMemo(() => {
-    const v = mapRouteView(flight, ofpData);
-    const pts = v.points
-      .map((p) => ({ ...p, xy: projectMap(p.lat, p.lon) }))
-      .filter((p) => p.xy);
-    // Fit: keep all points inside the 1000x560 box with margin.
-    const xs = pts.map((p) => p.xy.x);
-    const ys = pts.map((p) => p.xy.y);
-    const pad = 60;
-    const minx = Math.max(0, Math.min(...xs) - pad);
-    const maxx = Math.min(1000, Math.max(...xs) + pad);
-    const miny = Math.max(0, Math.min(...ys) - pad);
-    const maxy = Math.min(560, Math.max(...ys) + pad);
-    return { ...v, pts, vb: { minx, miny, w: Math.max(200, maxx - minx), h: Math.max(140, maxy - miny) } };
-  }, [flight, ofpData]);
-
-  const routeString = view.route_string ||
-    (view.hero.departure && view.hero.arrival
-      ? `${view.hero.departure} DCT ${view.hero.arrival}`
-      : null);
-
-  return (
-    <div className="qr-route">
-      <div className="qr-route__map">
-        <svg viewBox={`${view.vb.minx} ${view.vb.miny} ${view.vb.w} ${view.vb.h}`} className="qr-route__svg" preserveAspectRatio="xMidYMid meet">
-          <defs>
-            <radialGradient id="qr-mapglow" cx="50%" cy="40%" r="80%">
-              <stop offset="0%" className="qr-svg-fill-a" />
-              <stop offset="100%" className="qr-svg-fill-b" />
-            </radialGradient>
-          </defs>
-          <rect x={view.vb.minx - 50} y={view.vb.miny - 50} width={view.vb.w + 100} height={view.vb.h + 100} fill="url(#qr-mapglow)" />
-          {/* graticule */}
-          {Array.from({ length: 13 }).map((_, i) => (
-            <line key={`g${i}`} x1={i * 100} y1={view.vb.miny - 50} x2={i * 100} y2={view.vb.miny + view.vb.h + 50} className="qr-svg-grat" strokeWidth="1" />
-          ))}
-          {Array.from({ length: 7 }).map((_, i) => (
-            <line key={`gh${i}`} x1={view.vb.minx - 50} y1={i * 100} x2={view.vb.minx + view.vb.w + 50} y2={i * 100} className="qr-svg-grat" strokeWidth="1" />
-          ))}
-
-          {/* route polyline */}
-          {view.pts.length > 1 && (
-            <polyline
-              points={view.pts.map((p) => `${p.xy.x},${p.xy.y}`).join(" ")}
-              fill="none"
-              className="qr-svg-route"
-              strokeWidth="2"
-            />
-          )}
-
-          {/* waypoints */}
-          {view.pts.map((p, i) => {
-            const isEnd = p.end === "dep" || p.end === "arr";
-            return (
-              <g key={i}>
-                {isEnd ? (
-                  <>
-                    <circle cx={p.xy.x} cy={p.xy.y} r="6" fill="none" className="qr-svg-end" strokeWidth="2" />
-                    <circle cx={p.xy.x} cy={p.xy.y} r="2" className="qr-svg-end-fill" />
-                  </>
-                ) : (
-                  <>
-                    <circle cx={p.xy.x} cy={p.xy.y} r="2.5" className="qr-svg-wp" />
-                    <path d={`M ${p.xy.x - 5} ${p.xy.y - 12} L ${p.xy.x + 5} ${p.xy.y - 12} L ${p.xy.x} ${p.xy.y - 4} Z`} className="qr-svg-wp-tri" />
-                  </>
-                )}
-                {p.ident && (
-                  <text x={p.xy.x + 8} y={p.xy.y - 8} className="qr-wp-label mono">
-                    {p.ident}
-                    {p.fl ? ` FL${p.fl}` : ""}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-
-        <div className="qr-route__layers">
-          <span className="qr-chip">Layers</span>
-        </div>
-        <div className="qr-route__terrain">
-          <Mountain size={18} />
-          <div>
-            <strong>ROUTE TERRAIN</strong>
-            <span>Terrain data available</span>
-          </div>
-          <ChevronRight size={16} />
-        </div>
-
-        <div className="qr-route__wxpanel">
-          <div className="qr-route__wxhead">
-            <span className="qr-label">WX TIME</span>
-            <span className="mono">{utc.time} z • {wxOffset === 0 ? "NOW" : `${wxOffset > 0 ? "+" : ""}${wxOffset}h`}</span>
-          </div>
-          <div className="qr-route__wxrow">
-            <button className="qr-wxbtn" onClick={() => setWxPlaying((v) => !v)}>
-              {wxPlaying ? <Pause size={13} /> : <Play size={13} />}
-            </button>
-            <span className="qr-wxbtn qr-wxbtn--static">-12h</span>
-            <input
-              type="range"
-              min={-12}
-              max={12}
-              value={wxOffset}
-              onChange={(e) => setWxOffset(Number(e.target.value))}
-              className="qr-slider"
-            />
-            <span className="qr-wxbtn qr-wxbtn--static">+12h</span>
-            <span className={`qr-wxbtn ${wxOffset === 0 ? "qr-wxbtn--on" : ""}`} onClick={() => setWxOffset(0)}>NOW</span>
-          </div>
-          <div className="qr-route__atc">
-            <div className="qr-route__wxhead">
-              <span className="qr-label">ATC SECTORS</span>
-              <span className="qr-badge badge--vatsim">VATSIM</span>
-              <span className="mono">FL390</span>
-            </div>
-            <div className="qr-route__wxrow">
-              <input type="range" min={0} max={100} defaultValue={60} className="qr-slider" />
-              <span className="qr-label">DISPLAY ALTITUDE</span>
-              <button className={`qr-wxbtn ${altMode === "AUTO" ? "qr-wxbtn--on" : ""}`} onClick={() => setAltMode("AUTO")}>AUTO</button>
-              <button className={`qr-wxbtn ${altMode === "OFF" ? "qr-wxbtn--on" : ""}`} onClick={() => setAltMode("OFF")}>OFF FL320</button>
-            </div>
-          </div>
-        </div>
-
-        <div className="qr-route__legend">
-          <span className="qr-label">PRECIP</span>
-          {[["#4a2230", "None"], ["#2563eb", "Light"], ["#e8a838", "Moderate"], ["#ef4444", "Heavy"], ["#c74a6a", "CB"]].map(([c, l]) => (
-            <span key={l} className="qr-legend__item"><i style={{ background: c }} />{l}</span>
-          ))}
-          <span className="qr-legend__sep" />
-          <span className="qr-label">SIGMET</span>
-          {[["#ef4444", "Thunderstorm"], ["#e8a838", "Turbulence"], ["#38bdf8", "Icing"], ["#c74a6a", "Volcanic Ash"], ["#4ade80", "TS (Tropical)"]].map(([c, l]) => (
-            <span key={l} className="qr-legend__item"><i style={{ background: c }} />{l}</span>
-          ))}
-        </div>
-      </div>
-
-      <div className="qr-route__meta">
-        <div className="mono">{routeString}</div>
-        <div>
-          {distanceNm != null ? `${distanceNm} NM` : "—"} &nbsp;•&nbsp; {view.block_label || "—"}
-        </div>
-        <div className="qr-route__alt">LHR / LGW</div>
-      </div>
-    </div>
-  );
-}
 
 /* ─── EDTO + Risks (qatar-05) ──────────────────────────────────────── */
 
