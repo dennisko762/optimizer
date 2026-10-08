@@ -31,22 +31,23 @@ def load_general_config() -> dict[str, Any]:
     return data
 
 
-def _safe_aircraft_path(aircraft_key: str) -> Path | None:
-    """Resolve `aircraft_key` to a config path, or None if it is not a
-    bare filename-safe token (defends against path traversal from any
-    caller that sources the key from user/network input)."""
+def _safe_aircraft_filename(aircraft_key: str) -> str | None:
+    """Return a bare, traversal-safe `<key>.yaml` filename for `aircraft_key`,
+    or None if the key is not a plain filename-safe token (defends against
+    path traversal from any caller that sources the key from user/network
+    input)."""
     key = str(aircraft_key).strip()
     if not key or not _AIRCRAFT_KEY_RE.fullmatch(key):
         return None
 
-    # Strip to a bare filename (CodeQL-recognized sanitizer for path
-    # injection) and require it to be unchanged, so the allowlist-checked
-    # key can never carry a path separator or traversal segment through.
+    # os.path.basename() is CodeQL's recognized sanitizer for path
+    # injection; requiring it to be a no-op additionally guarantees the
+    # allowlisted key never carried a path separator or ".." segment.
     safe_name = os.path.basename(key)
     if safe_name != key:
         return None
 
-    return CONFIG_DIR / "aircraft" / f"{safe_name}.yaml"
+    return f"{safe_name}.yaml"
 
 
 def load_aircraft_config(aircraft_key: str) -> dict[str, Any]:
@@ -58,8 +59,12 @@ def load_aircraft_config(aircraft_key: str) -> dict[str, Any]:
     remaining cruise simulator.
     """
 
-    path = _safe_aircraft_path(aircraft_key)
-    if path is None or not path.exists():
+    filename = _safe_aircraft_filename(aircraft_key)
+    if filename is None:
+        raise FileNotFoundError(f"Aircraft config not found: {aircraft_key!r}")
+    path = CONFIG_DIR / "aircraft" / os.path.basename(filename)
+
+    if not path.exists():
         raise FileNotFoundError(f"Aircraft config not found: {aircraft_key!r}")
 
     raw = _load_yaml(path)
@@ -76,8 +81,12 @@ def aircraft_config_exists(aircraft_key: str | None) -> bool:
     if aircraft_key is None:
         return False
 
-    path = _safe_aircraft_path(aircraft_key)
-    return path is not None and path.exists()
+    filename = _safe_aircraft_filename(aircraft_key)
+    if filename is None:
+        return False
+
+    path = CONFIG_DIR / "aircraft" / os.path.basename(filename)
+    return path.exists()
 
 
 def normalize_aircraft_config(raw: Mapping[str, Any], *, aircraft_key: str | None = None) -> dict[str, Any]:
