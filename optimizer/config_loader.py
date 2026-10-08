@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
+
+
+_AIRCRAFT_KEY_RE = re.compile(r"[A-Za-z0-9_-]+")
 
 
 def _get_config_dir() -> Path:
@@ -26,6 +30,21 @@ def load_general_config() -> dict[str, Any]:
     return data
 
 
+def _safe_aircraft_path(aircraft_key: str) -> Path | None:
+    """Resolve `aircraft_key` to a config path, or None if it is not a
+    bare filename-safe token (defends against path traversal from any
+    caller that sources the key from user/network input)."""
+    key = str(aircraft_key).strip()
+    if not key or not _AIRCRAFT_KEY_RE.fullmatch(key):
+        return None
+
+    aircraft_dir = (CONFIG_DIR / "aircraft").resolve()
+    candidate = (aircraft_dir / f"{key}.yaml").resolve()
+    if aircraft_dir not in candidate.parents:
+        return None
+    return candidate
+
+
 def load_aircraft_config(aircraft_key: str) -> dict[str, Any]:
     """
     Load an aircraft/add-on YAML profile.
@@ -35,10 +54,9 @@ def load_aircraft_config(aircraft_key: str) -> dict[str, Any]:
     remaining cruise simulator.
     """
 
-    path = CONFIG_DIR / "aircraft" / f"{aircraft_key}.yaml"
-
-    if not path.exists():
-        raise FileNotFoundError(f"Aircraft config not found: {path}")
+    path = _safe_aircraft_path(aircraft_key)
+    if path is None or not path.exists():
+        raise FileNotFoundError(f"Aircraft config not found: {aircraft_key!r}")
 
     raw = _load_yaml(path)
     return normalize_aircraft_config(raw, aircraft_key=aircraft_key)
@@ -54,11 +72,8 @@ def aircraft_config_exists(aircraft_key: str | None) -> bool:
     if aircraft_key is None:
         return False
 
-    key = str(aircraft_key).strip()
-    if not key or "/" in key or "\\" in key or key.startswith("."):
-        return False
-
-    return (CONFIG_DIR / "aircraft" / f"{key}.yaml").exists()
+    path = _safe_aircraft_path(aircraft_key)
+    return path is not None and path.exists()
 
 
 def normalize_aircraft_config(raw: Mapping[str, Any], *, aircraft_key: str | None = None) -> dict[str, Any]:
