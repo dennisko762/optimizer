@@ -15,8 +15,7 @@ from optimizer.api.optimize_routes import router as optimize_router
 from optimizer.api.simbrief_routes import router as simbrief_router
 from optimizer.api.trajectory_routes import router as trajectory_router
 
-from crew_platform.routes import router as crew_router, callback_router as crew_callback_router
-from crew_platform.technical.routes import router as crew_technical_router
+from crew_platform.routes import router as crew_router, callback_router as crew_callback_router, technical_router as crew_technical_router
 
 
 def _load_dotenv() -> None:

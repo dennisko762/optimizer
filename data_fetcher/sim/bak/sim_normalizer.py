@@ -1,5 +1,4 @@
 from data_fetcher.sim.sim_models import LiveSimState, RawSimState
-from data_fetcher.sim.sim_models import LiveSimState
 
 
 LB_TO_KG = 0.45359237
