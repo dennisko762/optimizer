@@ -44,6 +44,23 @@ def load_aircraft_config(aircraft_key: str) -> dict[str, Any]:
     return normalize_aircraft_config(raw, aircraft_key=aircraft_key)
 
 
+def aircraft_config_exists(aircraft_key: str | None) -> bool:
+    """Whether a performance YAML exists for this config key.
+
+    Used to refuse an optimization rather than silently computing fuel/Mach
+    from another airframe's tables (AGENTS.md: physically based data only).
+    """
+
+    if aircraft_key is None:
+        return False
+
+    key = str(aircraft_key).strip()
+    if not key or "/" in key or "\\" in key or key.startswith("."):
+        return False
+
+    return (CONFIG_DIR / "aircraft" / f"{key}.yaml").exists()
+
+
 def normalize_aircraft_config(raw: Mapping[str, Any], *, aircraft_key: str | None = None) -> dict[str, Any]:
     """
     Normalize old and new YAML formats into one generic aircraft profile.

@@ -10,6 +10,8 @@ import {
   mapRouteLive,
   mapApplyTargets,
   buildLiveOptimizeRequest,
+  resolveAircraftConfigKey,
+  resolveAircraftIdentifier,
   formatApiError,
 } from "./liveMappers.js";
 
@@ -243,6 +245,16 @@ test("mapApplyTargets with no best strategy is not applyable and null-safe", () 
 
 /* ── buildLiveOptimizeRequest ───────────────────────────────────────── */
 
+// The four live fields the backend types as required floats on
+// UiFlightState. Anything less and buildLiveOptimizeRequest refuses to emit
+// a body at all, so every positive test starts from this baseline.
+const LIVE_MINIMUM = {
+  altitudeFt: 35000,
+  grossWeightKg: 210000,
+  mach: 0.84,
+  remainingDistanceNm: 1200,
+};
+
 test("buildLiveOptimizeRequest returns null when the sim is not connected", () => {
   assert.equal(buildLiveOptimizeRequest(null), null);
   assert.equal(buildLiveOptimizeRequest({ connected: false, flightStatePatch: {} }), null);
@@ -287,7 +299,11 @@ test("buildLiveOptimizeRequest sources every flight-state field from live teleme
 });
 
 test("buildLiveOptimizeRequest takes plan context from the OFP when present", () => {
-  const telemetry = { connected: true, flightStatePatch: { altitudeFt: 35000 }, rawSummary: {} };
+  const telemetry = {
+    connected: true,
+    flightStatePatch: LIVE_MINIMUM,
+    rawSummary: {},
+  };
 
   const flatOfp = buildLiveOptimizeRequest(telemetry, {
     ofpData: { route_distance_nm: 3012, ete_min: 415 },
@@ -304,12 +320,152 @@ test("buildLiveOptimizeRequest takes plan context from the OFP when present", ()
 test("buildLiveOptimizeRequest never invents a fuel flow when SimConnect has none", () => {
   const body = buildLiveOptimizeRequest({
     connected: true,
-    flightStatePatch: { altitudeFt: 35000, mach: 0.84 },
+    flightStatePatch: LIVE_MINIMUM,
     rawSummary: {},
   });
   assert.equal(body.flightState.fuelFlowKgH, null);
   assert.equal(body.flightState.fuelFlowSource, null);
 });
+
+/* ── aircraftConfig contract (M3 rework: 422 on explicit null) ───────── */
+
+test("buildLiveOptimizeRequest omits aircraftConfig instead of sending null", () => {
+  // SimConnect supplies neither a config key nor an aircraft type. The key
+  // must be ABSENT: the backend's default only applies to a missing key, so
+  // an explicit null 422'd every live optimize call.
+  const body = buildLiveOptimizeRequest({
+    connected: true,
+    flightStatePatch: LIVE_MINIMUM,
+    rawSummary: {},
+  });
+
+  assert.equal("aircraftConfig" in body, false);
+  assert.equal("aircraft" in body.flightState, false);
+  assert.equal(JSON.stringify(body).includes("aircraftConfig"), false);
+});
+
+test("buildLiveOptimizeRequest sends the SimConnect-resolved config key", () => {
+  const body = buildLiveOptimizeRequest({
+    connected: true,
+    flightStatePatch: { ...LIVE_MINIMUM, aircraft: "A359", aircraftConfig: "a359" },
+    rawSummary: {},
+  });
+
+  assert.equal(body.aircraftConfig, "a359");
+  assert.equal(body.flightState.aircraft, "A359");
+});
+
+test("buildLiveOptimizeRequest falls back to the OFP aircraft type when the sim has none", () => {
+  // OFP-only: no config key is known client-side, so only the identifier is
+  // sent and the backend maps it through the aircraft catalog.
+  const body = buildLiveOptimizeRequest(
+    { connected: true, flightStatePatch: LIVE_MINIMUM, rawSummary: {} },
+    { ofpData: { aircraft_icao: "A359" } }
+  );
+
+  assert.equal("aircraftConfig" in body, false);
+  assert.equal(body.flightState.aircraft, "A359");
+});
+
+test("buildLiveOptimizeRequest prefers live sim aircraft over OFP and manual entry", () => {
+  const body = buildLiveOptimizeRequest(
+    {
+      connected: true,
+      flightStatePatch: { ...LIVE_MINIMUM, aircraft: "B77W" },
+      rawSummary: { aircraft_title: "PMDG 777-300ER" },
+    },
+    { ofpData: { aircraft_icao: "A359" }, flight: { aircraft_icao: "B738" } }
+  );
+
+  assert.equal(body.flightState.aircraft, "B77W");
+});
+
+test("buildLiveOptimizeRequest uses the SimConnect title when no type code is set", () => {
+  const body = buildLiveOptimizeRequest({
+    connected: true,
+    flightStatePatch: LIVE_MINIMUM,
+    rawSummary: { aircraft_title: "Airbus A350-900 Qatar Airways" },
+  });
+
+  assert.equal(body.flightState.aircraft, "Airbus A350-900 Qatar Airways");
+});
+
+test("buildLiveOptimizeRequest uses the crew's manual aircraft as the last resort", () => {
+  const body = buildLiveOptimizeRequest(
+    { connected: true, flightStatePatch: LIVE_MINIMUM, rawSummary: {} },
+    { flight: { aircraft_icao: "B77W" } }
+  );
+
+  assert.equal(body.flightState.aircraft, "B77W");
+});
+
+test("buildLiveOptimizeRequest returns null when a backend-required live field is missing", () => {
+  // altitudeFt / grossWeightKg / mach / remainingDistanceNm are non-optional
+  // on the backend: sending null would 422 the same way aircraftConfig did.
+  for (const missing of ["altitudeFt", "grossWeightKg", "mach", "remainingDistanceNm"]) {
+    const patch = { ...LIVE_MINIMUM };
+    delete patch[missing];
+    assert.equal(
+      buildLiveOptimizeRequest({ connected: true, flightStatePatch: patch, rawSummary: {} }),
+      null,
+      `expected null when ${missing} is missing`
+    );
+  }
+});
+
+test("resolveAircraftConfigKey never derives a key from a type code", () => {
+  // Only a backend-supplied key is trusted — a JS-side ICAO→config table
+  // could drift from the YAML profiles and pick another airframe's data.
+  assert.equal(
+    resolveAircraftConfigKey({ flightStatePatch: { aircraft: "A359" }, rawSummary: {} }),
+    null
+  );
+  assert.equal(
+    resolveAircraftConfigKey({ flightStatePatch: { aircraftConfig: " a359 " } }),
+    "a359"
+  );
+  assert.equal(
+    resolveAircraftConfigKey({ flightStatePatch: {}, rawSummary: { aircraft_config: "b77w" } }),
+    "b77w"
+  );
+  assert.equal(resolveAircraftConfigKey(null), null);
+});
+
+test("resolveAircraftIdentifier walks the documented priority order", () => {
+  const sim = { flightStatePatch: { aircraft: "B77W" }, rawSummary: { aircraft_title: "T" } };
+  assert.equal(resolveAircraftIdentifier(sim), "B77W");
+  assert.equal(
+    resolveAircraftIdentifier({ flightStatePatch: {}, rawSummary: { aircraft_title: "T" } }),
+    "T"
+  );
+  assert.equal(
+    resolveAircraftIdentifier({}, { ofpData: { aircraft: { icaocode: "A359" } } }),
+    "A359"
+  );
+  assert.equal(resolveAircraftIdentifier({}, { flight: { aircraft_icao: "B738" } }), "B738");
+  assert.equal(resolveAircraftIdentifier({}, {}), null);
+  // Whitespace-only values must not win over a real downstream candidate.
+  assert.equal(
+    resolveAircraftIdentifier({ flightStatePatch: { aircraft: "   " } }, {
+      flight: { aircraft_icao: "A320" },
+    }),
+    "A320"
+  );
+});
+
+test("mapApplyTargets reports which performance profile produced the numbers", () => {
+  const t = mapApplyTargets({
+    recommendation: "Step climb",
+    aircraftConfig: "a359",
+    aircraftConfigSource: "aircraft:A359",
+    bestStrategy: { flightLevel: 380, mach: 0.85, allowed: true },
+    currentStrategy: { flightLevel: 360, mach: 0.84, allowed: true },
+  });
+
+  assert.equal(t.aircraftConfig, "a359");
+  assert.equal(t.aircraftConfigSource, "aircraft:A359");
+});
+
 
 /* ── formatApiError (FastAPI envelopes must never render [object Object]) ── */
 

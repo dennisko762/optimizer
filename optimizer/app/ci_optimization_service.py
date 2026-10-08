@@ -15,6 +15,7 @@ from optimizer.api.api_models import (
     OptimizeResponse,
     StrategyResponse,
 )
+from optimizer.api.aircraft_config_resolver import resolve_aircraft_config
 from optimizer.config_loader import load_aircraft_config, load_general_config
 from optimizer.cost_model import (
     IropsConnectionGroup,
@@ -69,9 +70,20 @@ class CiOptimizationService:
 
     def optimize(self, request: OptimizeRequest) -> OptimizeResponse:
         general_cfg = load_general_config()
-        aircraft_cfg = load_aircraft_config(request.aircraft_config)
+        resolved_aircraft = resolve_aircraft_config(
+            request.aircraft_config,
+            aircraft=request.flight_state.aircraft,
+        )
+        aircraft_cfg = load_aircraft_config(resolved_aircraft.config_key)
 
-        current_state = self._to_current_flight_state(request)
+        # Downstream performance lookups (OpenAP/BADA) want a clean ICAO type,
+        # not a raw SimConnect TITLE — prefer the catalog code when we have it.
+        current_state = self._to_current_flight_state(
+            request,
+            aircraft=resolved_aircraft.icao_type
+            or request.flight_state.aircraft
+            or resolved_aircraft.config_key.upper(),
+        )
         if current_state.fuel_flow_kg_h is None or current_state.fuel_flow_kg_h <= 0:
             raise ValueError(
                 "Live SimConnect fuel flow is required for optimization. "
@@ -149,6 +161,8 @@ class CiOptimizationService:
         return OptimizeResponse(
             recommendation=result.recommendation,
             optimizerMode=result.optimizer_mode,
+            aircraftConfig=resolved_aircraft.config_key,
+            aircraftConfigSource=resolved_aircraft.source,
             currentStrategy=self._to_strategy_response(result.current_strategy),
             bestStrategy=self._to_strategy_response(result.best_strategy),
             strategies=[
@@ -306,8 +320,20 @@ class CiOptimizationService:
 
     # ─── Scenario builders ────────────────────────────────────────────────────
 
-    def _to_current_flight_state(self, request: OptimizeRequest) -> CurrentFlightState:
+    def _to_current_flight_state(
+        self,
+        request: OptimizeRequest,
+        *,
+        aircraft: str | None = None,
+    ) -> CurrentFlightState:
+        """Map the request onto the engine's flight state.
+
+        ``aircraft`` lets ``optimize`` pass the catalog-resolved ICAO type
+        (the raw SimConnect TITLE is useless to the performance lookups).
+        It defaults to the request's own value so direct callers keep working.
+        """
         fs = request.flight_state
+        aircraft = aircraft or fs.aircraft
         remaining_route_profile = clip_remaining_route_profile(
             request.remaining_route_profile,
             fs.remaining_distance_nm,
@@ -327,7 +353,7 @@ class CiOptimizationService:
             ]
 
         return CurrentFlightState(
-            aircraft=fs.aircraft,
+            aircraft=aircraft,
             engine_variant=fs.engine_variant,
             altitude_ft=fs.altitude_ft,
             gross_weight_kg=fs.gross_weight_kg,

@@ -287,6 +287,12 @@ function RecommendPanel({ rec, connected, onApply, applyState, busy, error }) {
       {rec?.line && <div className="qr-recommend__line mono">{rec.line}</div>}
       {rec?.summary && <div className="qr-recommend__summary">{rec.summary}</div>}
       {rec?.recommendation && <div className="qr-recommend__summary">{rec.recommendation}</div>}
+      {rec?.aircraftConfig && (
+        <div className="qr-recommend__summary mono">
+          PERF {String(rec.aircraftConfig).toUpperCase()}
+          {rec.aircraftConfigSource ? ` · from ${rec.aircraftConfigSource}` : ""}
+        </div>
+      )}
       {rec && (
         <div className="qr-recommend__actions">
           <button
@@ -1311,7 +1317,14 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
 
   const runOptimize = useCallback(async () => {
     const body = buildLiveOptimizeRequest(telemetry, { flight, ofpData });
-    if (!body) return;
+    if (!body) {
+      // Live state is incomplete (no altitude/weight/Mach/distance yet).
+      // Clear instead of leaving a stale recommendation or error on screen;
+      // the panel then shows its "telemetry warming up" line.
+      setOptimizeResult(null);
+      setOptimizeError(null);
+      return;
+    }
     setOptimizeBusy(true);
     setOptimizeError(null);
     try {
