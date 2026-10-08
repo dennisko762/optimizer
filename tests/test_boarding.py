@@ -157,7 +157,6 @@ def app():
 class TestBoardingRoutes:
     def test_get_unknown_session_returns_404(self, app):
         from httpx import AsyncClient, ASGITransport
-        from crew_platform.routes import _session_store
 
         async def _do():
             transport = ASGITransport(app=app)

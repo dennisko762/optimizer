@@ -28,7 +28,7 @@ Notes
 
 from __future__ import annotations
 
-from typing import Iterable, Union
+from typing import Iterable
 
 # Derived technical status values.
 TECHNICAL_STATUS_VALUES = (
