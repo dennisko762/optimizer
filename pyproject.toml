@@ -1,0 +1,35 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["efb-ui", "node_modules", ".venv", "dist", "build"]
+
+[tool.ruff.lint]
+# Baseline gate: syntax errors, undefined names, and real pyflakes bugs.
+# The broader pyupgrade/bugbear/etc. rule families are not yet adopted
+# repo-wide (531 pre-existing findings at the time this gate was added);
+# ratchet this selection up in a follow-up PR rather than silently
+# failing every existing PR today.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.coverage.run]
+branch = true
+source = [
+    "crew_platform",
+    "optimizer",
+    "performance_engine",
+    "strategy",
+    "trajectory_engine",
+    "delay_module",
+    "data_fetcher",
+    "sim_bridge",
+    "src",
+]
+omit = [
+    "*/tests/*",
+    "*_bak.py",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+skip_covered = false
+show_missing = true
