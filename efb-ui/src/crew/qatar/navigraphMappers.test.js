@@ -286,12 +286,20 @@ test("risks: stale bulletin is still live data, labelled as cached", () => {
   assert.match(view.sourceLabel, /cached 1h old/);
 });
 
-test("risks: an empty live section falls back to the static one", () => {
+test("risks: empty live sections stay empty and expose section state", () => {
   const view = mapRiskView(
     { status: "ok", data: { official_notices: [], operator_risks: [], nat_tracks: [] } },
     STATIC_VIEW
   );
-  assert.deepEqual(view.nat_tracks, STATIC_VIEW.nat_tracks);
+  assert.deepEqual(view.official_notices, []);
+  assert.deepEqual(view.operator_risks, []);
+  assert.deepEqual(view.nat_tracks, []);
+  assert.deepEqual(view.sectionState, {
+    official_notices: "empty",
+    operator_risks: "empty",
+    nat_tracks: "empty",
+  });
+  assert.equal(view.sourceLabel, "operator risk feed • live");
 });
 
 /* ── tiles ─────────────────────────────────────────────────────────── */

@@ -251,11 +251,10 @@ export function mapNotamSummary(resp) {
 /* ── EDTO / Risks (qatar-05) ─────────────────────────────────────────── */
 
 /**
- * Merge the live risk bulletin over the static EDTO view model.
+ * Map a risk bulletin without mixing live and static provenance.
  *
- * The static snapshot stays as the fallback so the screen never empties;
- * when live data is available it replaces the notices, operator risks and
- * NAT tracks, and `live` flips to true so the UI can label the source.
+ * A configured live response owns every section, including empty sections;
+ * static snapshots are used only when no live/cache feed is available.
  */
 export function mapRiskView(resp, staticView) {
   const env = mapNavigraphEnvelope(resp);
@@ -269,6 +268,11 @@ export function mapRiskView(resp, staticView) {
       badgeClass: env.badgeClass,
       statusDetail: env.detail,
       sourceLabel: "static briefing snapshot",
+      sectionState: {
+        official_notices: "static",
+        operator_risks: "static",
+        nat_tracks: "static",
+      },
     };
   }
   const d = env.data || {};
@@ -286,34 +290,33 @@ export function mapRiskView(resp, staticView) {
       env.status === "stale"
         ? `operator risk feed • cached ${env.age}`
         : "operator risk feed • live",
-    official_notices: notices.length
-      ? notices.map((n) => ({
-          region: n.region,
-          status: n.status,
-          updated: n.updated || null,
-          level: n.level ?? null,
-          detail: n.detail || null,
-          current: true,
-        }))
-      : base.official_notices || [],
-    operator_risks: operator.length
-      ? operator.map((r) => ({
-          country: r.region,
-          level: r.status,
-          updated: r.updated || null,
-          current: true,
-        }))
-      : base.operator_risks || [],
-    nat_tracks: nat.length
-      ? nat.map((t) => ({
-          name: t.name,
-          direction: t.direction || "",
-          valid: t.valid || "",
-          track: t.track || "",
-          levels: Array.isArray(t.levels) ? t.levels : [],
-          tmi: t.tmi || null,
-        }))
-      : base.nat_tracks || [],
+    sectionState: {
+      official_notices: notices.length ? "live" : "empty",
+      operator_risks: operator.length ? "live" : "empty",
+      nat_tracks: nat.length ? "live" : "empty",
+    },
+    official_notices: notices.map((n) => ({
+      region: n.region,
+      status: n.status,
+      updated: n.updated || null,
+      level: n.level ?? null,
+      detail: n.detail || null,
+      current: true,
+    })),
+    operator_risks: operator.map((r) => ({
+      country: r.region,
+      level: r.status,
+      updated: r.updated || null,
+      current: true,
+    })),
+    nat_tracks: nat.map((t) => ({
+      name: t.name,
+      direction: t.direction || "",
+      valid: t.valid || "",
+      track: t.track || "",
+      levels: Array.isArray(t.levels) ? t.levels : [],
+      tmi: t.tmi || null,
+    })),
   };
 }
 
