@@ -209,3 +209,141 @@ def test_status_no_plan_degraded_state(monkeypatch, client):
     r = client.get("/api/crew/weather/route")
     assert r.status_code == 404
     assert "SimBrief" in r.json()["detail"] or "plan" in r.json()["detail"].lower()
+
+
+# ── ETA temporal provenance (#2) ──────────────────────────────────────
+
+def test_route_samples_degrade_honestly_outside_horizon(client):
+    """A fresh plan is sampled at each fix's ETA hour, with valid times.
+
+    cycle 20261005_18 (run 18Z). std 2026-10-06 18:00Z == T+24h.
+    """
+    from optimizer.api import flightplan_service as fps
+    view = {
+        "origin": "EDDF", "destination": "RJAA",
+        "cruise_fl": 340, "callsign": "QTR815",
+        "std_utc": "2026-10-06 18:00",
+        "waypoints": [
+            {"ident": "EDDF", "lat": 50.0, "lon": 30.0, "alt": None, "stage": "DEP", "ete": "0:00"},
+            {"ident": "AMZ", "lat": 50.5, "lon": 40.0, "alt": 250, "ete": "12:00"},
+            {"ident": "RJAA", "lat": 35.7, "lon": 60.0, "alt": None, "stage": "ARR", "ete": "24:00"},
+        ],
+    }
+    fps.clear_fetch_cache()
+    fps.save_plan(view)
+    # requested display offset 0 (the only published step)
+    r = client.get("/api/crew/weather/route", params={"fl": 300, "offset": 0})
+    assert r.status_code == 200
+    body = r.json()
+    pts = body["samples"]["points"]
+    by_ident = {p["ident"]: p for p in pts}
+    # the provenance block must be present + per-point valid times when served
+    s = body["samples"]
+    assert s["provenance"]
+    for p in pts:
+        if p["offset_served"] is not None:
+            assert p["valid_at_utc"], "served sample must carry its valid time"
+    # fixture cycle 20261005_18 publishes T+0 only; AMZ ETA is T+12h — OUT of
+    # horizon, so the sample is served at T+0 with an honest mismatch flag,
+    # never labelled as T+12h (QA #2).
+    amz = by_ident["AMZ"]
+    assert amz["offset"] == 0
+    assert amz["offset_served"] == 0
+    assert any("outside published horizon" in u for u in amz["unavailable"])
+    assert amz["valid_at_utc"].endswith("T18:00:00Z")  # T+0 of run 18Z
+    # a fix with NO eta at all degrades silently-ish: still T+0, flagged
+    rj = by_ident["RJAA"]
+    assert rj["offset"] == 0
+
+
+def test_route_samples_use_eta_hour_inside_horizon(client, weather_env):
+    """When the ETA hour IS published, the fix must be sampled AT that hour.
+
+    cycle 20261005_18 (run 18Z) + a second bundle at T+6; std 2026-10-05
+    23:00Z == T+5h, so:
+      AMZ  ETE 1:00 -> abs T+6h  -> published -> sampled AT T+6
+      NOV  ETE 2:00 -> abs T+7h  -> in horizon, step not published -> flagged
+      RJAA ETE 5:00 -> abs T+10h -> outside published horizon -> flagged
+    """
+    import time as _time
+    import numpy as np
+    from crew_platform.weather.store import BoxKey, CycleMeta, CycleStore
+    from crew_platform.weather import service as _svc
+
+    # publish an extra step (T+6) for the same box, different field values so
+    # the served offset is observable
+    store = weather_env
+    box = BoxKey(25.0, 75.0, 65.0, 10.0)
+    import crew_platform.weather.store as _st
+    # _synthetic_bundle writes the region-keyed npz + raw stub only
+    _synthetic_bundle(_st.cache_root(), "20261005_18", 6)
+    meta = store.load_meta("20261005_18", box)
+    assert meta is not None
+    store.publish(CycleMeta(
+        cycle_id="20261005_18", run_date="20261005", run_hour="18",
+        box=box, offsets=[0, 6], fields=meta.fields,
+        n_lat=meta.n_lat, n_lon=meta.n_lon, fetched_at=_time.time(),
+    ))
+
+    from optimizer.api import flightplan_service as fps
+    view = {
+        "origin": "EDDF", "destination": "RJAA",
+        "cruise_fl": 340,
+        "std_utc": "2026-10-05 23:00",   # T+5h vs run 18Z
+        "waypoints": [
+            {"ident": "EDDF", "lat": 50.0, "lon": 30.0, "alt": None, "stage": "DEP", "ete": "0:00"},
+            {"ident": "AMZ", "lat": 50.5, "lon": 40.0, "alt": 250, "ete": "1:00"},
+            {"ident": "NOV", "lat": 51.0, "lon": 50.0, "alt": 340, "ete": "2:00"},
+            {"ident": "RJAA", "lat": 35.7, "lon": 60.0, "alt": None, "stage": "ARR", "ete": "5:00"},
+        ],
+    }
+    fps.clear_fetch_cache()
+    fps.save_plan(view)
+    r = client.get("/api/crew/weather/route", params={"fl": 300, "offset": 0})
+    assert r.status_code == 200
+    pts = r.json()["samples"]["points"]
+    by_ident = {p["ident"]: p for p in pts}
+    # AMZ: ETA T+6h is published -> sampled AT T+6, valid time 18Z+6h=00Z
+    assert by_ident["AMZ"]["offset"] == 6
+    assert by_ident["AMZ"]["offset_served"] == 6
+    assert by_ident["AMZ"]["valid_at_utc"].endswith("T00:00:00Z")  # 18Z+6h
+    assert not any("horizon" in u or "not published" in u for u in by_ident["AMZ"]["unavailable"])
+    # DEP: ETA T+5h in horizon but that step not published (steps 0,6) ->
+    # served at requested offset 0, flagged "not published", never T+5h
+    dep = by_ident["EDDF"]
+    assert dep["offset"] == 0
+    assert any("not published" in u for u in dep["unavailable"])
+    # NOV: ETA T+7h outside the published horizon (T+0..T+6) -> flagged
+    nov = by_ident["NOV"]
+    assert nov["offset"] == 0
+    assert any("outside published horizon" in u for u in nov["unavailable"])
+    # RJAA: ETA T+10h outside published horizon (T+0..T+6) -> flagged
+    rj = by_ident["RJAA"]
+    assert rj["offset"] == 0
+    assert any("outside published horizon" in u for u in rj["unavailable"])
+
+
+def test_route_stale_plan_predating_run_is_flagged(client):
+    """A plan whose STD predates the model run (stale OFP) must flag every
+    ETA as pre-run, never silently label the served time as the ETA (QA #2)."""
+    from optimizer.api import flightplan_service as fps
+    view = {
+        "origin": "EDDF", "destination": "RJAA",
+        "cruise_fl": 340,
+        "std_utc": "2026-10-01 00:00",  # days BEFORE run 20261005_18
+        "waypoints": [
+            {"ident": "EDDF", "lat": 50.0, "lon": 30.0, "alt": None, "stage": "DEP", "ete": "0:00"},
+            {"ident": "AMZ", "lat": 50.5, "lon": 40.0, "alt": 250, "ete": "6:00"},
+            {"ident": "RJAA", "lat": 35.7, "lon": 60.0, "alt": None, "stage": "ARR", "ete": "12:00"},
+        ],
+    }
+    fps.clear_fetch_cache()
+    fps.save_plan(view)
+    r = client.get("/api/crew/weather/route", params={"fl": 300, "offset": 0})
+    assert r.status_code == 200
+    pts = r.json()["samples"]["points"]
+    for p in pts:
+        assert p["offset"] == 0, "stale plan samples at requested offset"
+        assert any("predates the model run" in u for u in p["unavailable"]),             f"{p['ident']} missing stale-plan flag: {p['unavailable']}"
+        # valid time is the SERVED offset (T+0), never the ETA
+        assert p["valid_at_utc"].endswith("T18:00:00Z")

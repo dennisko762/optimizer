@@ -25,7 +25,7 @@ import {
 import "./wxmap.css";
 import {
   mapWeatherStatus, mapLayerFeatures, hazardColor, mapRouteForMap,
-  mapCrossSection, fmtFl, validTimeLabel,
+  mapCrossSection, sampleForPoint, fmtFl, validTimeLabel,
 } from "./weatherMappers.js";
 import CrossSection from "./CrossSection.jsx";
 
@@ -166,6 +166,11 @@ export default function MapWeatherPanel({ apiBase, utc }) {
   // whole app down (no error boundary above it). So wait for the container to
   // be laid out (≥2px) before constructing the Map.
   const [mapReady, setMapReady] = useState(false);
+  // style-loaded is a separate stage: route/hazard source effects must
+  // re-run BOTH when the style finishes loading AND when data arrives —
+  // a one-shot reload raced the first /route fetch and the route never
+  // drew (QA #7). Tracking it as state makes the deps honest.
+  const [mapStyleLoaded, setMapStyleLoaded] = useState(false);
   useEffect(() => {
     const el = mapElRef.current;
     if (!el) return undefined;
@@ -205,6 +210,9 @@ export default function MapWeatherPanel({ apiBase, utc }) {
       });
       map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
       mapRef.current = map;
+      const onStyle = () => setMapStyleLoaded(true);
+      if (map.isStyleLoaded()) onStyle();
+      else map.once("load", onStyle);
       const onAttr = (e) => {
         if (e.html) e.html = ATTRIBUTION + e.html;
       };
@@ -220,7 +228,7 @@ export default function MapWeatherPanel({ apiBase, utc }) {
   // ── route sources/layers ──────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return undefined;
+    if (!map || !mapStyleLoaded) return undefined;
 
     const lineFC = {
       type: "FeatureCollection",
@@ -235,7 +243,8 @@ export default function MapWeatherPanel({ apiBase, utc }) {
       features: (route.points || []).map((p) => ({
         type: "Feature",
         properties: {
-          ident: p.ident, is_origin: p.isOrigin, is_dest: p.isDest,
+          ident: p.ident, occurrence: p.occurrence != null ? p.occurrence : 0,
+          is_origin: p.isOrigin, is_dest: p.isDest,
           stage: p.stage || "", fl: p.fl != null ? String(p.fl) : "",
         },
         geometry: { type: "Point", coordinates: [p.lon, p.lat] },
@@ -342,9 +351,13 @@ export default function MapWeatherPanel({ apiBase, utc }) {
         layers: ["wx-fix", "wx-fix-end"],
       });
       if (feats.length) {
-        const ident = feats[0].properties?.ident;
-        const p = pts.find((q) => q.ident === ident);
-        if (p) setSelected((cur) => (cur?.ident === p.ident ? null : p));
+        const f = feats[0].properties || {};
+        // occurrence-aware match: repeated idents are distinct points
+        const p = pts.find(
+          (q) => q.ident === f.ident &&
+                 (q.occurrence != null ? q.occurrence : 0) === (f.occurrence != null ? f.occurrence : 0)
+        );
+        if (p) setSelected((cur) => (cur === p ? null : p));
       } else {
         setSelected(null);
       }
@@ -355,17 +368,7 @@ export default function MapWeatherPanel({ apiBase, utc }) {
       map.off("click", onClick);
       map.off("resize", tryFit);
     };
-  }, [route, selected]);
-
-  // re-run route layers when the style finishes loading (initial)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return undefined;
-    const on = () => setRoute((r) => ({ ...r }));
-    if (map.isStyleLoaded()) on();
-    else map.once("load", on);
-    return () => map.off("load", on);
-  }, [mapReady]);
+  }, [route, selected, mapStyleLoaded]);
 
   // ── hazard polygon sources/layers ─────────────────────────────────
   useEffect(() => {
@@ -386,18 +389,24 @@ export default function MapWeatherPanel({ apiBase, utc }) {
           type: "geojson",
           data: { type: "FeatureCollection", features: fc.features || [] },
         });
-        const bands = fc.thresholds || [0, 1, 2];
+        // empty thresholds [] is TRUTHY in JS — `|| [0,1,2]` would keep the
+        // empty array and the step ramp would be all-undefined (MapLibre:
+        // "'undefined' value invalid"). Fall back only when there are NO bands.
+        const bands = (fc.thresholds && fc.thresholds.length) ? fc.thresholds : [0, 1, 2];
         const ramp = bands.map((_, b) => hazardColor(prod, b));
         const colorExpr = ["step", ["coalesce", ["get", "band"], 0],
           ramp[0], 1, ramp[1] || ramp[0], 2, ramp[2] || ramp[1] || ramp[0]];
+        // insert BELOW the route layers: hazard fills must not paint over
+        // the route line / fix dots (QA #7 layer order)
+        const before = map.getLayer("wx-route-halo") ? "wx-route-halo" : undefined;
         map.addLayer({
           id: srcId, type: "fill", source: srcId,
           paint: { "fill-color": colorExpr, "fill-opacity": 0.42 },
-        });
+        }, before);
         map.addLayer({
           id: `${srcId}-line`, type: "line", source: srcId,
           paint: { "line-color": colorExpr, "line-width": 1, "line-opacity": 0.9 },
-        });
+        }, before);
       }
     }
   }, [layers]);
@@ -472,11 +481,11 @@ export default function MapWeatherPanel({ apiBase, utc }) {
     map.fitBounds(route.points.map((p) => [p.lon, p.lat]), { padding: 60, duration: 500 });
   }
 
-  const sampleByIdent = useMemo(() => {
-    const m = new Map();
-    for (const s of route.samples) if (s.ident) m.set(s.ident, s);
-    return m;
-  }, [route.samples]);
+  // occurrence-aware sample join (repeated fix idents are distinct)
+  const selectedSample = useMemo(
+    () => (selected ? sampleForPoint(route.sampleByKey, selected) : null),
+    [selected, route.sampleByKey]
+  );
 
   const wxTime = cycle ? validTimeLabel(cycle, offset) : null;
 
@@ -583,6 +592,22 @@ export default function MapWeatherPanel({ apiBase, utc }) {
             <div className="wx-pop__head">
               <strong className="mono">{selected.ident}</strong>
               {selected.stage && <span className="wx-chip">{selected.stage}</span>}
+              {(() => {
+                const sv = selectedSample;
+                if (!sv) return <span className="wx-chip">NO WX</span>;
+                // temporal provenance chip: the served valid time is always
+                // shown; when the ETA couldn't be sampled (outside horizon /
+                // stale plan) the honest flag takes over — never a T+24 label
+                // on a T+6 sample (QA #2).
+                const etaFlag = (sv.unavailable || []).find(
+                  (u) => /eta|horizon|predates/i.test(u)
+                );
+                if (sv.valid_at_utc == null) return <span className="wx-chip">NO WX</span>;
+                const vt = sv.valid_at_utc.length > 16 ? sv.valid_at_utc.slice(11, 16) + "Z" : sv.valid_at_utc;
+                return etaFlag
+                  ? <span className="wx-chip" title={etaFlag}>T+{sv.offset_served != null ? sv.offset_served : "—"}h ⚠</span>
+                  : <span className="wx-chip" title="sampled at this fix's ETA">VALID {vt}</span>;
+              })()}
               <button className="wx-pop__x" onClick={() => setSelected(null)} aria-label="Close">✕</button>
             </div>
             <div className="wx-pop__grid mono">
@@ -594,7 +619,7 @@ export default function MapWeatherPanel({ apiBase, utc }) {
               {selected.fir && <span>FIR {selected.fir}</span>}
             </div>
             {(() => {
-              const s = sampleByIdent.get(selected.ident);
+              const s = selectedSample;
               if (!s) return <div className="wx-pop__na">WX sample unavailable</div>;
               return (
                 <div className="wx-pop__wx mono">

@@ -38,6 +38,17 @@ def _valid_coord(lat: Any, lon: Any) -> bool:
     return -90.0 <= la <= 90.0 and -180.0 <= lo <= 180.0
 
 
+def _occ(counters: dict[str, int], ident: str) -> int:
+    """Occurrence index of a (possibly repeated) navlog fix, in order.
+
+    Duplicates keep their position so the UI can join weather samples to the
+    EXACT fix occurrence, not just its ident.
+    """
+    n = counters.get(ident, 0)
+    counters[ident] = n + 1
+    return n
+
+
 def extract_route(view: dict[str, Any]) -> dict[str, Any]:
     """Build map-ready route data from a SimBrief flightplan view.
 
@@ -57,6 +68,7 @@ def extract_route(view: dict[str, Any]) -> dict[str, Any]:
 
     resolved: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
+    occ_counters: dict[str, int] = {}
     for i, row in enumerate(rows):
         ident = str(row.get("ident") or "").upper() or f"IDX{i}"
         lat, lon = row.get("lat"), row.get("lon")
@@ -74,6 +86,7 @@ def extract_route(view: dict[str, Any]) -> dict[str, Any]:
         resolved.append({
             "index": i,
             "ident": ident,
+            "occurrence": _occ(occ_counters, ident),
             "name": row.get("name"),
             "lat": float(lat),
             "lon": float(lon),

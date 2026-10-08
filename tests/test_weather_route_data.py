@@ -96,3 +96,16 @@ def test_no_valid_coordinates_raises():
 def test_empty_waypoints_raises():
     with pytest.raises(RouteDataError):
         extract_route(_view([]))
+
+
+# repeated navlog fixes must keep occurrence identity (#7: sample joining)
+def test_repeated_fixes_keep_occurrence_identity():
+    rows = [
+        {"ident": "EDDF", "lat": 50.0, "lon": 8.5},
+        {"ident": "ALDOX", "lat": 55.0, "lon": 60.0},
+        {"ident": "ALDOX", "lat": 60.0, "lon": 100.0},  # same fix again
+        {"ident": "RJAA", "lat": 35.0, "lon": 140.0},
+    ]
+    out = extract_route(_view(rows))
+    occ = [(p["ident"], p["occurrence"]) for p in out["points"]]
+    assert occ == [("EDDF", 0), ("ALDOX", 0), ("ALDOX", 1), ("RJAA", 0)]

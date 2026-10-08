@@ -9,7 +9,7 @@
  * renders "—".
  */
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { fmtFl, fmtWind } from "./weatherMappers.js";
 
 const W = 1000; // internal svg width (viewBox), scaled to container
@@ -27,6 +27,8 @@ function yFor(fl, maxFl) {
 const TIER_COLORS = ["#e8a838", "#f97316", "#ef4444"];
 
 export default function CrossSection({ columns, maxDistNm, cruiseFl, hoverIdx, onHover }) {
+  // refs to the per-fix focus targets (keyboard navigation must move focus)
+  const targetRefs = useRef([]);
   const maxFl = Math.max(460, (cruiseFl || 340) + 60);
   // Hover-target width = the column pitch (clamped), so adjacent columns do
   // NOT overlap — with ~170 fixes a fixed 32px target would overlap ~6x and
@@ -36,19 +38,21 @@ export default function CrossSection({ columns, maxDistNm, cruiseFl, hoverIdx, o
     (W - PAD.l - PAD.r) / Math.max(columns.length, 1)
   );
 
+  const gridFl = [0, 100, 200, 300, 400, 500].filter((f) => f <= maxFl + 20);
+  const maxTick = Math.max(maxFl, Math.ceil((maxFl + 20) / 100) * 100);
+
   // Planned profile: per-fix FL (ground fixes = FL0) along cumulative distance.
+  // MUST share the same max as the fix columns (maxTick) — using a different
+  // scale here drew the profile line off the fix dots (misregistration).
   const profilePts = useMemo(() => {
     if (!columns.length) return "";
     const pts = columns.map((c) => {
       const x = xFor(c.cumNm || 0, maxDistNm);
-      const y = yFor(c.fl || 0, maxFl);
+      const y = yFor(c.fl || 0, maxTick);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
     return pts.join(" ");
-  }, [columns, maxDistNm, maxFl]);
-
-  const gridFl = [0, 100, 200, 300, 400, 500].filter((f) => f <= maxFl + 20);
-  const maxTick = Math.max(maxFl, Math.ceil((maxFl + 20) / 100) * 100);
+  }, [columns, maxDistNm, maxTick]);
 
   return (
     <div className="wx-cross" role="group" aria-label="Route cross-section, distance by flight level">
@@ -104,11 +108,31 @@ export default function CrossSection({ columns, maxDistNm, cruiseFl, hoverIdx, o
               >
                 {c.ident}
               </text>
-              {/* hover target (width = column pitch, non-overlapping) */}
+              {/* hover target (width = column pitch, non-overlapping);
+                  onTouchStart gives tap-select on touch devices,
+                  tabIndex/keydown let keyboard users step through fixes */}
               <rect
                 x={x - pitch / 2} y={PAD.t} width={pitch} height={H - PAD.t - PAD.b}
                 fill="transparent"
+                tabIndex={0}
+                role="button"
+                aria-label={`Fix ${c.ident}${c.stage ? ` ${c.stage}` : ""} — show wind and hazards`}
                 onMouseEnter={() => onHover?.(i)}
+                onTouchStart={(e) => { e.preventDefault(); onHover?.(i); }}
+                onFocus={() => onHover?.(i)}
+                onBlur={() => onHover?.(null)}
+                onKeyDown={(e) => {
+                  const move = (n) => {
+                    if (n < 0 || n >= columns.length) return;
+                    e.preventDefault();
+                    onHover?.(n);
+                    targetRefs.current[n]?.focus();
+                  };
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onHover?.(i); }
+                  else if (e.key === "ArrowRight") move(i + 1);
+                  else if (e.key === "ArrowLeft") move(i - 1);
+                }}
+                ref={(el) => { targetRefs.current[i] = el; }}
               />
             </g>
           );

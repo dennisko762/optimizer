@@ -6,6 +6,8 @@ import {
   hazardColor,
   mapRouteForMap,
   mapCrossSection,
+  joinSamplesByOccurrence,
+  sampleForPoint,
   fmtFl,
   fmtWind,
   fmtTurb,
@@ -219,4 +221,53 @@ test("validTimeLabel computes offset time from cycle id", () => {
   assert.equal(validTimeLabel("20261005_18", 6), "+1d 00Z");
   assert.equal(validTimeLabel("20261005_18", 24), "+1d 18Z");
   assert.equal(validTimeLabel(null, 0), null);
+});
+
+
+// ── occurrence identity (#2/#7: repeated fix idents) ────────────────
+
+test("repeated ident keeps distinct occurrences in route points", () => {
+  const route = mapRouteForMap({
+    origin: "EDDF", destination: "RJAA",
+    points: [
+      { ident: "EDDF", lat: 50, lon: 8.5, stage: "DEP", alt: 0 },
+      { ident: "ALDOX", lat: 55, lon: 60, alt: 350, ete: "0:40" },
+      { ident: "ALDOX", lat: 60, lon: 100, alt: 350, ete: "1:20" }, // duplicate
+      { ident: "RJAA", lat: 35, lon: 140, stage: "ARR", alt: 0, ete: "9:00" },
+    ],
+  });
+  const aldox = route.points.filter((p) => p.ident === "ALDOX");
+  assert.equal(aldox.length, 2);
+  assert.equal(aldox[0].occurrence, 0);
+  assert.equal(aldox[1].occurrence, 1);
+});
+
+test("joinSamplesByOccurrence attaches each sample to its own duplicate", () => {
+  const key = joinSamplesByOccurrence([
+    { ident: "ALDOX", occurrence: 0, wind_from_deg: 100 },
+    { ident: "ALDOX", occurrence: 1, wind_from_deg: 280 },
+  ]);
+  assert.equal(sampleForPoint(key, { ident: "ALDOX", occurrence: 0 }).wind_from_deg, 100);
+  assert.equal(sampleForPoint(key, { ident: "ALDOX", occurrence: 1 }).wind_from_deg, 280);
+  // legacy server: samples without occurrence fall back to ident+position
+  const legacy = joinSamplesByOccurrence([
+    { ident: "ALDOX", wind_from_deg: 100 },
+    { ident: "ALDOX", wind_from_deg: 280 },
+  ]);
+  assert.equal(sampleForPoint(legacy, { ident: "ALDOX", occurrence: 0 }).wind_from_deg, 100);
+  assert.equal(sampleForPoint(legacy, { ident: "ALDOX", occurrence: 1 }).wind_from_deg, 280);
+});
+
+test("cross section uses occurrence-aware join", () => {
+  const points = [
+    { ident: "ALDOX", occ: 0, cumNm: 100, fl: 350, ete: "0:40" },
+    { ident: "ALDOX", occ: 1, cumNm: 300, fl: 350, ete: "1:20" },
+  ].map((p) => ({ ...p, occurrence: p.occ }));
+  const samples = [
+    { ident: "ALDOX", occurrence: 0, oat_c: -30 },
+    { ident: "ALDOX", occurrence: 1, oat_c: -45 },
+  ];
+  const cs = mapCrossSection(points, samples, 350);
+  assert.equal(cs.columns[0].oatC, -30);
+  assert.equal(cs.columns[1].oatC, -45);
 });

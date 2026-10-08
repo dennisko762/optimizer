@@ -12,6 +12,7 @@ All functions are synchronous (numpy/xarray) and meant to run from
 from __future__ import annotations
 
 import math
+import re
 import time
 from typing import Any, Optional
 
@@ -264,10 +265,14 @@ def route_samples(
             ete_minutes.append(None)
             continue
         ete = row.get("ete")
-        try:
-            ete_minutes.append(float(ete) if ete is not None else None)
-        except (TypeError, ValueError):
-            ete_minutes.append(None)
+        m = None
+        if isinstance(ete, (int, float)) and not isinstance(ete, bool):
+            m = float(ete)  # already minutes
+        elif isinstance(ete, str):
+            mm = re.match(r"^\s*(\d{1,2}):(\d{2})\s*$", ete)  # "H:MM" navlog form
+            if mm:
+                m = int(mm.group(1)) * 60 + int(mm.group(2))
+        ete_minutes.append(m)
 
     def _eta_to_offset(minutes: Optional[float]) -> Optional[int]:
         """Forecast hour for a waypoint ETA, or None when undecidable.
@@ -286,6 +291,8 @@ def route_samples(
             import datetime as _dt
 
             s = str(std).strip()
+            if s.endswith(("Z", "z")):
+                s = s[:-1]
             for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
                 try:
                     std_dt = _dt.datetime.strptime(s, fmt)
@@ -302,38 +309,78 @@ def route_samples(
     rows = [w for w in (view.get("waypoints") or []) if isinstance(w, dict)]
     points: list[dict[str, Any]] = []
     served_offsets: set[int] = set()
+    ident_seen: dict[str, int] = {}  # occurrence counter (repeated fixes)
+
+    def _next_occ(ident: str) -> int:
+        n = ident_seen.get(ident, 0)
+        ident_seen[ident] = n + 1
+        return n
     for i, row in enumerate(rows):
         latw = row.get("lat"); lonw = row.get("lon")
         try:
             la, lo = float(latw), float(lonw)
         except (TypeError, ValueError):
             continue
-        if math.isnan(la) or math.isnan(lo):
+        if math.isnan(la) or math.isnan(lo) or not (-90.0 <= la <= 90.0 and -180.0 <= lo <= 180.0):
             continue
 
         off_w = _eta_to_offset(ete_minutes[i])
         used_fallback = off_w is None
+        requested_eta_offset = off_w
         if off_w is None:
             off_w = offset
         if off_w not in offsets:
-            points.append({
-                "ident": str(row.get("ident") or "").upper(),
-                "lat": la, "lon": lo,
-                "fl": int(round(fl)),
-                "offset": None,
-                "offset_served": None,
-                "valid_at_utc": None,
-                "unavailable": [
-                    f"weather at T+{off_w}h not published for cycle {cycle_id} "
-                    f"(horizon T+0..T+{max_off}h)"
-                ],
-            })
-            continue
+            # ETA (or no ETA) is outside/absent the published steps: serve
+            # the requested DISPLAY offset and flag the mismatch in
+            # provenance. The served time is always the point's `offset`,
+            # never the ETA — the UI must not label a T+6 sample as the
+            # T+100 valid time (QA #2).
+            served_at = offset
+            off_w = served_at
+            if served_at not in offsets:
+                ident = str(row.get("ident") or "").upper()
+                points.append({
+                    "ident": ident,
+                    "occurrence": _next_occ(ident),
+                    "lat": la, "lon": lo,
+                    "fl": int(round(fl)),
+                    "offset": None,
+                    "offset_served": None,
+                    "valid_at_utc": None,
+                    "unavailable": [
+                        f"no weather at T+{offset}h for cycle {cycle_id} "
+                        f"(published T+{min(offsets)}..T+{max_off}h)"
+                    ],
+                })
+                continue
+            if requested_eta_offset is not None and 0 <= requested_eta_offset <= max_off:
+                _eta_flag = (
+                    f"eta T+{requested_eta_offset}h not published in this cycle; "
+                    f"weather shown at requested T+{served_at}h"
+                )
+            elif requested_eta_offset is not None and requested_eta_offset < 0:
+                # plan STD predates the model run (stale OFP): every ETA is
+                # in the past — the cycle only covers T+0..T+max_off
+                _eta_flag = (
+                    f"eta T+{requested_eta_offset}h predates the model run; "
+                    f"weather shown at requested T+{served_at}h"
+                )
+            elif requested_eta_offset is not None:
+                _eta_flag = (
+                    f"eta T+{requested_eta_offset}h outside published horizon "
+                    f"(T+0..T+{max_off}h); weather shown at requested T+{served_at}h"
+                )
+            else:
+                _eta_flag = f"eta-hour unavailable; weather shown at requested T+{served_at}h"
+        else:
+            _eta_flag = None
 
         bund = _load_bundle(cycle_id, meta.box, off_w)
+        ident = str(row.get("ident") or "").upper()
         if bund is None:
             points.append({
-                "ident": str(row.get("ident") or "").upper(),
+                "ident": ident,
+                "occurrence": _next_occ(ident),
                 "lat": la, "lon": lo,
                 "fl": int(round(fl)),
                 "offset": off_w,
@@ -408,11 +455,12 @@ def route_samples(
             unavailable.append("turbulence")
         if ice_grid is None:
             unavailable.append("icing")
-        if used_fallback:
-            unavailable.append(f"eta-hour unavailable; sampled at requested T+{off_w}h")
+        if _eta_flag:
+            unavailable.append(_eta_flag)
 
         points.append({
-            "ident": str(row.get("ident") or "").upper(),
+            "ident": ident,
+            "occurrence": _next_occ(ident),
             "lat": la, "lon": lo,
             "fl": int(round(fl)),
             "u_ms": round(u, 2) if u is not None else None,

@@ -92,6 +92,53 @@ export function mapLayerFeatures(layer, product) {
 // ── route ───────────────────────────────────────────────────────────
 
 /**
+ * Join per-fix weather samples to route points with occurrence identity.
+ *
+ * Navlog fixes can repeat (procedure joins, airway loops): joining by ident
+ * alone would attach the same sample to every duplicate. Each sample row is
+ * matched to the point of the SAME ident whose `occurrence` (position among
+ * same-ident points, assigned by mapRouteForMap) equals the sample's own
+ * occurrence — the server emits samples in point order, so a running
+ * per-ident counter yields the sample's occurrence. A sample without a
+ * matching occurrence falls back to the first same-ident point (legacy
+ * servers that don't distinguish duplicates).
+ *
+ * Pure + exported so node:test can cover repeated-ident routes.
+ * @param {Array} samples raw samples.points (in point order)
+ * @returns {Map<string,{ident:string,occurrence:number}>} sample rows keyed by ident+occurrence
+ */
+export function joinSamplesByOccurrence(samples) {
+  const out = new Map();
+  const counters = new Map();
+  for (const s of samples || []) {
+    if (!s || !s.ident) continue;
+    const ident = String(s.ident).toUpperCase();
+    const n = counters.get(ident) || 0;
+    counters.set(ident, n + 1);
+    // prefer the exact-occurrence point when both sides are marked
+    const occ = (s.occurrence != null && Number.isInteger(Number(s.occurrence)))
+      ? Number(s.occurrence) : n;
+    out.set(`${ident}#${occ}`, { ident, occurrence: occ, sample: s });
+  }
+  return out;
+}
+
+/**
+ * Look up the sample for a route point (occurrence-aware).
+ */
+export function sampleForPoint(sampleByKey, point) {
+  if (!point) return undefined;
+  const key = `${point.ident}#${point.occurrence != null ? point.occurrence : 0}`;
+  const hit = sampleByKey ? sampleByKey.get(key) : undefined;
+  if (hit) return hit.sample;
+  // legacy fallback: first same-ident sample (unique idents hit this too)
+  for (const v of sampleByKey ? sampleByKey.values() : []) {
+    if (v.ident === point.ident) return v.sample;
+  }
+  return undefined;
+}
+
+/**
  * Normalize GET /route into map geometry + per-fix readout.
  * @param {object} route raw route payload (extract_route + samples + fl/offset)
  * @returns {{origin:string|null,destination:string|null,cruiseFl:number|null,
@@ -105,8 +152,11 @@ export function mapRouteForMap(route) {
   const r = route || {};
   const originIdent = (r.origin || "").toUpperCase();
   const destIdent = (r.destination || "").toUpperCase();
+  const byIdentCount = new Map();
   const points = Array.isArray(r.points) ? r.points.map((p, i) => {
     const ident = (p.ident || `IDX${i}`).toUpperCase();
+    const nSame = (byIdentCount.get(ident) || 0);
+    byIdentCount.set(ident, nSame + 1);
     return {
     index: p.index != null ? p.index : i,
     ident,
@@ -127,6 +177,8 @@ export function mapRouteForMap(route) {
     distNm: p.dist_nm != null ? Number(p.dist_nm) : null,
     cumNm: p.cum_nm != null ? Number(p.cum_nm) : null,
     bearingDeg: p.bearing_deg != null ? Number(p.bearing_deg) : null,
+    // occurrence = position among same-ident points (0 for unique idents)
+    occurrence: nSame,
     };
   }) : [];
 
@@ -146,6 +198,13 @@ export function mapRouteForMap(route) {
   const samples = (r.samples && Array.isArray(r.samples.points))
     ? r.samples.points : [];
 
+  // Occurrence identity: navlog fixes can repeat (procedure joins, airway
+  // loops). The server emits samples in point order, each tagged with its
+  // `occurrence` (position among same-ident points); points carry the same
+  // counter. joinSamplesByOccurrence keys rows by ident+occurrence so the
+  // map and cross-section join the exact duplicate, never the first one.
+  const sampleByKey = joinSamplesByOccurrence(samples);
+
   return {
     origin: r.origin || null,
     destination: r.destination || null,
@@ -160,6 +219,7 @@ export function mapRouteForMap(route) {
     unresolved: Array.isArray(r.unresolved) ? r.unresolved : [],
     lines,
     samples,
+    sampleByKey,
     sampleFl: r.samples && r.samples.fl != null ? Number(r.samples.fl) : (r.fl != null ? Number(r.fl) : null),
     sampleOffset: r.samples && r.samples.offset != null ? Number(r.samples.offset) : (r.offset != null ? Number(r.offset) : null),
     provenance: r.samples && r.samples.provenance ? r.samples.provenance : null,
@@ -176,10 +236,11 @@ export function mapRouteForMap(route) {
  * @returns {{columns:Array, maxDistNm:number|null, cruiseFl:number|null}}
  */
 export function mapCrossSection(points, samples, cruiseFl) {
-  const byIdent = new Map();
-  for (const s of samples) if (s && s.ident) byIdent.set(s.ident, s);
+  // occurrence-aware join: repeated fix idents map to the same sample row
+  // when matched by ident alone — the join carries each point's occurrence.
+  const sampleByKey = joinSamplesByOccurrence(samples);
   const columns = points.map((p) => {
-    const s = byIdent.get(p.ident) || {};
+    const s = sampleForPoint(sampleByKey, p) || {};
     return {
       ident: p.ident,
       isOrigin: p.isOrigin,
