@@ -38,7 +38,7 @@ from crew_platform.vamsys_pilot_auth import (
     PilotTokens,
 )
 
-from crew_platform.technical.routes import router as technical_router  # noqa: E402
+from crew_platform.technical.routes import router as technical_router  # noqa: E402,F401 — re-exported
 
 router = APIRouter(prefix="/api/crew", tags=["crew-platform"])
 

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
 
 from optimizer.config_loader import load_aircraft_config, load_general_config
 from optimizer.route_profile_models import RemainingRouteSegment
 from optimizer.wind.wind_profile import WindLayer, WaypointWind, WindProfile
-from optimizer.wind.wind_interpolator import interpolate_wind_components
 from optimizer.wind.gefs_ensemble import (
     EnsembleProfile,
     EnsembleWindStats,

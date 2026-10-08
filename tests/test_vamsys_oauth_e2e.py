@@ -9,7 +9,6 @@ untouched (real PKCE validation, real token exchange, real redirect).
 """
 from __future__ import annotations
 
-import time
 import urllib.parse
 
 import httpx
