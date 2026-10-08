@@ -28,9 +28,12 @@ from crew_platform.navigraph.auth import (
 from crew_platform.navigraph.cache import CacheEntry, TtlCache
 from crew_platform.navigraph.config import (
     API_BASE,
+    DATA_SCOPES,
     DATA_SUBSCRIPTION,
     ENROUTE_TILE_BASE,
+    PROVENANCE_LIVE,
     NavigraphConfig,
+    is_cacheable,
     load_config,
 )
 from crew_platform.navigraph.ratelimit import RateLimiter, RateLimitExceeded
@@ -58,6 +61,9 @@ class SubscriptionGate:
     status: str  # available | not_configured | not_subscribed | not_authenticated
     required_subscription: Optional[str] = None
     detail: str = ""
+    required_scope: Optional[str] = None
+    cacheable: bool = True
+    provenance: str = PROVENANCE_LIVE
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -65,6 +71,9 @@ class SubscriptionGate:
             "allowed": self.allowed,
             "status": self.status,
             "required_subscription": self.required_subscription,
+            "required_scope": self.required_scope,
+            "cacheable": self.cacheable,
+            "provenance": self.provenance,
             "detail": self.detail,
         }
 
@@ -74,8 +83,21 @@ def gate_for(
     config: NavigraphConfig,
     tokens: Optional[NavigraphTokens],
 ) -> SubscriptionGate:
-    """Evaluate the subscription gate for one datatype."""
+    """Evaluate the entitlement gate for one datatype.
+
+    Two independent conditions are checked for Navigraph datatypes:
+
+    * the ``subscriptions`` CLAIM in the access token (the entitlement —
+      e.g. ``charts`` unlocks both airport charts and enroute tiles), and
+    * the OAuth SCOPE on the token (the transport — ``tiles`` is what makes
+      the token endpoint return the signed CloudFront cookies).
+
+    Missing either one is reported as ``not_subscribed`` with the precise
+    reason, because both are required before any data may be delivered.
+    """
     required = DATA_SUBSCRIPTION.get(datatype, "charts")
+    required_scope = DATA_SCOPES.get(datatype, "charts")
+    cacheable = is_cacheable(datatype)
 
     # Datatypes served from an operator feed, not Navigraph.
     if required is None and datatype in ("notam", "risk", "nat"):
@@ -84,6 +106,7 @@ def gate_for(
             "risk": config.risk_url,
             "nat": config.risk_url,
         }[datatype]
+        provenance = config.feed_provenance(datatype)
         if not url:
             return SubscriptionGate(
                 datatype,
@@ -92,35 +115,67 @@ def gate_for(
                 None,
                 f"No {datatype.upper()} feed configured "
                 f"(set NAVIGRAPH_{'NOTAM' if datatype == 'notam' else 'RISK'}_URL)",
+                required_scope=None,
+                cacheable=cacheable,
+                provenance=provenance,
             )
-        return SubscriptionGate(datatype, True, "available", None, "operator feed")
-
-    if not config.configured:
         return SubscriptionGate(
             datatype,
+            True,
+            "available",
+            None,
+            f"operator feed ({provenance})",
+            required_scope=None,
+            cacheable=cacheable,
+            provenance=provenance,
+        )
+
+    def gate(allowed: bool, status: str, detail: str) -> SubscriptionGate:
+        return SubscriptionGate(
+            datatype,
+            allowed,
+            status,
+            required,
+            detail,
+            required_scope=required_scope,
+            cacheable=cacheable,
+            provenance=PROVENANCE_LIVE,
+        )
+
+    if not config.configured:
+        return gate(
             False,
             "not_configured",
-            required,
             "Navigraph credentials are not configured on this installation",
         )
     if tokens is None or not tokens.access_token:
-        return SubscriptionGate(
-            datatype,
+        return gate(
             False,
             "not_authenticated",
-            required,
             "Pilot has not signed in to Navigraph on this device",
         )
     if required and not tokens.has_subscription(required):
-        return SubscriptionGate(
-            datatype,
+        return gate(
             False,
             "not_subscribed",
-            required,
             f"Navigraph account has no '{required}' subscription "
             f"(demo airports only: {', '.join(DEMO_AIRPORTS)})",
         )
-    return SubscriptionGate(datatype, True, "available", required, "")
+    if required_scope and not tokens.has_scope(required_scope):
+        return gate(
+            False,
+            "not_subscribed",
+            f"Navigraph token was not granted the '{required_scope}' scope — "
+            "sign in again to request it",
+        )
+    if datatype == "tile" and not tokens.tile_cookies:
+        return gate(
+            False,
+            "not_subscribed",
+            "Navigraph did not issue the signed tile cookies for this session — "
+            "sign in again to request the 'tiles' scope",
+        )
+    return gate(True, "available", "")
 
 
 def _result(
@@ -131,18 +186,30 @@ def _result(
     note: str = "",
     now: Optional[float] = None,
 ) -> dict[str, Any]:
-    """Wrap a payload with the provenance the UI must display."""
+    """Wrap a payload with the provenance the UI must display.
+
+    ``source`` is the DECLARED origin of the bytes, never a hardcoded
+    "navigraph": operator feeds report ``operator-feed`` plus a
+    ``provenance`` of live/fixture/demo, so the UI cannot label repository
+    fixture data as live provider data.
+    """
+    operator_feed = gate.required_subscription is None and gate.datatype in (
+        "notam",
+        "risk",
+        "nat",
+    )
     return {
         "status": "ok" if fresh else "stale",
         "datatype": entry.datatype,
         "data": entry.value,
-        "cached": True,
+        "cached": not fresh,
         "fresh": fresh,
         "age_seconds": int(entry.age(now)),
         "ttl_seconds": entry.ttl,
         "subscription": gate.as_dict(),
         "note": note,
-        "source": "navigraph",
+        "source": "operator-feed" if operator_feed else "navigraph",
+        "provenance": gate.provenance,
     }
 
 

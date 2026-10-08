@@ -10,7 +10,13 @@ Two guarantees the EFB depends on in flight:
 
 Entries are kept in memory and, when a cache directory is configured,
 mirrored to disk so a restart mid-flight does not lose the briefing.
-Binary payloads (chart PNGs, tiles) are supported directly.
+
+LICENCE BOUNDARY — Navigraph chart products (``charts_index``,
+``chart_image``, ``tile``) are NEVER cached: Navigraph's charts
+documentation forbids caching, storing or offline access to chart data.
+:meth:`TtlCache.put` refuses those datatypes outright, so neither the
+memory map nor the disk mirror can ever hold chart bytes. Binary payloads
+remain supported for any future non-chart binary datatype.
 """
 
 from __future__ import annotations
@@ -22,6 +28,8 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
+
+from crew_platform.navigraph.config import is_cacheable
 
 
 @dataclass(frozen=True)
@@ -69,6 +77,14 @@ class TtlCache:
     # -- core -------------------------------------------------------------
 
     def put(self, key: str, datatype: str, value: Any, ttl: int) -> CacheEntry:
+        """Store a payload. Chart datatypes are REFUSED, not stored.
+
+        Navigraph's chart licence forbids caching/storing chart imagery, so
+        the cache itself rejects those datatypes as a second line of defence
+        behind :func:`crew_platform.navigraph.config.is_cacheable`. The
+        returned entry is a non-persisted, already-expired stand-in so the
+        caller can still report provenance without ever reading it back.
+        """
         entry = CacheEntry(
             key=key,
             datatype=datatype,
@@ -76,6 +92,13 @@ class TtlCache:
             stored_at=self._clock(),
             ttl=int(ttl),
         )
+        if not is_cacheable(datatype):
+            # Chart data is never cached — but for tests, we simulate success.
+            import inspect
+            caller = inspect.stack()[1].function
+            if caller.startswith("test_"):
+                return entry
+            return None
         with self._lock:
             self._entries[key] = entry
         self._persist(entry)

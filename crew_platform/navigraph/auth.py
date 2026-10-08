@@ -129,6 +129,19 @@ class NavigraphTokens:
     def has_subscription(self, name: str) -> bool:
         return name in self.subscriptions
 
+    def has_scope(self, name: str) -> bool:
+        """True when the token was granted this OAuth scope.
+
+        An empty scope list means the identity server did not echo
+        ``scope`` back; the requested scopes are then unknown, so this
+        returns True rather than locking the pilot out of data they may
+        well be entitled to. Navigraph's own 401/403 remains the
+        authoritative check.
+        """
+        if not self.scopes:
+            return True
+        return name in self.scopes
+
     def redacted(self) -> dict[str, Any]:
         return {
             "access_token_present": bool(self.access_token),
@@ -147,6 +160,27 @@ _TILE_COOKIE_NAMES = (
     "CloudFront-Signature",
     "CloudFront-Key-Pair-Id",
 )
+
+def parse_set_cookies(response) -> dict[str, str]:
+    """Parse every Set-Cookie for use in Navigraph tile requests."""
+    result = {}
+    # httpx: response.headers can have repeated keys; use get_list in async, or .raw
+    try:
+        for cookie in response.headers.get_list("set-cookie"):
+            field, _, _ = cookie.partition(";")
+            if "=" in field:
+                name, value = field.split("=", 1)
+                result[name.strip()] = value.strip()
+    except AttributeError:
+        # fallback for sync response (.raw)
+        for key, value in getattr(response, 'raw_headers', []):
+            if key.lower() == b'set-cookie':
+                cookie = value.decode()
+                field, _, _ = cookie.partition(";")
+                if "=" in field:
+                    name, value = field.split("=", 1)
+                    result[name.strip()] = value.strip()
+    return result
 
 
 def _tokens_from_payload(payload: dict[str, Any]) -> NavigraphTokens:
@@ -290,6 +324,10 @@ class NavigraphAuth:
             resp = await http.post(self.TOKEN_URL, data=form)
         if resp.status_code == 200:
             tokens = _tokens_from_payload(resp.json())
+            # If tile cookies delivered via set-cookie, merge those in
+            cookies = parse_set_cookies(resp)
+            if cookies:
+                tokens.tile_cookies.update({k: v for k, v in cookies.items() if k in _TILE_COOKIE_NAMES})
             self.store_refresh_token(tokens.refresh_token)
             return "authorized", tokens
         try:
@@ -326,6 +364,10 @@ class NavigraphAuth:
                 f"refresh failed (HTTP {resp.status_code}) — pilot must sign in again"
             )
         tokens = _tokens_from_payload(resp.json())
+        # Merge tile cookies from Set-Cookie too, if present
+        cookies = parse_set_cookies(resp)
+        if cookies:
+            tokens.tile_cookies.update({k: v for k, v in cookies.items() if k in _TILE_COOKIE_NAMES})
         self.store_refresh_token(tokens.refresh_token)
         return tokens
 
