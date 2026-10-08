@@ -11,8 +11,6 @@ from crew_platform.providers import (
     EMIRATES_VIRTUAL,
     ETIHAD_VIRTUAL,
     LH_VIRTUAL,
-    ProviderProfile,
-    ThemeColors,
     get_provider,
     list_providers,
     provider_theme_css_vars,
@@ -34,7 +32,7 @@ from crew_platform.edesk import (
     create_checkin,
     validate_checkin,
 )
-from crew_platform.sessions import CrewSession, SessionStore
+from crew_platform.sessions import SessionStore
 from crew_platform.vamsys_pilot_auth import PilotFlight
 
 

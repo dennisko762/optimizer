@@ -5,9 +5,6 @@ from __future__ import annotations
 import pytest
 
 from src.adapters.lufthansa_virtual.simbrief_fetcher import (
-    OFPData,
-    OFPWaypoint,
-    SimBriefFetcherError,
     SimBriefOFPFetcher,
     _normalise,
     _parse_pm,

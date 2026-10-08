@@ -1,0 +1,12 @@
+{
+  "_comment": "Pre-existing pytest failures/collection-errors on the audited baseline commit, tracked here so CI only blocks NEW test regressions introduced by a PR. See docs/ci-quality-gate.md#pre-existing-failures.",
+  "baseline_commit": "86e632c8438083cadc5d4967db72d2b0399bb2d3",
+  "known_failing_ids": [
+    "tests.test_gefs_ensemble",
+    "tests.test_wind_reconciliation",
+    "tests.performance_engine.test_ci_mach_physics_invariants.CiMachPhysicsInvariantTests::test_docs_exist_and_mention_main_sources",
+    "tests.test_techlog_aircraft_api::test_create_aircraft",
+    "tests.test_techlog_aircraft_api::test_create_duplicate_409",
+    "tests.test_techlog_aircraft_api::test_data_survives_restart"
+  ]
+}

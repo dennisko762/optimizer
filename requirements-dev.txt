@@ -1,0 +1,8 @@
+# CI / developer tooling only — never bundled into the packaged EFB build.
+# Pinned so CI runs are reproducible; bump deliberately via PR.
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.10
+mypy==2.4.0
+diff-cover==10.6.0
+pip-audit==2.10.1

@@ -1,0 +1,21 @@
+{
+  "_comment": "Pre-existing npm-audit HIGH/CRITICAL findings on the audited baseline commit, tracked so CI only blocks NEW vulnerabilities introduced by a PR. See docs/ci-quality-gate.md.",
+  "baseline_commit": "86e632c8438083cadc5d4967db72d2b0399bb2d3",
+  "known_ids": [
+    "brace-expansion::https://github.com/advisories/GHSA-3jxr-9vmj-r5cp",
+    "brace-expansion::https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+    "brace-expansion::https://github.com/advisories/GHSA-jxxr-4gwj-5jf2",
+    "brace-expansion::https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+    "brace-expansion::https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+    "brace-expansion::https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+    "brace-expansion::https://github.com/advisories/GHSA-rgw5-rvv9-x895",
+    "nanoid::https://github.com/advisories/GHSA-28wg-ghj8-5hjv",
+    "nanoid::https://github.com/advisories/GHSA-2v37-7h3g-55p8",
+    "nanoid::https://github.com/advisories/GHSA-xwg4-73v4-xw9w",
+    "postcss::https://github.com/advisories/GHSA-fxqj-rqcc-2cmp",
+    "postcss::https://github.com/advisories/GHSA-r28c-9q8g-f849",
+    "source-map-js::https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
+    "vite::https://github.com/advisories/GHSA-fx2h-pf6j-xcff",
+    "vite::https://github.com/advisories/GHSA-v6wh-96g9-6wx3"
+  ]
+}
