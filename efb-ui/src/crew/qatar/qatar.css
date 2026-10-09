@@ -412,11 +412,7 @@
 .qr-shell .qr-smartops {
   overflow-y: auto;
 }
-<<<<<<< HEAD
 .qr-shell .qr-smartops > :not(.qr-route):not(.qr-edto):not(.qr-notice):not(.wx-map) {
-=======
-.qr-shell .qr-smartops > :not(.qr-route):not(.qr-edto):not(.qr-notice) {
->>>>>>> origin/main
   flex: 0 0 auto;
 }
 
@@ -660,7 +656,6 @@
   color: var(--qr-muted);
 }
 
-<<<<<<< HEAD
 /* ─── briefing: aggregated aviation briefing layer (M5-P extension) ── */
 
 .qr-shell .qr-brief-section {
@@ -712,8 +707,6 @@
   color: #60a5fa;
 }
 
-=======
->>>>>>> origin/main
 /* ─── My Flights ─────────────────────────────────────────────────── */
 
 .qr-shell .qr-flight-row {
@@ -1740,9 +1733,6 @@
     grid-template-columns: 1fr;
   }
 }
-<<<<<<< HEAD
-=======
-
 /* ─── M3 SimConnect live layer ─────────────────────────────────────── */
 
 /* SIM CONNECTED / DISCONNECTED chip in the top header. */
@@ -1919,4 +1909,3 @@
     grid-template-columns: repeat(3, 1fr);
   }
 }
->>>>>>> origin/main

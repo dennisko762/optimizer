@@ -19,7 +19,7 @@ unresolved-fix cases are unit-tested without any SimBrief fetch.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, Sequence
+from typing import Any
 
 from .sampler import route_geometry, split_around_antimeridian
 

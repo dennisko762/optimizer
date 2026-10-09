@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass
 from typing import Any, Optional, Sequence
@@ -25,7 +24,7 @@ from typing import Any, Optional, Sequence
 import numpy as np
 
 from . import cycle as gfs
-from . import hazards, levels
+from . import hazards
 from .cycle import GfsConfig, GfsCycleNotFound, GfsDownloadError, build_region_box
 from .store import BoxKey, CycleMeta, CycleStore, cache_root
 
@@ -211,7 +210,9 @@ def _hazard_grids(
 
     # icing at 850/700/500 from temp + rh + vertical velocity (vectorized)
     for mb in ICE_LEVELS_MB:
-        t = fields.get(("t", mb)); r = fields.get(("r", mb)); w = fields.get(("w", mb))
+        t = fields.get(("t", mb))
+        r = fields.get(("r", mb))
+        w = fields.get(("w", mb))
         if any(g is None for g in (t, r, w)):
             continue
         out[f"ice_{mb}"] = hazards.icing_grid(t - 273.15, r, w).astype(np.float32)
@@ -226,8 +227,10 @@ def _hazard_grids(
     # gradiented the *vertical difference* (θe850−θe500), which is a tilt,
     # not the front intensity parameter.) The vertical tilt itself is kept
     # for warm/cold sign: θe850 > θe500 on the warm side of the front.
-    t_lo = fields.get(("t", 850)); r_lo = fields.get(("r", 850))
-    t_hi = fields.get(("t", 500)); r_hi = fields.get(("r", 500))
+    t_lo = fields.get(("t", 850))
+    r_lo = fields.get(("r", 850))
+    t_hi = fields.get(("t", 500))
+    r_hi = fields.get(("r", 500))
     if all(g is not None for g in (t_lo, r_lo, t_hi, r_hi)):
         te_lo = hazards.theta_e_grid(t_lo - 273.15, r_lo, 850.0)
         te_hi = hazards.theta_e_grid(t_hi - 273.15, r_hi, 500.0)

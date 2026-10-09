@@ -7,7 +7,7 @@ hit only these routes, never the upstream services directly.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 

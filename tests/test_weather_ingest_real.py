@@ -27,7 +27,6 @@ import os
 import re
 import time
 
-import numpy as np
 import pytest
 
 pytestmark = pytest.mark.skipif(
@@ -55,10 +54,9 @@ def _latest_cycle():
 def real_env(tmp_path, monkeypatch):
     """Isolated cache + a REAL published GFS cycle (discovered, downloaded,
     parsed, hazard-derived and atomically published)."""
-    from crew_platform.weather import cycle as gfs
     from crew_platform.weather import service
     from crew_platform.weather.ingest import IngestRequest, ingest_cycle
-    from crew_platform.weather.store import CycleStore, cache_root
+    from crew_platform.weather.store import CycleStore
 
     cache_dir = tmp_path / "cache"
     monkeypatch.setenv("WEATHER_CACHE_DIR", str(cache_dir))

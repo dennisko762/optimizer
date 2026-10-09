@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .models import Product, ProductState
+from .models import Product
 
 SOURCE = "NOAA WAFS/WIFS"
 LABEL = "SIGWX (WAFS)"

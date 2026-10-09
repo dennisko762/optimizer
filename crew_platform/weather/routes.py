@@ -28,8 +28,8 @@ from fastapi.responses import StreamingResponse
 
 from . import service
 from .cycle import GfsConfig, GfsCycleNotFound, GfsDownloadError
-from .ingest import IngestRequest, ingest_cycle, request_from_route
-from .routes_data import RouteDataError, extract_route
+from .ingest import IngestRequest, ingest_cycle
+from .routes_data import extract_route
 from .store import STORE
 from . import scheduler
 
@@ -67,7 +67,8 @@ def _route_box(view: dict[str, Any]) -> tuple[float, float, float, float]:
         except (TypeError, ValueError):
             continue
         if la == la and lo == lo:  # not NaN
-            lats.append(la); lons.append(lo)
+            lats.append(la)
+            lons.append(lo)
     for k in ("origin_lat", "destination_lat"):
         v = view.get(k)
         if v is not None:

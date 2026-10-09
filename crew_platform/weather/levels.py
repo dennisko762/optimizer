@@ -98,8 +98,8 @@ def fl_pressure_band(fl: int) -> tuple[float, float]:
     for lvl in STANDARD_LEVELS_HPA:
         if abs(p - lvl) <= 0.25:
             return (float(lvl), float(lvl))
-    p_upper = max(l for l in STANDARD_LEVELS_HPA if l < p)   # higher altitude
-    p_lower = min(l for l in STANDARD_LEVELS_HPA if l > p)   # lower altitude
+    p_upper = max(level for level in STANDARD_LEVELS_HPA if level < p)   # higher altitude
+    p_lower = min(level for level in STANDARD_LEVELS_HPA if level > p)   # lower altitude
     return (float(p_upper), float(p_lower))
 
 

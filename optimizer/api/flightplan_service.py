@@ -27,11 +27,7 @@ import json
 import math
 import os
 import time
-<<<<<<< HEAD
-from dataclasses import dataclass, field
-=======
 from dataclasses import dataclass
->>>>>>> origin/main
 from pathlib import Path
 from threading import Lock
 from typing import Any, Optional

@@ -11,11 +11,7 @@
  * no hardcoded brand colors.
  */
 
-<<<<<<< HEAD
-import { useEffect, useMemo, useRef, useState } from "react";
-=======
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
->>>>>>> origin/main
 import {
   Plane,
   PlaneTakeoff,
@@ -30,12 +26,6 @@ import {
   BatteryFull,
   Signal,
   Wifi,
-<<<<<<< HEAD
-  Mail,
-  User,
-  ArrowRight,
-  ExternalLink,
-=======
   WifiOff,
   Mail,
   User,
@@ -45,16 +35,12 @@ import {
   ChevronRight,
   ExternalLink,
   Mountain,
->>>>>>> origin/main
   Wrench,
   LogOut,
   LogIn,
   CheckCircle2,
   XCircle,
-<<<<<<< HEAD
-=======
-  CloudRain,
->>>>>>> origin/main
+
   Gauge,
   Download,
 } from "lucide-react";
@@ -65,20 +51,11 @@ import {
   mapOfpHero,
   mapOfpWaypoints,
   modelSimPlan,
-<<<<<<< HEAD
-=======
   mapRouteView,
->>>>>>> origin/main
   mapEdtoView,
   mapNotification,
   defaultInboxMessages,
   projectMap,
-<<<<<<< HEAD
-} from "./qatarMappers.js";
-import CrewLogin from "./CrewLogin.jsx";
-import MapWeatherPanel from "./MapWeatherPanel.jsx";
-import BriefingPanel from "./BriefingPanel.jsx";
-=======
   icaoLatlon,
 } from "./qatarMappers.js";
 import {
@@ -92,7 +69,8 @@ import {
 } from "./liveMappers.js";
 import { useSimTelemetry } from "./useSimTelemetry.js";
 import CrewLogin from "./CrewLogin.jsx";
->>>>>>> origin/main
+import MapWeatherPanel from "./MapWeatherPanel.jsx";
+import BriefingPanel from "./BriefingPanel.jsx";
 import BoardingPanel from "../BoardingPanel.jsx";
 import TechPanel from "../tech/TechPanel.jsx";
 
@@ -179,8 +157,6 @@ function Dash({ v, unit }) {
   );
 }
 
-<<<<<<< HEAD
-=======
 /* ─── M3: SimConnect live layer ────────────────────────────────────── */
 
 /**
@@ -358,7 +334,6 @@ function RecommendPanel({ rec, connected, onApply, applyState, busy, error }) {
   );
 }
 
->>>>>>> origin/main
 /* ─── shell ────────────────────────────────────────────────────────── */
 
 const SMARTOPS_TABS = [
@@ -535,10 +510,7 @@ export default function QatarShell({ onOpenOptimizer }) {
           utc={utc}
           onNavigate={setScreen}
           pilotName={crewSession.pilotId}
-<<<<<<< HEAD
           defaultStation={lastPlan?.origin || flight?.departure_icao || null}
-=======
->>>>>>> origin/main
         />
       )}
 
@@ -670,11 +642,7 @@ function CompanyNewsPanel() {
 
 /* ─── Crew Desk (qatar-02) ─────────────────────────────────────────── */
 
-<<<<<<< HEAD
 function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
-=======
-function CrewDeskScreen({ utc, onNavigate, pilotName }) {
->>>>>>> origin/main
   const { session, apiBase } = useCrewPlatform();
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
@@ -753,11 +721,7 @@ function CrewDeskScreen({ utc, onNavigate, pilotName }) {
             ) : tab === "preflight" ? (
               <PreflightBriefing onOpenTech={() => setTab("techlog")} />
             ) : tab === "weather" ? (
-<<<<<<< HEAD
               <WeatherBriefing apiBase={apiBase} station={defaultStation} />
-=======
-              <WeatherBriefing />
->>>>>>> origin/main
             ) : (
               messages.map((m) => (
                 <button
@@ -827,25 +791,8 @@ function PreflightBriefing({ onOpenTech }) {
   );
 }
 
-<<<<<<< HEAD
 function WeatherBriefing({ apiBase, station }) {
   return <BriefingPanel apiBase={apiBase} station={station} />;
-=======
-function WeatherBriefing() {
-  return (
-    <div className="qr-briefing">
-      <h3>WEATHER BRIEFING</h3>
-      <div className="qr-brief-item">
-        <CloudRain size={15} className="qr-brief-ok" />
-        <div>
-          <div>WX briefing available in Inbox</div>
-          <div className="qr-brief-sub">Enroute + destination MET/TAF per flight</div>
-        </div>
-      </div>
-      <div className="qr-notice">Live METAR/TAF feed is not connected yet — briefing content follows from the selected flight's OFP.</div>
-    </div>
-  );
->>>>>>> origin/main
 }
 
 /* ─── Home (M2b): Company News + My Flights + check-in ────────────── */
@@ -1329,8 +1276,6 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
     return `${days[d.getUTCDay()]}, ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   }, []);
 
-<<<<<<< HEAD
-=======
   /* ── M3: live SimConnect telemetry + optimizer apply ───────────── */
 
   // Destination coordinates let the backend derive live remaining distance
@@ -1418,7 +1363,6 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
     [optimizeResult, live.flightLevel]
   );
 
->>>>>>> origin/main
   return (
     <div className="qr-screen qr-smartops">
       <TopHeader
@@ -1430,10 +1374,7 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
         }
         right={
           <>
-<<<<<<< HEAD
-=======
             <SimChip status={simStatus} />
->>>>>>> origin/main
             <Sun size={16} className="qr-topbar__icon" />
             <RefreshCw size={16} className="qr-topbar__icon" />
             <MoreVertical size={16} className="qr-topbar__icon" />
@@ -1498,13 +1439,6 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
             </div>
           </div>
 
-<<<<<<< HEAD
-          <div className="qr-fuelrow">
-            <div className="qr-fuelcell">
-              <span className="qr-label">DEVIATION</span>
-              <Dash v={fuel.deviation} />
-              <span className="qr-fuelcell__sub">No active check</span>
-=======
           <LiveStrip live={live} timing={timing} connected={simConnected} />
 
           <RecommendPanel
@@ -1529,7 +1463,6 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
               <span className="qr-fuelcell__sub">
                 {live.deviation ? "live vs planned LDG" : simConnected ? "live data unavailable" : "No active check"}
               </span>
->>>>>>> origin/main
             </div>
             <div className="qr-fuelcell">
               <span className="qr-label">BLOCK FUEL</span>
@@ -1613,45 +1546,29 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       )}
 
       {tab === "route" && (
-<<<<<<< HEAD
         <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
-=======
-        <RouteScreen
-          flight={flight}
-          ofpData={ofpData}
-          distanceNm={distanceNm}
-          utc={utc}
-          telemetry={telemetry}
-          simConnected={simConnected}
-          live={live}
-          timing={timing}
-        />
->>>>>>> origin/main
       )}
 
       {tab === "edto" && (
         <EdtoScreen flight={flight} ofpData={ofpData} />
       )}
 
-<<<<<<< HEAD
+      {tab === "runways" && (
+        <div className="qr-notice qr-notice--center">
+          Runway data follows from the OFP (arrival/departure runways) — not linked to this booking yet.
+        </div>
+      )}
+
       {tab === "weather" && (
         <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
-=======
-      {(tab === "runways" || tab === "weather") && (
-        <div className="qr-notice qr-notice--center">
-          {tab === "runways" ? "Runway data follows from the OFP (arrival/departure runways) — not linked to this booking yet." : "Live weather overlay — WX TIME playback and ATC sectors are available on the Route tab."}
-        </div>
->>>>>>> origin/main
       )}
     </div>
   );
 }
 
-<<<<<<< HEAD
-=======
 /* ─── Route (qatar-04) ─────────────────────────────────────────────── */
 
-function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
+export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
   const [wxPlaying, setWxPlaying] = useState(false);
   const [wxOffset, setWxOffset] = useState(0);
   const [altMode, setAltMode] = useState("AUTO");
@@ -1870,7 +1787,6 @@ function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected
     </div>
   );
 }
->>>>>>> origin/main
 
 /* ─── EDTO + Risks (qatar-05) ──────────────────────────────────────── */
 

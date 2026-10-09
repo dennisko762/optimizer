@@ -6,7 +6,6 @@ imported here) so they are fast and deterministic.
 """
 from __future__ import annotations
 
-import math
 
 import pytest
 
@@ -384,7 +383,6 @@ def test_split_no_crossing_single_segment():
 
 
 def test_sample_at_fl_brackets_level():
-    from crew_platform.weather import levels
     # build a field present at 250 and 300 hPa only
     grid_lo = [[20.0, 20.0], [20.0, 20.0]]   # 250 hPa (thinner, above FL340)
     grid_hi = [[30.0, 30.0], [30.0, 30.0]]   # 300 hPa (denser, below FL340)

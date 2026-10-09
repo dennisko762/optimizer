@@ -14,7 +14,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
 
-from .models import Product, ProductState, utc_now_iso
+from .models import Product, utc_now_iso
 
 FALLBACK_LABEL = "METAR briefing"
 

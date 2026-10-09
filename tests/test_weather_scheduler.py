@@ -20,7 +20,6 @@ real NOAA blobs.
 """
 from __future__ import annotations
 
-import threading
 import time
 
 import pytest
@@ -28,7 +27,6 @@ import pytest
 from crew_platform.weather.store import BoxKey, CycleMeta, CycleStore
 from crew_platform.weather import scheduler
 from crew_platform.weather.cycle import GfsConfig, GfsDownloadError
-from crew_platform.weather.ingest import IngestRequest
 
 
 @pytest.fixture()

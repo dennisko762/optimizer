@@ -13,13 +13,12 @@ from __future__ import annotations
 
 import math
 import re
-import time
 from typing import Any, Optional
 
 import numpy as np
 
 from . import hazards, levels, polygonize, sampler
-from .store import BoxKey, STORE, cache_root, staleness, cycle_epoch
+from .store import BoxKey, STORE, cache_root, cycle_epoch
 
 # hazard product registry: key -> (grid prefix, thresholds, unit, label)
 HazardProduct = dict[str, Any]
@@ -316,7 +315,8 @@ def route_samples(
         ident_seen[ident] = n + 1
         return n
     for i, row in enumerate(rows):
-        latw = row.get("lat"); lonw = row.get("lon")
+        latw = row.get("lat")
+        lonw = row.get("lon")
         try:
             la, lo = float(latw), float(lonw)
         except (TypeError, ValueError):

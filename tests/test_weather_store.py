@@ -11,10 +11,8 @@ real NOAA blobs.
 """
 from __future__ import annotations
 
-import os
 import time
 
-import numpy as np
 import pytest
 
 from crew_platform.weather.store import BoxKey, CycleMeta, CycleStore, cache_root, staleness

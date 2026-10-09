@@ -8,7 +8,6 @@ honestly when unreachable/unconfigured.
 """
 from __future__ import annotations
 
-import json
 
 import pytest
 

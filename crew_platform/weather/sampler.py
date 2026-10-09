@@ -127,7 +127,7 @@ def sample_at_fl(
 
     p_upper, p_lower = levels.fl_pressure_band(fl)
     t = levels.fl_fraction(fl)
-    avail = [l for l in level_order if l in field_by_level]
+    avail = [level for level in level_order if level in field_by_level]
     if not avail:
         return None
     # A level sitting on a standard ingested level samples it directly.
@@ -135,15 +135,15 @@ def sample_at_fl(
         key = p_upper
         if key not in field_by_level:
             # fall back to the closest available level
-            key = min(avail, key=lambda l: abs(l - key))
+            key = min(avail, key=lambda level: abs(level - key))
         return bilinear(field_by_level[key], lat, lon, la, lo)
     # Otherwise bracket with the two standard levels; if the dataset lacks
     # one of them, use the closest available levels on each side.
     lo_lvl = p_lower if p_lower in field_by_level else min(
-        (l for l in avail if l >= p_lower), default=None
+        (level for level in avail if level >= p_lower), default=None
     )
     up_lvl = p_upper if p_upper in field_by_level else max(
-        (l for l in avail if l <= p_upper), default=None
+        (level for level in avail if level <= p_upper), default=None
     )
     if lo_lvl is None or up_lvl is None or lo_lvl == up_lvl:
         return None

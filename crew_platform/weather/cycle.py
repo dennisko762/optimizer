@@ -22,7 +22,7 @@ import os
 import re
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Sequence
 
 # Public endpoint; env-overridable for tests / regional mirrors.
 DEFAULT_GFS_BASE = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"

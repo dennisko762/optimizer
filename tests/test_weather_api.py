@@ -8,7 +8,6 @@ real-data (non-synthetic) integration is covered separately by
 """
 from __future__ import annotations
 
-import os
 import time
 
 import numpy as np
@@ -266,9 +265,7 @@ def test_route_samples_use_eta_hour_inside_horizon(client, weather_env):
       RJAA ETE 5:00 -> abs T+10h -> outside published horizon -> flagged
     """
     import time as _time
-    import numpy as np
-    from crew_platform.weather.store import BoxKey, CycleMeta, CycleStore
-    from crew_platform.weather import service as _svc
+    from crew_platform.weather.store import BoxKey, CycleMeta
 
     # publish an extra step (T+6) for the same box, different field values so
     # the served offset is observable

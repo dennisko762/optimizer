@@ -14,7 +14,7 @@ where the caller passes scalars, or numpy arrays when the caller passes them
 from __future__ import annotations
 
 import math
-from typing import Optional, Sequence
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Units and constants
