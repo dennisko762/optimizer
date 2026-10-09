@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 // Minimal localStorage stub — crewCheckin must not touch the real global.

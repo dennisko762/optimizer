@@ -4,7 +4,7 @@
  * Tests written before implementation covers them (failing-then-passing).
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 
 import {

@@ -1,0 +1,88 @@
+{
+  "charts": [
+    {
+      "image_day": "othh10-1_d.png",
+      "image_night": "othh10-1_n.png",
+      "thumb_day": "othh10-1_thumb_d.png",
+      "thumb_night": "othh10-1_thumb_n.png",
+      "icao_airport_identifier": "OTHH",
+      "id": "OTHH101",
+      "type_code": "AP",
+      "category": "APT",
+      "precision": null,
+      "index_number": "10-1",
+      "name": "AIRPORT DIAGRAM",
+      "revision_date": "20260612",
+      "is_georeferenced": true,
+      "width": 1508,
+      "height": 2500,
+      "bounding_boxes": {
+        "planview": {
+          "pixels": { "x1": 56, "y1": 2442, "x2": 1450, "y2": 69 },
+          "latlng": { "lng1": 51.5, "lat1": 25.2, "lng2": 51.68, "lat2": 25.33 }
+        },
+        "insets": []
+      },
+      "procedures": [],
+      "runways": ["RW16L", "RW34R", "RW16R", "RW34L"],
+      "image_day_url": "https://api.navigraph.com/v2/charts/OTHH/othh10-1_d.png",
+      "image_night_url": "https://api.navigraph.com/v2/charts/OTHH/othh10-1_n.png",
+      "thumb_day_url": "https://api.navigraph.com/v2/charts/OTHH/othh10-1_thumb_d.png",
+      "thumb_night_url": "https://api.navigraph.com/v2/charts/OTHH/othh10-1_thumb_n.png"
+    },
+    {
+      "image_day": "othh20-3_d.png",
+      "image_night": "othh20-3_n.png",
+      "thumb_day": "othh20-3_thumb_d.png",
+      "thumb_night": "othh20-3_thumb_n.png",
+      "icao_airport_identifier": "OTHH",
+      "id": "OTHH203",
+      "type_code": "JD",
+      "category": "DEP",
+      "precision": null,
+      "index_number": "20-3",
+      "name": "ALSAD 1E, DAVOL 1E RNAV DEPARTURES",
+      "revision_date": "20260515",
+      "is_georeferenced": true,
+      "width": 1508,
+      "height": 2500,
+      "bounding_boxes": {
+        "planview": {
+          "pixels": { "x1": 60, "y1": 2400, "x2": 1440, "y2": 100 },
+          "latlng": { "lng1": 50.9, "lat1": 24.8, "lng2": 52.2, "lat2": 26.1 }
+        },
+        "insets": []
+      },
+      "procedures": ["ALSA1E", "DAVO1E"],
+      "runways": ["RW16L", "RW16R"],
+      "image_day_url": "https://api.navigraph.com/v2/charts/OTHH/othh20-3_d.png",
+      "image_night_url": "https://api.navigraph.com/v2/charts/OTHH/othh20-3_n.png",
+      "thumb_day_url": "https://api.navigraph.com/v2/charts/OTHH/othh20-3_thumb_d.png",
+      "thumb_night_url": "https://api.navigraph.com/v2/charts/OTHH/othh20-3_thumb_n.png"
+    },
+    {
+      "image_day": "othh11-1_d.png",
+      "image_night": "othh11-1_n.png",
+      "thumb_day": "othh11-1_thumb_d.png",
+      "thumb_night": "othh11-1_thumb_n.png",
+      "icao_airport_identifier": "OTHH",
+      "id": "OTHH111",
+      "type_code": "IA",
+      "category": "APP",
+      "precision": true,
+      "index_number": "11-1",
+      "name": "ILS RWY 16L",
+      "revision_date": "20260612",
+      "is_georeferenced": false,
+      "width": 1508,
+      "height": 2500,
+      "bounding_boxes": null,
+      "procedures": ["I16L"],
+      "runways": ["RW16L"],
+      "image_day_url": "https://api.navigraph.com/v2/charts/OTHH/othh11-1_d.png",
+      "image_night_url": "https://api.navigraph.com/v2/charts/OTHH/othh11-1_n.png",
+      "thumb_day_url": "https://api.navigraph.com/v2/charts/OTHH/othh11-1_thumb_d.png",
+      "thumb_night_url": "https://api.navigraph.com/v2/charts/OTHH/othh11-1_thumb_n.png"
+    }
+  ]
+}

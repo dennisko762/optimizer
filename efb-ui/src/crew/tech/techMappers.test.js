@@ -6,7 +6,7 @@
  * (T2–T5): defect lifecycle, status derivation, status response shape.
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 
 import {

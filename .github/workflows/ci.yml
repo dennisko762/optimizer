@@ -255,11 +255,7 @@ jobs:
           cache-dependency-path: efb-ui/package-lock.json
       - run: npm ci
       - name: Run tests with coverage (lcov)
-        run: |
-          node --test --experimental-test-coverage \
-            --test-reporter=lcov --test-reporter-destination=lcov.info \
-            --test-reporter=spec --test-reporter-destination=stdout \
-            "src/**/*.test.js"
+        run: npm test
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -292,12 +288,11 @@ jobs:
       - name: Fetch base branch for diff
         run: git fetch origin ${{ github.event.pull_request.base.ref || 'main' }} --depth=1
       - name: diff-cover changed-code gate (>=80%)
-        working-directory: efb-ui
         run: |
-          diff-cover lcov.info \
+          diff-cover efb-ui/lcov.info \
             --compare-branch=origin/${{ github.event.pull_request.base.ref || 'main' }} \
             --fail-under=80 \
-            --html-report=node-diff-coverage.html
+            --html-report=efb-ui/node-diff-coverage.html
       - name: Upload diff-coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
