@@ -35,7 +35,15 @@ class UiCruiseSegment(BaseModel):
 
 
 class UiFlightState(BaseModel):
-    aircraft: str = "A320"
+    aircraft: str | None = None
+    """ICAO/SimBrief type code or raw SimConnect TITLE.
+
+    Nullable on purpose: the live EFB sends whatever the sim gave it, which
+    may be nothing. The aircraft performance profile is then resolved (and
+    the request refused with a readable reason if it cannot be) by
+    ``optimizer.api.aircraft_config_resolver`` — a non-nullable ``str`` here
+    would 422 on an explicit ``null`` before that logic ever ran.
+    """
     engine_variant: str | None = Field(default=None, alias="engineVariant")
     altitude_ft: float = Field(alias="altitudeFt")
     gross_weight_kg: float = Field(alias="grossWeightKg")
@@ -94,7 +102,17 @@ class UiFlightContext(BaseModel):
 class OptimizeRequest(BaseModel):
     action: EfbAction
 
-    aircraft_config: str = Field(default="a320", alias="aircraftConfig")
+    aircraft_config: str | None = Field(default=None, alias="aircraftConfig")
+    """Aircraft performance profile key (e.g. "a359", "b77w").
+
+    OPTIONAL and explicitly nullable: both an absent key and ``null`` mean
+    "derive it from flightState.aircraft". A bare ``str`` field would 422 on
+    an explicit ``null`` (a Pydantic default only applies to an ABSENT key),
+    which is exactly what broke the live optimizer when SimConnect supplied
+    no aircraft config. When neither this field nor the aircraft identifier
+    resolves to an existing YAML profile the request is refused — no default
+    airframe is substituted (AGENTS.md).
+    """
 
     flight_state: UiFlightState = Field(alias="flightState")
     flight_context: UiFlightContext = Field(alias="flightContext")
@@ -207,6 +225,14 @@ class OperationalDataResponse(BaseModel):
 class OptimizeResponse(BaseModel):
     recommendation: str
     optimizer_mode: str | None = Field(default=None, alias="optimizerMode")
+
+    aircraft_config: str | None = Field(default=None, alias="aircraftConfig")
+    """The performance profile actually used for this computation."""
+    aircraft_config_source: str | None = Field(
+        default=None,
+        alias="aircraftConfigSource",
+    )
+    """Where that key came from — "request" or "aircraft:<identifier>"."""
 
     current_strategy: StrategyResponse = Field(alias="currentStrategy")
     best_strategy: StrategyResponse = Field(alias="bestStrategy")

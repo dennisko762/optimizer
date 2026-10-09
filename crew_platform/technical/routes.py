@@ -52,7 +52,6 @@ from crew_platform.technical.models import (
     MaintenanceAction,
     MAINTENANCE_ACTION_TYPES,
     TechLogEntry,
-    TECHLOG_STATUS_VALUES,
 )
 from crew_platform.technical.status import derive_status, live_defects
 

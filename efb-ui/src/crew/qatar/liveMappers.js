@@ -57,6 +57,36 @@ export function mapSimStatus(telemetry, { reachable = true } = {}) {
   };
 }
 
+/* ── API error formatting ───────────────────────────────────────────── */
+
+/**
+ * Turn a FastAPI error envelope into one human-readable line.
+ *
+ * FastAPI 422 returns `detail` as an ARRAY of validation objects
+ * ({type, loc, msg, input}); a plain `String(detail)` renders the useless
+ * "[object Object]" in the UI. HTTPException returns `detail` as a string.
+ * Both shapes (plus an empty body) must produce readable crew-facing text.
+ */
+export function formatApiError(payload, status) {
+  const fallback = `Optimizer unavailable (HTTP ${status}).`;
+  const detail = payload?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((d) => {
+        if (typeof d === "string") return d;
+        const field = Array.isArray(d?.loc) ? d.loc.filter((s) => s !== "body").join(".") : null;
+        const msg = d?.msg || d?.type || null;
+        if (field && msg) return `${field}: ${msg}`;
+        return msg || field || null;
+      })
+      .filter(Boolean);
+    if (parts.length) return `${fallback} ${parts.join("; ")}`;
+  }
+  return fallback;
+}
+
 /* ── Live strip (FL / speed / fuel / fuel flow / wind) ──────────────── */
 
 /**
@@ -262,6 +292,23 @@ export function mapRouteLive(routePoints, live) {
  * The returned shape mirrors the CI Optimizer panel's request (App.jsx
  * buildOptimizeRequest) but trimmed to the NORMAL_RECALC action, since that is
  * the only thing meaningful to re-run mid-flight from live state.
+ *
+ * Aircraft performance profile — the contract with the backend:
+ *
+ * - `aircraftConfig` is sent ONLY when a real config key is known (the
+ *   telemetry patch carries one, resolved server-side from the SimConnect
+ *   TITLE through the aircraft catalog). It is NEVER sent as `null`: a
+ *   Pydantic default applies to an ABSENT key only, so an explicit null
+ *   422'd every live optimize call and the recommendation never computed.
+ * - `flightState.aircraft` carries the best available aircraft IDENTIFIER in
+ *   priority order: live SimConnect aircraft → active SimBrief OFP ICAO type
+ *   → the crew's manual flight-entry type. The backend maps that identifier
+ *   to a config key through the SAME catalog that owns the YAML profiles —
+ *   the mapping is deliberately not duplicated here, because a second table
+ *   in JS could drift and silently select another airframe's performance
+ *   tables (AGENTS.md: physically based data only).
+ * - When nothing resolves, both fields are omitted and the backend refuses
+ *   the optimization with a readable reason instead of guessing an airframe.
  */
 export function buildLiveOptimizeRequest(telemetry, { flight = null, ofpData = null } = {}) {
   const t = telemetry;
@@ -278,18 +325,36 @@ export function buildLiveOptimizeRequest(telemetry, { flight = null, ofpData = n
     num(ofp.route_distance_nm) ?? num(ofp.general?.route_distance) ?? null;
   const plannedBlockTimeMin = num(ofp.ete_min) ?? null;
 
-  return {
+  const aircraftConfig = resolveAircraftConfigKey(telemetry);
+  const aircraft = resolveAircraftIdentifier(telemetry, { flight, ofpData });
+
+  // The backend types these four as REQUIRED floats on UiFlightState, so a
+  // null would 422 exactly the way aircraftConfig did. Without them there is
+  // nothing to optimize anyway: return null and let the panel stay in its
+  // "live telemetry still warming up" state instead of showing an HTTP error.
+  const altitudeFt = num(p.altitudeFt ?? rs.altitude_ft);
+  const grossWeightKg = num(p.grossWeightKg ?? rs.gross_weight_kg);
+  const mach = num(p.mach ?? rs.mach);
+  const remainingDistanceNm = num(p.remainingDistanceNm ?? rs.gps_remaining_distance_nm);
+  if (
+    altitudeFt == null ||
+    grossWeightKg == null ||
+    mach == null ||
+    remainingDistanceNm == null
+  ) {
+    return null;
+  }
+
+  const body = {
     action: "NORMAL_RECALC",
-    aircraftConfig: p.aircraftConfig || rs.aircraft_config || null,
     flightState: {
-      aircraft: p.aircraft || rs.aircraft_title || null,
       engineVariant: null,
       aircraftRegistration: null,
-      altitudeFt: num(p.altitudeFt ?? rs.altitude_ft),
-      grossWeightKg: num(p.grossWeightKg ?? rs.gross_weight_kg),
-      mach: num(p.mach ?? rs.mach),
+      altitudeFt,
+      grossWeightKg,
+      mach,
       currentCostIndex: num(p.currentCostIndex ?? rs.cost_index),
-      remainingDistanceNm: num(p.remainingDistanceNm ?? rs.gps_remaining_distance_nm),
+      remainingDistanceNm,
       routeDistanceNm,
       windComponentKt: num(p.windComponentKt ?? rs.wind_component_kt),
       isaDeviationC: num(p.isaDeviationC ?? rs.isa_deviation_c),
@@ -311,6 +376,50 @@ export function buildLiveOptimizeRequest(telemetry, { flight = null, ofpData = n
     remainingRouteProfile: null,
     payload: {},
   };
+
+  // Omitted, never null — see the contract note above.
+  if (aircraftConfig) body.aircraftConfig = aircraftConfig;
+  if (aircraft) body.flightState.aircraft = aircraft;
+
+  return body;
+}
+
+/**
+ * The aircraft performance config key, if the live layer already resolved
+ * one. Only the backend-supplied key is trusted — this never derives a key
+ * from a type code, so it cannot pick a different airframe's tables.
+ */
+export function resolveAircraftConfigKey(telemetry) {
+  const p = telemetry?.flightStatePatch || {};
+  const rs = telemetry?.rawSummary || {};
+  const key = p.aircraftConfig || rs.aircraft_config || null;
+  return key ? String(key).trim() || null : null;
+}
+
+/**
+ * Best available aircraft identifier, in the priority order the ticket
+ * pins: live SimConnect aircraft → active SimBrief OFP ICAO type → the
+ * crew's manual flight-entry type. Returns null when nothing is known.
+ */
+export function resolveAircraftIdentifier(telemetry, { flight = null, ofpData = null } = {}) {
+  const p = telemetry?.flightStatePatch || {};
+  const rs = telemetry?.rawSummary || {};
+  const ofp = ofpData || {};
+  const candidates = [
+    p.aircraft,
+    rs.aircraft_title,
+    ofp.aircraft_icao,
+    ofp.aircraft?.icaocode,
+    ofp.aircraft?.icao_code,
+    ofp.aircraft,
+    flight?.aircraft_icao,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const text = candidate.trim();
+    if (text) return text;
+  }
+  return null;
 }
 
 /**
@@ -365,6 +474,11 @@ export function mapApplyTargets(optimizeResponse, { liveFlightLevel = null } = {
     line,
     summary: summaryBits.join(" · ") || null,
     recommendation: raw.recommendation || null,
+    // Which performance profile produced these numbers, and where the key
+    // came from. Shown in the panel so the crew can see the recommendation
+    // is not computed from another airframe's tables.
+    aircraftConfig: raw.aircraftConfig || raw.aircraft_config || null,
+    aircraftConfigSource: raw.aircraftConfigSource || raw.aircraft_config_source || null,
     targets: {
       flightLevel: fl != null ? Math.round(fl) : null,
       mach: mach != null ? Number(mach.toFixed(3)) : null,

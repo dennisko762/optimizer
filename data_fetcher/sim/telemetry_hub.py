@@ -111,22 +111,29 @@ class TelemetryHub:
         Runs in a thread (SimConnect calls are blocking). If no client
         exists yet (sim never connected) the call still creates one and
         fails cleanly — the returned dict carries the error text.
+
+        Serialized against the poll loop via ``_poll_lock``: the underlying
+        python-simconnect client is NOT thread-safe, and issuing events +
+        read-backs on it while ``_poll_once`` is mid-request can fail the
+        poll, which closes the client and blanks the crew's live strip. The
+        poll is sub-second, so an Apply never waits meaningfully.
         """
-        try:
-            client = await asyncio.to_thread(self._get_client)
-            return await asyncio.to_thread(
-                client.set_target_state,
-                flight_level=flight_level,
-                mach=mach,
-            )
-        except SimClientError as exc:
-            return {"applied": False, "supported": True, "errors": [str(exc)]}
-        except Exception as exc:
-            return {
-                "applied": False,
-                "supported": True,
-                "errors": [f"Unexpected SimConnect command error: {exc}"],
-            }
+        async with self._poll_lock:
+            try:
+                client = await asyncio.to_thread(self._get_client)
+                return await asyncio.to_thread(
+                    client.set_target_state,
+                    flight_level=flight_level,
+                    mach=mach,
+                )
+            except SimClientError as exc:
+                return {"applied": False, "supported": True, "errors": [str(exc)]}
+            except Exception as exc:
+                return {
+                    "applied": False,
+                    "supported": True,
+                    "errors": [f"Unexpected SimConnect command error: {exc}"],
+                }
 
     async def _run(self) -> None:
         while True:

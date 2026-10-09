@@ -168,7 +168,6 @@ def run_ensemble_uncertainty_scenarios(
     UncertaintyResult
         Three scenarios (P5/P50/P95) with reserve_at_risk assessment.
     """
-    from optimizer.wind.gefs_ensemble import EnsembleProfile  # noqa: F811
 
     scenario_defs = [
         ("P5_headwind", 5),

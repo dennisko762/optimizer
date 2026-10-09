@@ -1,0 +1,338 @@
+name: CI
+
+# Stable required check names used by branch protection (see
+# docs/ci-quality-gate.md):
+#   python-tests, python-lint-ruff, python-typecheck-mypy,
+#   python-coverage-gate, python-dependency-audit,
+#   node-build, node-lint-eslint, node-tests, node-coverage-gate,
+#   node-dependency-audit
+#
+# Security model: top-level permissions are read-only. No job needs
+# write access, so none escalates. pull_request (not pull_request_target)
+# is used throughout, so fork PRs run with a read-only, secret-less
+# GITHUB_TOKEN and can never touch repo secrets or push anything.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "22"
+
+jobs:
+  python-tests:
+    name: python-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-efb.txt -r requirements-dev.txt
+
+      - name: Run pytest with coverage
+        # tests/test_gefs_ensemble.py and tests/test_wind_reconciliation.py
+        # import optimizer.wind.wind_profile / wind_interpolator, modules
+        # that do not exist on main (pre-existing gap, see
+        # docs/ci-quality-gate.md#pre-existing-failures). Collected and
+        # reported, not silently skipped, so a PR that fixes them is
+        # visible as a real improvement. `|| true`: the real pass/fail
+        # decision is docs/test-baseline-failures.json-aware (next
+        # step), not pytest's raw exit code — a pre-existing failure
+        # must never block an unrelated PR, but a NEW one must.
+        run: |
+          python -m pytest tests -v \
+            --continue-on-collection-errors \
+            --cov --cov-report=xml --cov-report=term-missing \
+            --junitxml=pytest-report.xml || true
+
+      - name: Enforce no newly introduced test failures
+        run: python .github/scripts/check_test_baseline.py pytest-report.xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-coverage
+          path: |
+            coverage.xml
+            pytest-report.xml
+          retention-days: 14
+
+  python-lint-ruff:
+    name: python-lint-ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: ruff check
+        run: ruff check .
+
+  python-typecheck-mypy:
+    name: python-typecheck-mypy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # Advisory today: 61 pre-existing type errors on main (see
+    # docs/ci-quality-gate.md#baseline). Reported on every PR so
+    # regressions are visible, but does not block merge yet — flip
+    # continue-on-error to false once the baseline is cleared.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-efb.txt -r requirements-dev.txt
+      - name: mypy
+        run: mypy --ignore-missing-imports crew_platform optimizer performance_engine strategy trajectory_engine delay_module data_fetcher sim_bridge src
+
+  python-coverage-gate:
+    name: python-coverage-gate
+    needs: python-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Download coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-coverage
+      - name: Fetch base branch for diff
+        run: git fetch origin ${{ github.event.pull_request.base.ref || 'main' }} --depth=1
+      - name: diff-cover changed-code gate (>=80%)
+        run: |
+          diff-cover coverage.xml \
+            --compare-branch=origin/${{ github.event.pull_request.base.ref || 'main' }} \
+            --fail-under=80 \
+            --html-report=python-diff-coverage.html
+      - name: Upload diff-coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-diff-coverage
+          path: python-diff-coverage.html
+          retention-days: 14
+
+  python-dependency-audit:
+    name: python-dependency-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install pip-audit==2.10.1
+      - name: pip-audit (requirements.txt)
+        run: |
+          pip-audit -r requirements.txt --format json --output pip-audit-requirements.json || true
+      - name: pip-audit (requirements-efb.txt)
+        run: |
+          pip-audit -r requirements-efb.txt --format json --output pip-audit-efb.json || true
+      - name: Enforce no newly introduced HIGH/CRITICAL
+        run: |
+          python .github/scripts/check_pip_audit.py pip-audit-requirements.json pip-audit-efb.json
+      - name: Upload pip-audit reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pip-audit-reports
+          path: pip-audit-*.json
+          retention-days: 14
+
+  node-build:
+    name: node-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: efb-ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: efb-ui/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  node-lint-eslint:
+    name: node-lint-eslint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: efb-ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: efb-ui/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
+  node-tests:
+    name: node-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: efb-ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: efb-ui/package-lock.json
+      - run: npm ci
+      - name: Run tests with coverage (lcov)
+        run: |
+          node --test --experimental-test-coverage \
+            --test-reporter=lcov --test-reporter-destination=lcov.info \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            "src/**/*.test.js"
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: node-coverage
+          path: efb-ui/lcov.info
+          retention-days: 14
+
+  node-coverage-gate:
+    name: node-coverage-gate
+    needs: node-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install diff-cover==10.6.0
+      - name: Download coverage
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: node-coverage
+          path: efb-ui
+      - name: Fetch base branch for diff
+        run: git fetch origin ${{ github.event.pull_request.base.ref || 'main' }} --depth=1
+      - name: diff-cover changed-code gate (>=80%)
+        working-directory: efb-ui
+        run: |
+          diff-cover lcov.info \
+            --compare-branch=origin/${{ github.event.pull_request.base.ref || 'main' }} \
+            --fail-under=80 \
+            --html-report=node-diff-coverage.html
+      - name: Upload diff-coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: node-diff-coverage
+          path: efb-ui/node-diff-coverage.html
+          retention-days: 14
+
+  node-dependency-audit:
+    name: node-dependency-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: efb-ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: efb-ui/package-lock.json
+      - run: npm ci
+      - name: npm audit (JSON report)
+        run: npm audit --json > npm-audit.json || true
+      - name: Enforce no newly introduced HIGH/CRITICAL
+        run: node ../.github/scripts/check_npm_audit.js npm-audit.json
+      - name: Upload npm-audit report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-audit-report
+          path: efb-ui/npm-audit.json
+          retention-days: 14

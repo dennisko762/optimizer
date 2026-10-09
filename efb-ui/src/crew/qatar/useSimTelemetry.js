@@ -16,7 +16,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const POLL_MS = 5000;
 
-export function useSimTelemetry({ apiBase, enabled = true, destinationLat, destinationLon } = {}) {
+// apiBase is "" for same-origin (the default: Vite proxies /api to the EFB
+// backend in dev, FastAPI serves the SPA in prod). "" is falsy, so guards must
+// test for null/undefined explicitly — a truthiness check disables the whole
+// live layer in the default configuration.
+const hasApiBase = (apiBase) => apiBase != null;
+
+export function useSimTelemetry({ apiBase = "", enabled = true, destinationLat, destinationLon } = {}) {
   const [telemetry, setTelemetry] = useState(null);
   const [reachable, setReachable] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -24,7 +30,7 @@ export function useSimTelemetry({ apiBase, enabled = true, destinationLat, desti
   const timerRef = useRef(null);
 
   const fetchTelemetry = useCallback(async () => {
-    if (!apiBase) return;
+    if (!hasApiBase(apiBase)) return;
     setRefreshing(true);
     try {
       const params = new URLSearchParams();
@@ -49,7 +55,7 @@ export function useSimTelemetry({ apiBase, enabled = true, destinationLat, desti
   }, [apiBase, destinationLat, destinationLon]);
 
   useEffect(() => {
-    if (!enabled || !apiBase) return undefined;
+    if (!enabled || !hasApiBase(apiBase)) return undefined;
     let cancelled = false;
     const run = async () => {
       await fetchTelemetry();
@@ -68,7 +74,7 @@ export function useSimTelemetry({ apiBase, enabled = true, destinationLat, desti
   // Push optimizer targets (flight level / mach) into the running sim.
   const apply = useCallback(
     async ({ flightLevel = null, mach = null, reason = null } = {}) => {
-      if (!apiBase) return { ok: false, applied: false, error: "No API base." };
+      if (!hasApiBase(apiBase)) return { ok: false, applied: false, error: "No API base." };
       setApplyState({ busy: true, ok: null, applied: null, error: null });
       try {
         const resp = await fetch(`${apiBase}/api/simconnect/apply`, {

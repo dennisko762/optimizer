@@ -38,7 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from data_fetcher.sim import simconnect_client as simconnect_client_module
+from data_fetcher.sim import simconnect_client as simconnect_client_module  # noqa: E402
 
 
 class _MockAircraftRequests:
@@ -365,6 +365,47 @@ class TestHubSetTargetState:
         assert snapshot.connected is False
         assert snapshot.live_state is None
         assert snapshot.last_error is not None
+
+
+    def test_apply_is_serialized_against_the_poll_loop(self):
+        """Apply must not touch the client while a poll is in flight.
+
+        python-simconnect is not thread-safe; overlapping an Apply with the
+        1 Hz poll can fail the poll, which closes the client and blanks the
+        crew's live strip mid-flight.
+        """
+        from data_fetcher.sim.sim_client import SimClient
+        from data_fetcher.sim.sim_models import LiveSimState
+
+        trace: list[str] = []
+
+        class SlowClient(SimClient):
+            async def get_live_state(self):
+                trace.append("poll-start")
+                await asyncio.sleep(0.05)
+                trace.append("poll-end")
+                return LiveSimState(aircraft_title="A350-900 (Default Cabin)")
+
+            def set_target_state(self, *, flight_level=None, mach=None):
+                trace.append("apply")
+                return {"applied": True, "supported": True, "errors": []}
+
+        async def scenario():
+            hub = _make_hub(SlowClient)
+            try:
+                poll = asyncio.create_task(hub._poll_once())
+                await asyncio.sleep(0.01)  # let the poll get inside the lock
+                apply_result = await hub.set_target_state(flight_level=380)
+                await poll
+                return apply_result
+            finally:
+                await hub.stop()
+
+        result = asyncio.run(scenario())
+
+        assert result["applied"] is True
+        # The apply waited for the poll to finish rather than interleaving.
+        assert trace == ["poll-start", "poll-end", "apply"], trace
 
 
 # ── POST /api/simconnect/apply (route layer) ─────────────────────────────

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -246,7 +247,7 @@ async def simconnect_eta(
     default_destination_lon = (
         destination_lon if destination_lon is not None else _destination_lon
     )
-    effective_destination_lat, effective_destination_lon, destination_lookup_warning = _resolve_destination_coordinates(
+    effective_destination_lat, effective_destination_lon, destination_lookup_warning = await _resolve_destination_coordinates(
         destination_lat=default_destination_lat,
         destination_lon=default_destination_lon,
         destination=destination,
@@ -376,7 +377,7 @@ async def simconnect_telemetry(
     default_destination_lon = (
         destination_lon if destination_lon is not None else _destination_lon
     )
-    effective_destination_lat, effective_destination_lon, destination_lookup_warning = _resolve_destination_coordinates(
+    effective_destination_lat, effective_destination_lon, destination_lookup_warning = await _resolve_destination_coordinates(
         destination_lat=default_destination_lat,
         destination_lon=default_destination_lon,
         destination=destination,
@@ -632,7 +633,7 @@ def _build_warnings(
     return warnings
 
 
-def _resolve_destination_coordinates(
+async def _resolve_destination_coordinates(
     *,
     destination_lat: float | None,
     destination_lon: float | None,
@@ -643,7 +644,11 @@ def _resolve_destination_coordinates(
 
     from data_fetcher.sim.airport_lookup import lookup_airport_coordinates
 
-    coordinates = lookup_airport_coordinates(destination)
+    # Blocking on the first call: it imports openap and parses the bundled
+    # airports.csv (~1.3 s measured) before the lru_cache is warm. Doing that
+    # inline on the event loop stalls EVERY other request — including the
+    # telemetry poll that feeds the pilot's live strip.
+    coordinates = await asyncio.to_thread(lookup_airport_coordinates, destination)
     if coordinates is None:
         return destination_lat, destination_lon, None
 
