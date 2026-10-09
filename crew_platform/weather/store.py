@@ -155,7 +155,7 @@ class CycleStore:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._ds_cache: "OrderedDict[str, Any]" = {}
+        self._ds_cache: "OrderedDict[str, Any]" = OrderedDict()
 
     # -- publish -----------------------------------------------------------
 
