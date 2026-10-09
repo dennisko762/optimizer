@@ -166,8 +166,13 @@ def resolve_aircraft_from_title(title: str | None) -> AircraftCatalogEntry | Non
     """
     Best-effort aircraft type detection from simulator aircraft title strings.
 
-    SimConnect TITLE is addon-specific free text, so this intentionally returns
-    a catalog entry only for clear type signals.
+    SimConnect TITLE is addon-specific free text ("Airbus A350-900 Qatar
+    Airways", "PMDG 777-300ER Emirates", "Fenix A320"), so the normalized
+    title is scanned for the longest known type token. Longest-first ordering
+    matters: "A320NEO" must win over the "A320" substring it contains, and
+    "777300ER" over "777200".
+
+    Returns a catalog entry only for a clear type signal — never a guess.
     """
 
     normalized = normalize_aircraft_code(title)
@@ -178,26 +183,110 @@ def resolve_aircraft_from_title(title: str | None) -> AircraftCatalogEntry | Non
     if direct is not None:
         return direct
 
-    for pattern, code in (
-        ("B777300ER", "B77W"),
-        ("777300ER", "B77W"),
-        ("B77W", "B77W"),
-        ("B777200LR", "B77L"),
-        ("777200LR", "B77L"),
-        ("B77L", "B77L"),
-        ("B777200ER", "B772"),
-        ("777200ER", "B772"),
-        ("B777200", "B772"),
-        ("777200", "B772"),
-        ("B772", "B772"),
-        ("B777F", "B77F"),
-        ("777F", "B77F"),
-        ("B77F", "B77F"),
-    ):
+    for pattern, code in _TITLE_TYPE_PATTERNS:
         if pattern in normalized:
-            return AIRCRAFT_CATALOG.get(code)
+            entry = AIRCRAFT_CATALOG.get(code)
+            if entry is not None:
+                return entry
 
     return None
+
+
+AIRCRAFT_CODE_ALIASES: dict[str, str] = {
+    "A320200": "A320",
+    "A320CEO": "A320",
+    "A320NEO": "A20N",
+    "A321NEO": "A21N",
+    "A319NEO": "A19N",
+    "A350900": "A359",
+    "A3501000": "A35K",
+    "A330200": "A332",
+    "A330300": "A333",
+    "A330900": "A339",
+    "A340300": "A343",
+    "A340600": "A346",
+    "B737800": "B738",
+    "B737700": "B737",
+    "B737900": "B739",
+    "B738W": "B738",
+    "B737MAX7": "B37M",
+    "B737MAX8": "B38M",
+    "B737MAX9": "B39M",
+    "B737MAX10": "B3XM",
+    "B777300ER": "B77W",
+    "777300ER": "B77W",
+    "B777200ER": "B772",
+    "777200ER": "B772",
+    "B777200": "B772",
+    "777200": "B772",
+    "B777200LR": "B77L",
+    "777200LR": "B77L",
+    "B777F": "B77F",
+    "777F": "B77F",
+    "B7878": "B788",
+    "B7879": "B789",
+    "B78710": "B78X",
+}
+
+
+# Additional type tokens that only ever appear inside free-text simulator
+# TITLE strings (addon liveries, marketing names). These are NOT code
+# aliases — they are only scanned for by resolve_aircraft_from_title.
+_TITLE_ONLY_PATTERNS: dict[str, str] = {
+    "A3501000": "A35K",
+    "A350900": "A359",
+    "A350": "A359",
+    "A380800": "A388",
+    "A380": "A388",
+    "A330800": "A338",
+    "A3309": "A339",
+    "A340500": "A345",
+    "A340200": "A342",
+    "A300600": "A306",
+    "A310300": "A310",
+    "7878": "B788",
+    "7879": "B789",
+    "78710": "B78X",
+    "747400": "B744",
+    "7478I": "B748",
+    "7478": "B748",
+    "757200": "B752",
+    "757300": "B753",
+    "767200": "B762",
+    "767300": "B763",
+    "767400": "B764",
+    "737700": "B737",
+    "737800": "B738",
+    "737900": "B739",
+    "737MAX7": "B37M",
+    "737MAX8": "B38M",
+    "737MAX9": "B39M",
+    "737MAX10": "B3XM",
+    "ATR42": "AT43",
+    "ATR72": "AT72",
+    "Q400": "DH8D",
+    "MD11": "MD11",
+}
+
+
+def _build_title_type_patterns() -> tuple[tuple[str, str], ...]:
+    """
+    Longest-first (pattern → catalog code) table for free-text title scans.
+
+    Longest-first is load-bearing: "A320NEO" must be tested before the
+    "A320" substring it contains, and "777300ER" before "777200".
+    """
+
+    patterns: dict[str, str] = {}
+    patterns.update(_TITLE_ONLY_PATTERNS)
+    patterns.update(AIRCRAFT_CODE_ALIASES)
+    for code in AIRCRAFT_CATALOG:
+        patterns.setdefault(code, code)
+
+    return tuple(sorted(patterns.items(), key=lambda item: (-len(item[0]), item[0])))
+
+
+_TITLE_TYPE_PATTERNS: tuple[tuple[str, str], ...] = _build_title_type_patterns()
 
 
 def normalize_aircraft_code(value: str | None) -> str | None:
@@ -216,43 +305,7 @@ def normalize_aircraft_code(value: str | None) -> str | None:
         .replace("/", "")
     )
 
-    aliases = {
-        "A320200": "A320",
-        "A320CEO": "A320",
-        "A320NEO": "A20N",
-        "A321NEO": "A21N",
-        "A319NEO": "A19N",
-        "A350900": "A359",
-        "A3501000": "A35K",
-        "A330200": "A332",
-        "A330300": "A333",
-        "A330900": "A339",
-        "A340300": "A343",
-        "A340600": "A346",
-        "B737800": "B738",
-        "B737700": "B737",
-        "B737900": "B739",
-        "B738W": "B738",
-        "B737MAX7": "B37M",
-        "B737MAX8": "B38M",
-        "B737MAX9": "B39M",
-        "B737MAX10": "B3XM",
-        "B777300ER": "B77W",
-        "777300ER": "B77W",
-        "B777200ER": "B772",
-        "777200ER": "B772",
-        "B777200": "B772",
-        "777200": "B772",
-        "B777200LR": "B77L",
-        "777200LR": "B77L",
-        "B777F": "B77F",
-        "777F": "B77F",
-        "B7878": "B788",
-        "B7879": "B789",
-        "B78710": "B78X",
-    }
-
-    return aliases.get(text, text)
+    return AIRCRAFT_CODE_ALIASES.get(text, text)
 
 
 def easa_min_cabin_crew(seats: int) -> int:

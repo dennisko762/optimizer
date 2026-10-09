@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
@@ -383,6 +385,107 @@ async def sync_simbrief(
         },
         warnings=warnings,
     )
+
+
+@router.get("/flightplan/live")
+async def get_live_flightplan(
+    refresh: bool = Query(default=False, description="Bypass the fetch cache"),
+) -> dict[str, Any]:
+    """Real SimBrief OFP for the configured pilot, as the EFB flightplan view.
+
+    Credentials come from the environment only (SIMBRIEF_USER). Responses
+    never include credential material. Fetches are cached for a few minutes
+    so repeated UI loads do not hammer the SimBrief API.
+    """
+    from optimizer.api.flightplan_service import (
+        CredentialsMissingError,
+        FlightplanError,
+        fetch_flightplan_view,
+    )
+
+    if not os.environ.get("SIMBRIEF_USER", "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="SimBrief is not configured on this bridge (SIMBRIEF_USER is not set).",
+        )
+    try:
+        return await _to_thread(fetch_flightplan_view, force=refresh)
+    except CredentialsMissingError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except FlightplanError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/flightplan/import")
+async def import_flightplan() -> dict[str, Any]:
+    """'Import New Plan' — pull the current SimBrief OFP fresh and save it.
+
+    The freshly fetched plan is persisted to the plan store so it appears in
+    My Flights (saved plans) and is loaded on the next app start.
+    """
+    from optimizer.api.flightplan_service import (
+        CredentialsMissingError,
+        FlightplanError,
+        fetch_flightplan_view,
+        save_plan,
+    )
+
+    if not os.environ.get("SIMBRIEF_USER", "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="SimBrief is not configured on this bridge (SIMBRIEF_USER is not set).",
+        )
+    try:
+        view = await _to_thread(fetch_flightplan_view, force=True)
+        envelope = await _to_thread(save_plan, view)
+    except CredentialsMissingError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except FlightplanError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"key": envelope["key"], "saved_at": envelope["saved_at"], "flightplan": view}
+
+
+@router.get("/flightplans")
+async def list_saved_flightplans() -> dict[str, Any]:
+    """Saved flightplans (My Flights), most recent first, + the last plan key."""
+    from optimizer.api.flightplan_service import list_plans
+
+    return await _to_thread(list_plans)
+
+
+@router.get("/flightplans/{plan_key:path}")
+async def get_saved_flightplan(plan_key: str) -> dict[str, Any]:
+    """One saved flightplan by key (origin+dest-flight, e.g. DOHLHR-QR815)."""
+    from optimizer.api.flightplan_service import get_plan
+
+    plan = await _to_thread(get_plan, plan_key)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Unknown saved flightplan.")
+    return plan
+
+
+@router.delete("/flightplans/{plan_key:path}")
+async def delete_saved_flightplan(plan_key: str) -> dict[str, str]:
+    """Remove one saved flightplan from the store."""
+    from optimizer.api.flightplan_service import delete_plan
+
+    def _delete() -> bool:
+        return delete_plan(plan_key)
+
+    if not await _to_thread(_delete):
+        raise HTTPException(status_code=404, detail="Unknown saved flightplan.")
+    return {"deleted": plan_key}
+
+
+@router.get("/config/readiness")
+async def simbrief_readiness() -> dict[str, Any]:
+    """Whether SimBrief is configured — never returns credential values."""
+    return {"configured": bool(os.environ.get("SIMBRIEF_USER", "").strip())}
+
+
+async def _to_thread(fn: Any, *args: Any, **kwargs: Any) -> Any:
+    """Run a blocking (file/network) helper in the thread pool."""
+    return await asyncio.to_thread(fn, *args, **kwargs)
 
 
 def _resolve_aircraft_info(value: Any) -> SimBriefAircraftInfo:

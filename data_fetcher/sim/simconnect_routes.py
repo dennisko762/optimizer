@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -35,6 +36,32 @@ class DestinationPayload(BaseModel):
     }
 
 
+class ApplyPayload(BaseModel):
+    """Optimizer recommendation to push into the running sim."""
+
+    flight_level: int | None = Field(default=None, alias="flightLevel")
+    mach: float | None = None
+    reason: str | None = None
+
+    model_config = {
+        "populate_by_name": True,
+    }
+
+
+class ApplyResponse(BaseModel):
+    applied: bool
+    supported: bool = True
+    flight_level_applied: bool | None = Field(default=None, alias="flightLevelApplied")
+    mach_applied: bool | None = Field(default=None, alias="machApplied")
+    flight_level: int | None = Field(default=None, alias="flightLevel")
+    mach: float | None = None
+    errors: list[str] = Field(default_factory=list)
+
+    model_config = {
+        "populate_by_name": True,
+    }
+
+
 @router.post("/destination", status_code=204)
 def set_destination(body: DestinationPayload) -> None:
     global _destination_lat, _destination_lon, _remaining_route_profile
@@ -42,6 +69,38 @@ def set_destination(body: DestinationPayload) -> None:
     _destination_lon = body.lon
     _remaining_route_profile = finalize_remaining_route_profile(
         body.remaining_route_profile
+    )
+
+
+@router.post("/apply", response_model=ApplyResponse)
+async def apply_recommendation(body: ApplyPayload) -> ApplyResponse:
+    """
+    Push an optimizer recommendation into the running sim (SimConnect SET
+    simvars): target flight level and/or Mach.
+
+    The EFB calls this from the optimizer panel's Apply button. The
+    response always carries per-target applied flags plus human-readable
+    errors — the UI renders them verbatim and never invents success.
+    """
+    hub = get_telemetry_hub()
+    raw = await hub.set_target_state(
+        flight_level=body.flight_level,
+        mach=body.mach,
+    )
+    print(
+        "SimConnect apply:"
+        f" fl={body.flight_level} mach={body.mach}"
+        f" applied={bool(raw.get('applied'))}"
+        + (f" reason={body.reason}" if body.reason else "")
+    )
+    return ApplyResponse(
+        applied=bool(raw.get("applied", False)),
+        supported=bool(raw.get("supported", False)),
+        flightLevelApplied=raw.get("flightLevelApplied"),
+        machApplied=raw.get("machApplied"),
+        flightLevel=raw.get("flightLevel", body.flight_level),
+        mach=raw.get("mach", body.mach),
+        errors=list(raw.get("errors") or []),
     )
 
 
@@ -188,7 +247,7 @@ async def simconnect_eta(
     default_destination_lon = (
         destination_lon if destination_lon is not None else _destination_lon
     )
-    effective_destination_lat, effective_destination_lon, destination_lookup_warning = _resolve_destination_coordinates(
+    effective_destination_lat, effective_destination_lon, destination_lookup_warning = await _resolve_destination_coordinates(
         destination_lat=default_destination_lat,
         destination_lon=default_destination_lon,
         destination=destination,
@@ -318,7 +377,7 @@ async def simconnect_telemetry(
     default_destination_lon = (
         destination_lon if destination_lon is not None else _destination_lon
     )
-    effective_destination_lat, effective_destination_lon, destination_lookup_warning = _resolve_destination_coordinates(
+    effective_destination_lat, effective_destination_lon, destination_lookup_warning = await _resolve_destination_coordinates(
         destination_lat=default_destination_lat,
         destination_lon=default_destination_lon,
         destination=destination,
@@ -355,7 +414,14 @@ async def simconnect_telemetry(
         ),
         warnings=warnings,
     )
-    print("SimConnect telemetry response:", res.json())
+    # Compact trace only: the EFB polls this endpoint continuously (M3), so
+    # dumping the whole response per sample would flood the server log.
+    print(
+        "SimConnect telemetry:"
+        f" connected={res.connected} fl={patch.altitude_ft}"
+        f" mach={patch.mach} ff={patch.fuel_flow_kg_h}"
+        f" ({patch.fuel_flow_source or 'no fuel-flow source'})"
+    )
     return res
 
 
@@ -567,7 +633,7 @@ def _build_warnings(
     return warnings
 
 
-def _resolve_destination_coordinates(
+async def _resolve_destination_coordinates(
     *,
     destination_lat: float | None,
     destination_lon: float | None,
@@ -578,7 +644,11 @@ def _resolve_destination_coordinates(
 
     from data_fetcher.sim.airport_lookup import lookup_airport_coordinates
 
-    coordinates = lookup_airport_coordinates(destination)
+    # Blocking on the first call: it imports openap and parses the bundled
+    # airports.csv (~1.3 s measured) before the lru_cache is warm. Doing that
+    # inline on the event loop stalls EVERY other request — including the
+    # telemetry poll that feeds the pilot's live strip.
+    coordinates = await asyncio.to_thread(lookup_airport_coordinates, destination)
     if coordinates is None:
         return destination_lat, destination_lon, None
 
