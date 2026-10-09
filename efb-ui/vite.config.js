@@ -48,6 +48,15 @@ export default defineConfig({
       },
     })
   ],
+  test: {
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      reportsDirectory: 'coverage',
+      include: ['src/**/*.{js,jsx}'],
+      exclude: ['src/**/*.test.js'],
+    },
+  },
   server: {
     // In dev mode, proxy API calls to the running FastAPI backend.
     // In production the frontend is served by FastAPI itself (same origin).

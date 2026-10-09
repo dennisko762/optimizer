@@ -11,7 +11,8 @@
  * no hardcoded brand colors.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// eslint-disable-next-line no-unused-vars -- Vitest uses the classic JSX transform in component tests.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plane,
   PlaneTakeoff,
@@ -654,7 +655,7 @@ function CompanyNewsPanel() {
 
 /* ─── Crew Desk (qatar-02) ─────────────────────────────────────────── */
 
-function CrewDeskScreen({ utc, onNavigate, pilotName, flight }) {
+export function CrewDeskScreen({ utc, onNavigate, pilotName, flight }) {
   const { session, apiBase } = useCrewPlatform();
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
@@ -1241,7 +1242,7 @@ function HomeScreen({
 
 /* ─── Profile (Setup functionality, Qatar look) ────────────────────── */
 
-function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) {
+export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) {
   const { session, selectedProvider, configReady, logout, apiBase } = useCrewPlatform();
   const navigraph = useNavigraph({ apiBase });
   const navView = useMemo(() => mapNavigraphStatus(navigraph.status), [navigraph.status]);
@@ -1708,7 +1709,7 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
 
 /* ─── Route (qatar-04) ─────────────────────────────────────────────── */
 
-function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
+export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
   const { apiBase } = useCrewPlatform();
   const [wxPlaying, setWxPlaying] = useState(false);
   const [wxOffset, setWxOffset] = useState(0);
@@ -2052,7 +2053,7 @@ function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected
 
 /* ─── EDTO + Risks (qatar-05) ──────────────────────────────────────── */
 
-function EdtoScreen({ flight, ofpData }) {
+export function EdtoScreen({ flight, ofpData }) {
   const { apiBase } = useCrewPlatform();
   const staticView = useMemo(() => mapEdtoView(flight, ofpData), [flight, ofpData]);
   const navigraph = useNavigraph({ apiBase });
