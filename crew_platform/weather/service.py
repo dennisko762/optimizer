@@ -57,11 +57,94 @@ PRODUCTS: dict[str, HazardProduct] = {
 }
 
 
+#: half of the precision of :meth:`BoxKey.__str__` (2 decimals) — region
+#: identity is the stored string, so float noise below this is not a
+#: different region.
+_BOX_EPS = 0.005
+
+
+def same_box(a: BoxKey, b: BoxKey) -> bool:
+    """True when two region boxes are the same *stored* region."""
+    return str(a) == str(b)
+
+
+def box_covers(outer: BoxKey, inner: BoxKey) -> bool:
+    """True when every point of ``inner`` lies inside ``outer`` (degrees).
+
+    Longitudes are compared on the dataset's own convention (the ingest box
+    builder keeps left <= right), so no wrap normalisation is applied here.
+    Comparisons are tolerant to the 2-decimal rounding of the stored region
+    key.
+    """
+    return (
+        outer.leftlon <= inner.leftlon + _BOX_EPS
+        and outer.rightlon >= inner.rightlon - _BOX_EPS
+        and outer.bottomlat <= inner.bottomlat + _BOX_EPS
+        and outer.toplat >= inner.toplat - _BOX_EPS
+    )
+
+
+def _box_area(box: BoxKey) -> float:
+    return abs(box.rightlon - box.leftlon) * abs(box.toplat - box.bottomlat)
+
+
+def box_overlap_area(a: BoxKey, b: BoxKey) -> float:
+    """Area (deg^2) of the intersection of two region boxes (0 = disjoint)."""
+    dlon = min(a.rightlon, b.rightlon) - max(a.leftlon, b.leftlon)
+    dlat = min(a.toplat, b.toplat) - max(a.bottomlat, b.bottomlat)
+    if dlon <= 0 or dlat <= 0:
+        return 0.0
+    return dlon * dlat
+
+
+def _box_rank(meta_box: BoxKey, box: BoxKey) -> tuple[int, float, float]:
+    """Preference key for serving ``box`` from a dataset cut for ``meta_box``.
+
+    Exact region first, then the tightest region that fully covers the
+    route, then the largest-overlap partial region. A partial region is
+    still served (the sampler reports ``None`` outside the grid rather than
+    fabricating values), so a region mismatch degrades honestly instead of
+    blanking the layer.
+    """
+    if same_box(meta_box, box):
+        return (0, 0.0, 0.0)
+    if box_covers(meta_box, box):
+        return (1, _box_area(meta_box), 0.0)
+    return (2, -box_overlap_area(meta_box, box), _box_area(meta_box))
+
+
+def visible_metas(box: Optional[BoxKey] = None) -> list:
+    """Published datasets usable for ``box``, newest cycle first.
+
+    ``box is None`` (no active route) keeps the store's own newest-first
+    ordering. Otherwise datasets are ranked by region fitness for the active
+    route box (see :func:`_box_rank`) *within* each cycle, so a new box
+    published inside the same cycle is served instead of whichever region
+    happened to be listed first.
+    """
+    metas = STORE.list_published()
+    if box is None:
+        return list(metas)
+    order: dict[str, int] = {}
+    for m in metas:
+        order.setdefault(m.cycle_id, len(order))
+    return sorted(
+        metas,
+        key=lambda m: (order.get(m.cycle_id, len(order)),) + _box_rank(m.box, box),
+    )
+
+
+def _published_meta(cycle_id: str, box: Optional[BoxKey] = None):
+    """Select one published dataset, constrained to ``box`` when provided."""
+    return next(
+        (m for m in visible_metas(box) if m.cycle_id == cycle_id),
+        None,
+    )
+
+
 def _box_key(cycle_id: str) -> Optional[BoxKey]:
-    metas = [m for m in STORE.list_published() if m.cycle_id == cycle_id]
-    if not metas:
-        return None
-    return metas[0].box
+    meta = _published_meta(cycle_id)
+    return meta.box if meta is not None else None
 
 
 def _load_bundle(cycle_id: str, box: BoxKey, offset: int) -> Optional[dict[str, np.ndarray]]:
@@ -170,6 +253,7 @@ def hazard_layer(
     offset: int,
     *,
     epsilon: float = 0.02,
+    box: Optional[BoxKey] = None,
 ) -> dict[str, Any]:
     """One hazard layer as a GeoJSON FeatureCollection for FL + forecast hour.
 
@@ -182,9 +266,10 @@ def hazard_layer(
     spec = PRODUCTS.get(product)
     if spec is None:
         raise KeyError(f"unknown hazard product: {product}")
-    meta = next((m for m in STORE.list_published() if m.cycle_id == cycle_id), None)
+    meta = _published_meta(cycle_id, box)
     if meta is None:
-        raise LookupError(f"no published weather cycle {cycle_id!r}")
+        region = f" for box {box}" if box is not None else ""
+        raise LookupError(f"no published weather cycle {cycle_id!r}{region}")
     if offset not in meta.offsets:
         horizon = max(meta.offsets) if meta.offsets else 0
         return {
@@ -224,6 +309,7 @@ def hazard_layer(
         "valid_at_utc": _valid_at_iso(cycle_id, offset),
         "thresholds": list(spec["thresholds"]),
         "cycle": cycle_id,
+        "box": str(meta.box),
     }
 
 
@@ -232,6 +318,8 @@ def route_samples(
     cycle_id: str,
     fl: float,
     offset: int,
+    *,
+    box: Optional[BoxKey] = None,
 ) -> dict[str, Any]:
     """Sample the route at every navlog waypoint × FL × ETA.
 
@@ -250,9 +338,10 @@ def route_samples(
     value, icing tier + value, jet tier. Unavailable fields are ``None``
     (never fabricated).
     """
-    meta = next((m for m in STORE.list_published() if m.cycle_id == cycle_id), None)
+    meta = _published_meta(cycle_id, box)
     if meta is None:
-        raise LookupError(f"no published weather cycle {cycle_id!r}")
+        region = f" for box {box}" if box is not None else ""
+        raise LookupError(f"no published weather cycle {cycle_id!r}{region}")
     offsets = list(meta.offsets)
     max_off = max(offsets) if offsets else 0
     run_ep = cycle_epoch(cycle_id)
@@ -489,6 +578,7 @@ def route_samples(
         "served_offsets": sorted(served_offsets),
         "sibt_utc": view.get("std_utc"),
         "points": points,
+        "box": str(meta.box),
         "provenance": "NOAA GFS 0.25 deg (g2sub) — NOAA-derived proxies, not official WAFS/eWAS",
     }
 

@@ -14,6 +14,8 @@
  * - mapFuelDeviation  → planned vs actual fuel deviation cell
  * - mapRouteLive      → aircraft position + passed-waypoint set for the
  *                       route overlay (great-circle progress along the plan)
+ * - mapLiveOverlay    → the same live state shaped for the MapLibre route
+ *                       map (aircraft GeoJSON + passed fix keys + HUD text)
  * - mapApplyTargets   → optimizer best-strategy → sim apply targets
  *                       (flight level / mach) + the "save Xkg" summary line
  *
@@ -277,6 +279,76 @@ export function mapRouteLive(routePoints, live) {
     totalNm: Math.round(totalNm),
     passedIdents,
     // The symbol is drawn at the live lat/lon by the caller (projectMap).
+  };
+}
+
+/* ── MapLibre live overlay (M3 live route on the eWAS map) ─────────── */
+
+/**
+ * Live aircraft position + passed-waypoint state for the MapLibre route
+ * map, derived from the same SimConnect telemetry as the rest of the M3
+ * layer (:func:`mapRouteLive` does the geometry; this only shapes it for
+ * the map layers and the HUD chip).
+ *
+ * routePoints: the exact OFP fixes already on the map
+ *   ([{ident, lat, lon, occurrence}] from weatherMappers.mapRouteForMap).
+ * telemetry: the raw GET /api/simconnect/telemetry envelope.
+ * simConnected: the mapSimStatus-derived connection flag — without a live
+ *   connection nothing is drawn (no last-known/invented position).
+ * live: the mapLiveStrip view model (used only for the FL label).
+ *
+ * Returns { connected, position, aircraftGeoJson, passedIdents,
+ * passedKeys, progressIndex, remainingNm, totalNm, label }. When not
+ * connected every field is null/empty and aircraftGeoJson is an empty
+ * FeatureCollection, so the caller can set it unconditionally.
+ */
+export function mapLiveOverlay(routePoints, telemetry, simConnected, live) {
+  const empty = {
+    connected: false,
+    position: null,
+    aircraftGeoJson: { type: "FeatureCollection", features: [] },
+    passedIdents: [],
+    passedKeys: [],
+    progressIndex: null,
+    remainingNm: null,
+    totalNm: null,
+    label: null,
+  };
+
+  const rs = telemetry?.rawSummary || telemetry?.raw_summary || {};
+  const lat = rs.latitude ?? null;
+  const lon = rs.longitude ?? null;
+  if (!simConnected || lat == null || lon == null) return empty;
+
+  const pts = Array.isArray(routePoints) ? routePoints.filter((p) => p) : [];
+  const r = mapRouteLive(pts, { latitude: lat, longitude: lon });
+  if (!r.connected) return { ...empty, position: { lat, lon } };
+
+  const flLabel = live?.flightLevel != null ? `FL${live.flightLevel}` : "LIVE";
+  const passedIdents = r.passedIdents || [];
+  // occurrence-aware keys: a repeated fix ident is a distinct point on the
+  // map, so the passed flag must not light up both occurrences.
+  const passedKeys = pts
+    .slice(0, r.progressIndex != null ? r.progressIndex : 0)
+    .map((p) => `${p.ident || ""}#${p.occurrence != null ? p.occurrence : 0}`);
+
+  return {
+    connected: true,
+    position: { lat, lon },
+    aircraftGeoJson: {
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: { kind: "live-aircraft", label: flLabel },
+        geometry: { type: "Point", coordinates: [lon, lat] },
+      }],
+    },
+    passedIdents,
+    passedKeys,
+    progressIndex: r.progressIndex,
+    remainingNm: r.remainingNm,
+    totalNm: r.totalNm,
+    label: flLabel,
   };
 }
 

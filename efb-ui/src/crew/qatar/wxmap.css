@@ -359,6 +359,28 @@
   color: var(--qr-muted);
   z-index: 6;
 }
+/* M3 live route HUD (SimConnect) — right of the fix hint, same bottom rail */
+.qr-shell .wx-map__live {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(6,40,61,0.8);
+  border: 1px solid rgba(34,211,238,0.5);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  font-size: 11px;
+  color: #a5f3fc;
+  z-index: 7;
+}
+.qr-shell .wx-chip--live {
+  background: rgba(34,211,238,0.18);
+  border-color: rgba(34,211,238,0.6);
+  color: #67e8f9;
+}
 .qr-shell .wx-map__err {
   position: absolute;
   left: 50%;

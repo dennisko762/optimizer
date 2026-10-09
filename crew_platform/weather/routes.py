@@ -126,25 +126,34 @@ async def route(
     view = await asyncio.to_thread(_active_plan)
     route_data = await asyncio.to_thread(extract_route, view)
     # point the background scheduler at this route box so it stays current
+    active_box = None
     try:
         ll, rl, tp, bl = await asyncio.to_thread(_route_box, view)
         await asyncio.to_thread(scheduler.set_active_box, ll, rl, tp, bl)
+        active_box = await asyncio.to_thread(scheduler.active_box_key)
     except HTTPException:
         pass
     samples = await asyncio.to_thread(
-        service.route_samples, view, _latest_cycle(), fl, offset
+        service.route_samples, view, _latest_cycle(active_box), fl, offset,
+        box=active_box,
     )
     return {**route_data, "samples": samples, "fl": int(round(fl)), "offset": offset}
 
 
-def _latest_cycle() -> str:
-    metas = STORE.list_published()
+def _latest_cycle(box: Optional[Any] = None) -> str:
+    """Newest published cycle visible to ``box`` (None = any box).
+
+    503 (degraded, not an error) when no dataset usable for the selected box
+    has landed yet.
+    """
+    metas = service.visible_metas(box)
     if not metas:
+        scope = "for the selected route box" if box is not None else "yet"
         raise HTTPException(
             status_code=503,
-            detail="No completed weather cycle available yet. The scheduler "
-                   "is downloading the newest GFS 0.25 deg cycle in the "
-                   "background (see /api/crew/weather/status).",
+            detail=f"No completed weather cycle available {scope}. The "
+                   "scheduler is downloading the newest GFS 0.25 deg cycle in "
+                   "the background (see /api/crew/weather/status).",
         )
     return metas[0].cycle_id
 
@@ -166,10 +175,11 @@ async def layer(
             status_code=404,
             detail=f"Unknown product {product!r}. Available: {sorted(service.PRODUCTS)}",
         )
-    cycle = _latest_cycle()
+    active_box = await asyncio.to_thread(scheduler.active_box_key)
+    cycle = _latest_cycle(active_box)
     try:
         out = await asyncio.to_thread(
-            service.hazard_layer, cycle, product, fl, offset
+            service.hazard_layer, cycle, product, fl, offset, box=active_box
         )
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

@@ -1546,7 +1546,14 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       )}
 
       {tab === "route" && (
-        <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
+        <MapWeatherPanel
+          apiBase={apiBase}
+          utc={utc}
+          flight={flight}
+          telemetry={telemetry}
+          simConnected={simConnected}
+          live={live}
+        />
       )}
 
       {tab === "edto" && (
@@ -1568,6 +1575,15 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
 
 /* ─── Route (qatar-04) ─────────────────────────────────────────────── */
 
+/**
+ * Legacy SVG route view (pre-M5-P). The active Route tab renders
+ * `MapWeatherPanel` (MapLibre); this component is kept as the exported
+ * standalone SVG fallback. The M3 live state it pioneered — SimConnect
+ * aircraft symbol + passed-waypoint marking — is ALSO wired into the
+ * active MapLibre Route tab (see `mapLiveOverlay` in liveMappers.js and
+ * the `wx-live-ac` / `passed` layers in MapWeatherPanel.jsx), so the live
+ * route behaviour is reachable from the UI regardless of this component.
+ */
 export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
   const [wxPlaying, setWxPlaying] = useState(false);
   const [wxOffset, setWxOffset] = useState(0);

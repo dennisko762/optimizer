@@ -30,7 +30,7 @@ from typing import Any, Optional
 from . import cycle as gfs
 from .cycle import GfsConfig
 from .ingest import IngestRequest, ingest_cycle
-from .store import STORE, staleness
+from .store import BoxKey, STORE, staleness
 
 LOG = logging.getLogger("crew_weather.scheduler")
 
@@ -39,7 +39,9 @@ _status_lock = threading.Lock()
 _status: dict[str, Any] = {
     "state": "idle",          # idle | checking | downloading | error
     "current_cycle": None,    # cycle_id of the last *completed* ingest
+    "current_box": None,      # box string of the last *completed* ingest
     "in_progress_cycle": None,
+    "in_progress_box": None,
     "last_error": None,
     "last_check": None,
     "fetched_at": None,
@@ -76,6 +78,34 @@ def _box() -> Optional[IngestRequest]:
     return IngestRequest(cycle_id="", leftlon=ll, rightlon=rl, toplat=tp, bottomlat=bl, offsets=range(0, 37))
 
 
+def active_box_key() -> Optional[BoxKey]:
+    """Return the currently selected route box using the store's identity."""
+    with _box_lock:
+        if _active_box is None:
+            return None
+        ll, rl, tp, bl = _active_box
+    return BoxKey(ll, rl, tp, bl)
+
+
+def _box_usable_for(box_text: Optional[str], active: Optional[BoxKey]) -> bool:
+    """True when the dataset region ``box_text`` can serve ``active``.
+
+    No active route (``active is None``) means any region is reportable; an
+    unparseable/absent region is not.
+    """
+    if active is None:
+        return True
+    if not box_text:
+        return False
+    from . import service  # local import: avoids an import cycle at module load
+
+    try:
+        box = BoxKey.parse(box_text)
+    except ValueError:
+        return False
+    return service.same_box(box, active) or service.box_covers(box, active)
+
+
 def set_active_box(ll: float, rl: float, tp: float, bl: float) -> None:
     """Point the scheduler at the route region to keep current."""
     global _active_box
@@ -108,18 +138,22 @@ def _run_cycle(config: GfsConfig, cycle_id: str, req: IngestRequest) -> None:
         # the next one will retry.
         with _status_lock:
             _status["in_progress_cycle"] = None
+            _status["in_progress_box"] = None
         _mark("idle", last_error="ingest in progress (manual job holds the lock)")
         return
     try:
         meta = ingest_cycle(config, req2, store=STORE)
     finally:
         _job_lock.release()
-    # only after a successful publish does the cycle become "current"
+    # only after a successful publish does this (cycle, box) become current
     with _status_lock:
         _status["current_cycle"] = meta.cycle_id
+        _status["current_box"] = str(meta.box)
         _status["fetched_at"] = meta.fetched_at
         _status["in_progress_cycle"] = None
+        _status["in_progress_box"] = None
         _status["last_failed_cycle"] = None
+        _status["last_failed_box"] = None
         _status["last_failed_at"] = None
     _emit(meta.cycle_id)
 
@@ -141,40 +175,54 @@ def _tick(config: GfsConfig) -> None:
             _mark("idle", last_error="no run hours found")
             return
         newest = f"{date}_{hours[0]}"
+        target_box = str(BoxKey(req.leftlon, req.rightlon, req.toplat, req.bottomlat))
 
         with _status_lock:
-            current = _status["current_cycle"]
-            in_progress = _status["in_progress_cycle"]
-            failed = _status.get("last_failed_cycle")
+            current = (_status["current_cycle"], _status.get("current_box"))
+            in_progress = (_status["in_progress_cycle"], _status.get("in_progress_box"))
+            failed = (_status.get("last_failed_cycle"), _status.get("last_failed_box"))
             failed_at = _status.get("last_failed_at") or 0.0
-        if newest == current or newest == in_progress:
+        target = (newest, target_box)
+        if target == current or target == in_progress:
             _mark("idle")
             return
-        if newest == failed:
+        if STORE.load_meta(newest, BoxKey.parse(target_box)) is not None:
+            _mark(
+                "idle", current_cycle=newest, current_box=target_box,
+                in_progress_cycle=None, in_progress_box=None, last_error=None,
+            )
+            return
+        if target == failed:
             # a failed cycle is retried after a bounded backoff instead of
             # being abandoned for the life of the process.
             if time.time() - failed_at < _retry_backoff_s():
                 _mark("idle")
                 return
 
-        # keep the last-good cycle authoritative until the new one is fully
-        # ingested (current_cycle is only advanced on success)
-        _mark("downloading", in_progress_cycle=newest)
+        # keep the last-good (cycle, box) authoritative until the target is
+        # fully ingested (current identity is only advanced on success)
+        _mark("downloading", in_progress_cycle=newest, in_progress_box=target_box)
         try:
             _run_cycle(config, newest, req)
-            _mark("idle", current_cycle=newest, in_progress_cycle=None, last_error=None)
+            _mark(
+                "idle", current_cycle=newest, current_box=target_box,
+                in_progress_cycle=None, in_progress_box=None, last_error=None,
+            )
         except gfs.GfsError as exc:
-            # keep the last good cycle authoritative (offline fallback) and
-            # remember the failure so the next tick may retry after backoff
+            # keep the last good dataset authoritative and remember the full
+            # failed identity so another box in the same cycle is not backed off
             with _status_lock:
                 _status["in_progress_cycle"] = None
+                _status["in_progress_box"] = None
                 _status["last_failed_cycle"] = newest
+                _status["last_failed_box"] = target_box
                 _status["last_failed_at"] = time.time()
             _mark("error", last_error=str(exc))
             LOG.warning("ingest of %s failed: %s", newest, exc)
     except Exception as exc:  # noqa: BLE001 — a scheduler bug must not kill the thread
         with _status_lock:
             _status["in_progress_cycle"] = None
+            _status["in_progress_box"] = None
         _mark("error", last_error=f"internal: {exc}")
         LOG.exception("scheduler tick failed")
 
@@ -241,20 +289,35 @@ def release_job() -> None:
 
 def status_payload() -> dict[str, Any]:
     """The readiness/status object the UI polls."""
+    from . import service  # local import: service imports the scheduler lazily
+
     with _status_lock:
         s = dict(_status)
     with _box_lock:
         has_box = _active_box is not None
-    published = STORE.list_published()
-    latest = published[0] if published else None
-    fetched = s.get("fetched_at") or (latest.fetched_at if latest else None)
+    active = active_box_key()
+    # only datasets usable for the active route box are reported, so a
+    # region switch inside one cycle cannot keep advertising the old box
+    active_published = service.visible_metas(active)
+    latest = active_published[0] if active_published else None
+    current_box_usable = _box_usable_for(s.get("current_box"), active)
+    fetched = (
+        (s.get("fetched_at") if current_box_usable else None)
+        or (latest.fetched_at if latest else None)
+    )
     stale_block = staleness(time.time(), fetched) if fetched else None
     return {
         "enabled": os.environ.get("WEATHER_SCHEDULER_ENABLED", "1") != "0",
         "state": s["state"],
-        "current_cycle": s["current_cycle"] or (latest.cycle_id if latest else None),
+        "current_cycle": (
+            (s["current_cycle"] or (latest.cycle_id if latest else None))
+            if current_box_usable
+            else (latest.cycle_id if latest else None)
+        ),
+        "current_box": str(active) if active is not None else s.get("current_box"),
         "in_progress_cycle": s["in_progress_cycle"],
-        "latest_published": [m.cycle_id for m in published[:4]],
+        "in_progress_box": s.get("in_progress_box"),
+        "latest_published": [m.cycle_id for m in active_published[:4]],
         "last_good": latest.cycle_id if latest else None,
         "has_route": has_box,
         "fetched_at": fetched,

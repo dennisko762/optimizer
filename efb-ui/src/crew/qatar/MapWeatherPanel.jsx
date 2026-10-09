@@ -27,6 +27,7 @@ import {
   mapWeatherStatus, mapLayerFeatures, hazardColor, mapRouteForMap,
   mapCrossSection, sampleForPoint, fmtFl, validTimeLabel,
 } from "./weatherMappers.js";
+import { mapLiveOverlay } from "./liveMappers.js";
 import CrossSection from "./CrossSection.jsx";
 
 // Legally usable dark basemap (vector style) with required attribution.
@@ -64,7 +65,12 @@ function emptyRoute() {
   };
 }
 
-export default function MapWeatherPanel({ apiBase, utc }) {
+/**
+ * M3 live layer props (telemetry / simConnected / live) are additive: the
+ * map renders exactly as before without them, and with them it also draws
+ * the live SimConnect aircraft symbol and dims the fixes already passed.
+ */
+export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected, live }) {
   const mapRef = useRef(null);
   const mapElRef = useRef(null);
   const fittedRef = useRef(false);
@@ -83,6 +89,18 @@ export default function MapWeatherPanel({ apiBase, utc }) {
   const [refreshTick, setRefreshTick] = useState(0);
 
   const cycle = status?.cycle || null;
+
+  // ── M3 live overlay (SimConnect aircraft + passed fixes) ──────────
+  // Pure derivation from the live telemetry; nothing is drawn when the sim
+  // is not connected (no last-known or synthesized position).
+  const liveOverlay = useMemo(
+    () => mapLiveOverlay(route.points, telemetry, simConnected, live),
+    [route.points, telemetry, simConnected, live]
+  );
+  const passedKeys = useMemo(
+    () => new Set(liveOverlay.passedKeys || []),
+    [liveOverlay]
+  );
 
   // ── status ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -246,6 +264,10 @@ export default function MapWeatherPanel({ apiBase, utc }) {
           ident: p.ident, occurrence: p.occurrence != null ? p.occurrence : 0,
           is_origin: p.isOrigin, is_dest: p.isDest,
           stage: p.stage || "", fl: p.fl != null ? String(p.fl) : "",
+          // M3: fixes the live aircraft has already flown past
+          passed: passedKeys.has(
+            `${p.ident || ""}#${p.occurrence != null ? p.occurrence : 0}`
+          ) ? "true" : "false",
         },
         geometry: { type: "Point", coordinates: [p.lon, p.lat] },
       })),
@@ -257,6 +279,8 @@ export default function MapWeatherPanel({ apiBase, utc }) {
     };
     ensure("wx-route", "line", lineFC);
     ensure("wx-fixes", "point", fixesFC);
+    // M3 live aircraft position (empty FC when the sim is not connected)
+    ensure("wx-live-ac", "point", liveOverlay.aircraftGeoJson);
     ensure("wx-selected", "point", {
       type: "FeatureCollection",
       features: selected ? [{
@@ -307,19 +331,65 @@ export default function MapWeatherPanel({ apiBase, utc }) {
       map.addLayer({
         id: "wx-fix", type: "circle", source: "wx-fixes",
         filter: ["all", ["!=", ["get", "is_origin"], "true"], ["!=", ["get", "is_dest"], "true"]],
-        paint: { "circle-radius": 3, "circle-color": "#e2e8f0", "circle-stroke-width": 1, "circle-stroke-color": "#0f172a" },
+        paint: {
+          // passed fixes (M3 live) are dimmed; data-driven so the paint
+          // follows the live telemetry without re-adding the layer
+          "circle-radius": 3,
+          "circle-color": ["case", ["==", ["get", "passed"], "true"], "#64748b", "#e2e8f0"],
+          "circle-opacity": ["case", ["==", ["get", "passed"], "true"], 0.55, 1],
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#0f172a",
+        },
       });
     }
     if (!map.getLayer("wx-fix-label")) {
       map.addLayer({
         id: "wx-fix-label", type: "symbol", source: "wx-fixes",
         layout: {
-          "text-field": ["get", "ident"],
+          "text-field": [
+            "case", ["==", ["get", "passed"], "true"],
+            ["concat", ["get", "ident"], " ✓"], ["get", "ident"],
+          ],
           "text-size": 11,
           "text-offset": [0.6, -0.9],
           "text-allow-overlap": false,
         },
-        paint: { "text-color": "#fde68a", "text-halo-color": "#1a0b10", "text-halo-width": 1.4 },
+        paint: {
+          "text-color": ["case", ["==", ["get", "passed"], "true"], "#94a3b8", "#fde68a"],
+          "text-halo-color": "#1a0b10",
+          "text-halo-width": 1.4,
+        },
+      });
+    }
+    // M3 live aircraft symbol + FL label, drawn above the route/fixes
+    if (!map.getLayer("wx-live-ac-halo")) {
+      map.addLayer({
+        id: "wx-live-ac-halo", type: "circle", source: "wx-live-ac",
+        paint: {
+          "circle-radius": 11, "circle-color": "#22d3ee", "circle-opacity": 0.22,
+          "circle-stroke-color": "#22d3ee", "circle-stroke-width": 1,
+        },
+      });
+    }
+    if (!map.getLayer("wx-live-ac")) {
+      map.addLayer({
+        id: "wx-live-ac", type: "circle", source: "wx-live-ac",
+        paint: {
+          "circle-radius": 4.5, "circle-color": "#22d3ee",
+          "circle-stroke-color": "#06283d", "circle-stroke-width": 1.5,
+        },
+      });
+    }
+    if (!map.getLayer("wx-live-ac-label")) {
+      map.addLayer({
+        id: "wx-live-ac-label", type: "symbol", source: "wx-live-ac",
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 11,
+          "text-offset": [1.1, 0.2],
+          "text-allow-overlap": true,
+        },
+        paint: { "text-color": "#67e8f9", "text-halo-color": "#06283d", "text-halo-width": 1.4 },
       });
     }
 
@@ -368,7 +438,7 @@ export default function MapWeatherPanel({ apiBase, utc }) {
       map.off("click", onClick);
       map.off("resize", tryFit);
     };
-  }, [route, selected, mapStyleLoaded]);
+  }, [route, selected, mapStyleLoaded, liveOverlay, passedKeys]);
 
   // ── hazard polygon sources/layers ─────────────────────────────────
   useEffect(() => {
@@ -677,6 +747,19 @@ export default function MapWeatherPanel({ apiBase, utc }) {
             </span>
           )}
         </div>
+
+        {/* M3 live route state — only when SimConnect is actually live */}
+        {liveOverlay.connected && (
+          <div className="wx-map__live" data-testid="wx-live-hud">
+            <span className="wx-chip wx-chip--live">LIVE {liveOverlay.label}</span>
+            <span className="mono">
+              PASSED {liveOverlay.passedIdents.length}/{route.pointCount}
+            </span>
+            <span className="mono">
+              REM {liveOverlay.remainingNm != null ? `${liveOverlay.remainingNm} NM` : "—"}
+            </span>
+          </div>
+        )}
 
         {routeErr && (
           <div className="wx-map__err">

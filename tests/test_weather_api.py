@@ -17,10 +17,16 @@ from crew_platform.weather.store import BoxKey, CycleMeta, CycleStore, cache_roo
 from crew_platform.weather import service
 
 
-def _synthetic_bundle(tmp_path, cycle="20261005_18", offset=0):
-    """Write a synthetic npz bundle + a stub meta for one (cycle, offset)."""
-    lat = np.linspace(10.0, 65.0, 25, dtype=np.float32)
-    lon = np.linspace(25.0, 75.0, 25, dtype=np.float32)
+def _synthetic_bundle(tmp_path, cycle="20261005_18", offset=0, box=None):
+    """Write a synthetic npz bundle + a stub meta for one (cycle, offset).
+
+    ``box`` defaults to the wide EU/Asia region used by the rest of this
+    module; pass another :class:`BoxKey` to stage a second region for the
+    same cycle (region-switch regression).
+    """
+    box = box or BoxKey(25.0, 75.0, 65.0, 10.0)
+    lat = np.linspace(box.bottomlat, box.toplat, 25, dtype=np.float32)
+    lon = np.linspace(box.leftlon, box.rightlon, 25, dtype=np.float32)
     rng = np.random.default_rng(7)
     u = rng.uniform(-10, 10, (25, 25)).astype(np.float32)
     v = rng.uniform(-10, 10, (25, 25)).astype(np.float32)
@@ -52,7 +58,6 @@ def _synthetic_bundle(tmp_path, cycle="20261005_18", offset=0):
         "ice_850": ice, "ice_700": ice * 0.8, "ice_500": ice * 0.5,
         "cape": cape, "front": front,
     }
-    box = BoxKey(25.0, 75.0, 65.0, 10.0)
     # region-keyed layout (matches CycleStore.write_raw/publish since the
     # region-collision fix)
     path = cache_root() / cycle / str(box) / f"f{offset:03d}.npz"
