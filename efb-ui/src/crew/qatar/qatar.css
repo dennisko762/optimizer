@@ -412,7 +412,11 @@
 .qr-shell .qr-smartops {
   overflow-y: auto;
 }
+<<<<<<< HEAD
 .qr-shell .qr-smartops > :not(.qr-route):not(.qr-edto):not(.qr-notice):not(.wx-map) {
+=======
+.qr-shell .qr-smartops > :not(.qr-route):not(.qr-edto):not(.qr-notice) {
+>>>>>>> origin/main
   flex: 0 0 auto;
 }
 
@@ -656,6 +660,7 @@
   color: var(--qr-muted);
 }
 
+<<<<<<< HEAD
 /* ─── briefing: aggregated aviation briefing layer (M5-P extension) ── */
 
 .qr-shell .qr-brief-section {
@@ -707,6 +712,8 @@
   color: #60a5fa;
 }
 
+=======
+>>>>>>> origin/main
 /* ─── My Flights ─────────────────────────────────────────────────── */
 
 .qr-shell .qr-flight-row {
@@ -1733,3 +1740,183 @@
     grid-template-columns: 1fr;
   }
 }
+<<<<<<< HEAD
+=======
+
+/* ─── M3 SimConnect live layer ─────────────────────────────────────── */
+
+/* SIM CONNECTED / DISCONNECTED chip in the top header. */
+.qr-shell .qr-simchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  border: 1px solid var(--qr-border);
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.qr-shell .qr-simchip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--qr-muted);
+  flex: 0 0 auto;
+}
+.qr-shell .qr-simchip--connected {
+  color: var(--qr-ok);
+  border-color: color-mix(in srgb, var(--qr-ok) 40%, transparent);
+}
+.qr-shell .qr-simchip--connected .qr-simchip__dot {
+  background: var(--qr-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--qr-ok) 22%, transparent);
+}
+.qr-shell .qr-simchip--disconnected {
+  color: var(--qr-danger);
+  border-color: color-mix(in srgb, var(--qr-danger) 40%, transparent);
+}
+.qr-shell .qr-simchip--disconnected .qr-simchip__dot {
+  background: var(--qr-danger);
+}
+.qr-shell .qr-simchip--unknown {
+  color: var(--qr-muted);
+}
+.qr-shell .qr-simchip__sub {
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--qr-muted);
+}
+
+/* Live FL / speed / fuel / fuel-flow / wind strip on the Flightplan screen. */
+.qr-shell .qr-livestrip {
+  margin: 10px 18px 0;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  background: var(--qr-panel-2);
+  border: 1px solid var(--qr-accent);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+.qr-shell .qr-livestrip::before {
+  content: "LIVE · SIMCONNECT";
+  position: absolute;
+  top: -1px;
+  right: 12px;
+  transform: translateY(-50%);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: var(--qr-gold);
+  background: var(--qr-bg);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+.qr-shell .qr-livecell {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-right: 1px solid var(--qr-border-soft);
+}
+.qr-shell .qr-livecell:last-child {
+  border-right: none;
+}
+.qr-shell .qr-livecell .qr-value {
+  font-size: 20px;
+}
+.qr-shell .qr-livecell__sub {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--qr-muted);
+}
+.qr-shell .qr-livecell--dev .qr-value {
+  font-size: 18px;
+}
+.qr-shell .qr-livecell--dev .qr-value--pos {
+  color: var(--qr-ok);
+}
+.qr-shell .qr-livecell--dev .qr-value--neg {
+  color: var(--qr-gold);
+}
+
+/* Optimizer recommendation card ("Step climb to FL380 — save 120kg") + Apply. */
+.qr-shell .qr-recommend {
+  margin: 12px 18px 0;
+  background: var(--qr-panel-2);
+  border: 1px solid var(--qr-gold);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.qr-shell .qr-recommend__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qr-shell .qr-recommend__head h3 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: var(--qr-gold);
+}
+.qr-shell .qr-recommend__line {
+  font-size: 17px;
+  font-weight: 700;
+}
+.qr-shell .qr-recommend__summary {
+  font-size: 13px;
+  color: var(--qr-muted);
+}
+.qr-shell .qr-recommend__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.qr-shell .qr-recommend__status {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.qr-shell .qr-recommend__status--ok {
+  color: var(--qr-ok);
+}
+.qr-shell .qr-recommend__status--err {
+  color: var(--qr-danger);
+}
+.qr-shell .qr-recommend__status--busy {
+  color: var(--qr-gold);
+}
+
+/* Live aircraft symbol + passed waypoints on the Route map. */
+.qr-svg-aircraft {
+  fill: var(--qr-gold);
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--qr-gold) 70%, transparent));
+}
+.qr-svg-aircraft-halo {
+  fill: none;
+  stroke: var(--qr-gold);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+.qr-svg-wp--passed {
+  fill: var(--qr-accent-2);
+}
+.qr-svg-tri--passed {
+  fill: var(--qr-accent-2);
+}
+.qr-wp-label--passed {
+  fill: var(--qr-accent-2);
+}
+
+@media (max-width: 900px) {
+  .qr-shell .qr-livestrip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+>>>>>>> origin/main

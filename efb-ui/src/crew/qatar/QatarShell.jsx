@@ -11,7 +11,11 @@
  * no hardcoded brand colors.
  */
 
+<<<<<<< HEAD
 import { useEffect, useMemo, useRef, useState } from "react";
+=======
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+>>>>>>> origin/main
 import {
   Plane,
   PlaneTakeoff,
@@ -26,15 +30,31 @@ import {
   BatteryFull,
   Signal,
   Wifi,
+<<<<<<< HEAD
   Mail,
   User,
   ArrowRight,
   ExternalLink,
+=======
+  WifiOff,
+  Mail,
+  User,
+  ArrowRight,
+  Play,
+  Pause,
+  ChevronRight,
+  ExternalLink,
+  Mountain,
+>>>>>>> origin/main
   Wrench,
   LogOut,
   LogIn,
   CheckCircle2,
   XCircle,
+<<<<<<< HEAD
+=======
+  CloudRain,
+>>>>>>> origin/main
   Gauge,
   Download,
 } from "lucide-react";
@@ -45,14 +65,34 @@ import {
   mapOfpHero,
   mapOfpWaypoints,
   modelSimPlan,
+<<<<<<< HEAD
+=======
+  mapRouteView,
+>>>>>>> origin/main
   mapEdtoView,
   mapNotification,
   defaultInboxMessages,
   projectMap,
+<<<<<<< HEAD
 } from "./qatarMappers.js";
 import CrewLogin from "./CrewLogin.jsx";
 import MapWeatherPanel from "./MapWeatherPanel.jsx";
 import BriefingPanel from "./BriefingPanel.jsx";
+=======
+  icaoLatlon,
+} from "./qatarMappers.js";
+import {
+  mapSimStatus,
+  mapLiveStrip,
+  mapLiveTiming,
+  mapApplyTargets,
+  mapRouteLive,
+  buildLiveOptimizeRequest,
+  formatApiError,
+} from "./liveMappers.js";
+import { useSimTelemetry } from "./useSimTelemetry.js";
+import CrewLogin from "./CrewLogin.jsx";
+>>>>>>> origin/main
 import BoardingPanel from "../BoardingPanel.jsx";
 import TechPanel from "../tech/TechPanel.jsx";
 
@@ -139,6 +179,186 @@ function Dash({ v, unit }) {
   );
 }
 
+<<<<<<< HEAD
+=======
+/* ─── M3: SimConnect live layer ────────────────────────────────────── */
+
+/**
+ * SIM CONNECTED / DISCONNECTED chip for the top header. Purely driven by
+ * mapSimStatus — no own state, no invented "connected" case.
+ */
+function SimChip({ status }) {
+  const s = status || { status: "unknown", label: "SIM —", sub: null };
+  const Icon = s.status === "connected" ? RefreshCw : s.status === "disconnected" ? WifiOff : AlertTriangle;
+  return (
+    <span className={`qr-simchip qr-simchip--${s.status}`} title={s.sub || s.label}>
+      <i className="qr-simchip__dot" />
+      <Icon size={12} />
+      {s.label}
+      {s.sub && <span className="qr-simchip__sub">{s.sub}</span>}
+    </span>
+  );
+}
+
+/**
+ * Live FL / MACH / GS / WIND / FUEL / FLOW strip (Flightplan screen).
+ *
+ * Every cell renders "—" when SimConnect did not supply the value — there is
+ * no static fallback anywhere (AGENTS.md: live optimization must source fuel
+ * flow from SimConnect, never a modelled value).
+ */
+function LiveStrip({ live, timing, connected }) {
+  if (!connected) {
+    return (
+      <div className="qr-notice qr-notice--center">
+        Live data unavailable — SimConnect is not connected. Flightplan values are plan-only (SimBrief OFP).
+      </div>
+    );
+  }
+  const dev = live?.deviation || null;
+  return (
+    <div className="qr-livestrip">
+      <div className="qr-livecell">
+        <span className="qr-label">FL</span>
+        <Dash v={live?.flightLevel != null ? `FL${live.flightLevel}` : null} />
+        <span className="qr-livecell__sub">
+          {live?.altDeviation != null ? `${live.altDeviation >= 0 ? "+" : ""}${live.altDeviation} vs plan` : "vs plan —"}
+        </span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">MACH</span>
+        <Dash v={live?.mach != null ? live.mach.toFixed(3) : null} />
+        <span className="qr-livecell__sub">
+          {live?.groundSpeedKt != null ? `GS ${Math.round(live.groundSpeedKt)} kt` : "GS —"}
+        </span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">WIND</span>
+        <Dash
+          v={
+            live?.windComponentKt != null
+              ? `${live.windComponentKt >= 0 ? "TW" : "HW"} ${Math.abs(Math.round(live.windComponentKt))}`
+              : null
+          }
+          unit=" kt"
+        />
+        <span className="qr-livecell__sub">along track</span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">FUEL</span>
+        <Dash v={live?.fuelRemainingKg != null ? (live.fuelRemainingKg / 1000).toFixed(1) : null} unit=" t" />
+        <span className="qr-livecell__sub">on board</span>
+      </div>
+      <div className="qr-livecell">
+        <span className="qr-label">FUEL FLOW</span>
+        <Dash v={live?.fuelFlowKgH != null ? Math.round(live.fuelFlowKgH) : null} unit=" kg/h" />
+        <span className="qr-livecell__sub">
+          {live?.fuelFlowKgH == null
+            ? "live data unavailable"
+            : live?.fuelFlowSource
+              ? String(live.fuelFlowSource).toUpperCase()
+              : "SIMCONNECT"}
+        </span>
+      </div>
+      <div className="qr-livecell qr-livecell--dev">
+        <span className="qr-label">ETE / FUEL Δ</span>
+        <span className="mono qr-value">
+          {timing?.ete || "—"}
+          {timing?.deltaMin != null && (
+            <span className={`qr-unit ${timing.deltaMin > 0 ? "qr-value--neg" : "qr-value--pos"}`}>
+              {" "}
+              {timing.deltaMin >= 0 ? "+" : ""}
+              {timing.deltaMin} min
+            </span>
+          )}
+        </span>
+        <span className="qr-livecell__sub">
+          {dev != null ? (
+            <span className={dev.kg >= 0 ? "qr-value--pos" : "qr-value--neg"}>
+              {dev.kg >= 0 ? "+" : ""}
+              {dev.t} t vs planned LDG
+            </span>
+          ) : (
+            "fuel deviation —"
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Optimizer recommendation card with the Apply-into-the-sim button.
+ *
+ * `rec` comes from mapApplyTargets(/api/optimize response). The button is
+ * disabled whenever the recommendation is not applyable or the sim is not
+ * connected — no dead buttons, and the backend's error text is shown verbatim.
+ */
+function RecommendPanel({ rec, connected, onApply, applyState, busy, error }) {
+  if (!connected) return null;
+  const applyable = Boolean(rec?.applyable);
+  return (
+    <div className="qr-recommend">
+      <div className="qr-recommend__head">
+        <Gauge size={15} />
+        <h3>OPTIMIZER RECOMMENDATION</h3>
+      </div>
+      {busy && <div className="qr-recommend__summary">Optimizing against live sim state…</div>}
+      {error && <div className="qr-recommend__status qr-recommend__status--err">{error}</div>}
+      {!busy && !error && !rec && (
+        <div className="qr-recommend__summary">
+          No recommendation yet — live telemetry is still warming up.
+        </div>
+      )}
+      {rec?.line && <div className="qr-recommend__line mono">{rec.line}</div>}
+      {rec?.summary && <div className="qr-recommend__summary">{rec.summary}</div>}
+      {rec?.recommendation && <div className="qr-recommend__summary">{rec.recommendation}</div>}
+      {rec?.aircraftConfig && (
+        <div className="qr-recommend__summary mono">
+          PERF {String(rec.aircraftConfig).toUpperCase()}
+          {rec.aircraftConfigSource ? ` · from ${rec.aircraftConfigSource}` : ""}
+        </div>
+      )}
+      {rec && (
+        <div className="qr-recommend__actions">
+          <button
+            className="qr-goldbtn"
+            disabled={!applyable || applyState?.busy}
+            onClick={() =>
+              onApply({
+                flightLevel: rec.targets?.flightLevel ?? null,
+                mach: rec.targets?.mach ?? null,
+                reason: rec.line || null,
+              })
+            }
+          >
+            {applyState?.busy ? "Applying…" : "Apply to Sim"}
+          </button>
+          {!applyable && (
+            <span className="qr-recommend__status">
+              Current profile is already optimal (or the best strategy is not allowed).
+            </span>
+          )}
+          {applyState && !applyState.busy && applyState.applied && (
+            <span className="qr-recommend__status qr-recommend__status--ok">
+              <CheckCircle2 size={13} /> Target set in the sim.
+            </span>
+          )}
+          {applyState && !applyState.busy && applyState.error && (
+            <span className="qr-recommend__status qr-recommend__status--err">
+              <XCircle size={13} /> {applyState.error}
+            </span>
+          )}
+        </div>
+      )}
+      {Array.isArray(rec?.warnings) && rec.warnings.length > 0 && (
+        <div className="qr-recommend__summary">{rec.warnings.join(" · ")}</div>
+      )}
+    </div>
+  );
+}
+
+>>>>>>> origin/main
 /* ─── shell ────────────────────────────────────────────────────────── */
 
 const SMARTOPS_TABS = [
@@ -315,7 +535,10 @@ export default function QatarShell({ onOpenOptimizer }) {
           utc={utc}
           onNavigate={setScreen}
           pilotName={crewSession.pilotId}
+<<<<<<< HEAD
           defaultStation={lastPlan?.origin || flight?.departure_icao || null}
+=======
+>>>>>>> origin/main
         />
       )}
 
@@ -447,7 +670,11 @@ function CompanyNewsPanel() {
 
 /* ─── Crew Desk (qatar-02) ─────────────────────────────────────────── */
 
+<<<<<<< HEAD
 function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
+=======
+function CrewDeskScreen({ utc, onNavigate, pilotName }) {
+>>>>>>> origin/main
   const { session, apiBase } = useCrewPlatform();
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
@@ -526,7 +753,11 @@ function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
             ) : tab === "preflight" ? (
               <PreflightBriefing onOpenTech={() => setTab("techlog")} />
             ) : tab === "weather" ? (
+<<<<<<< HEAD
               <WeatherBriefing apiBase={apiBase} station={defaultStation} />
+=======
+              <WeatherBriefing />
+>>>>>>> origin/main
             ) : (
               messages.map((m) => (
                 <button
@@ -596,8 +827,25 @@ function PreflightBriefing({ onOpenTech }) {
   );
 }
 
+<<<<<<< HEAD
 function WeatherBriefing({ apiBase, station }) {
   return <BriefingPanel apiBase={apiBase} station={station} />;
+=======
+function WeatherBriefing() {
+  return (
+    <div className="qr-briefing">
+      <h3>WEATHER BRIEFING</h3>
+      <div className="qr-brief-item">
+        <CloudRain size={15} className="qr-brief-ok" />
+        <div>
+          <div>WX briefing available in Inbox</div>
+          <div className="qr-brief-sub">Enroute + destination MET/TAF per flight</div>
+        </div>
+      </div>
+      <div className="qr-notice">Live METAR/TAF feed is not connected yet — briefing content follows from the selected flight's OFP.</div>
+    </div>
+  );
+>>>>>>> origin/main
 }
 
 /* ─── Home (M2b): Company News + My Flights + check-in ────────────── */
@@ -1081,6 +1329,96 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
     return `${days[d.getUTCDay()]}, ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   }, []);
 
+<<<<<<< HEAD
+=======
+  /* ── M3: live SimConnect telemetry + optimizer apply ───────────── */
+
+  // Destination coordinates let the backend derive live remaining distance
+  // when no SimBrief route profile is synced.
+  const destPos = useMemo(() => (hero.arrival ? icaoLatlon(hero.arrival) : null), [hero.arrival]);
+  const { telemetry, reachable, apply, applyState } = useSimTelemetry({
+    apiBase,
+    destinationLat: destPos?.[0],
+    destinationLon: destPos?.[1],
+  });
+
+  const simStatus = useMemo(() => mapSimStatus(telemetry, { reachable }), [telemetry, reachable]);
+  const simConnected = simStatus.status === "connected";
+
+  const live = useMemo(
+    () => mapLiveStrip(telemetry, { fuelLandingT: fuel.landing, cruiseAlt: null }),
+    [telemetry, fuel.landing]
+  );
+  const timing = useMemo(
+    () => mapLiveTiming(telemetry, { plannedBlockMin: hero.block_min, sta: hero.eet }),
+    [telemetry, hero.block_min, hero.eet]
+  );
+
+  // Optimizer re-run against live state. Fires only when the sim is
+  // connected — never against invented values (AGENTS.md).
+  const [optimizeResult, setOptimizeResult] = useState(null);
+  const [optimizeBusy, setOptimizeBusy] = useState(false);
+  const [optimizeError, setOptimizeError] = useState(null);
+  const lastOptimizeKeyRef = useRef(null);
+
+  const runOptimize = useCallback(async () => {
+    const body = buildLiveOptimizeRequest(telemetry, { flight, ofpData });
+    if (!body) {
+      // Live state is incomplete (no altitude/weight/Mach/distance yet).
+      // Clear instead of leaving a stale recommendation or error on screen;
+      // the panel then shows its "telemetry warming up" line.
+      setOptimizeResult(null);
+      setOptimizeError(null);
+      return;
+    }
+    setOptimizeBusy(true);
+    setOptimizeError(null);
+    try {
+      const resp = await fetch(`${apiBase}/api/optimize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const detail = await resp.json().catch(() => ({}));
+        setOptimizeError(formatApiError(detail, resp.status));
+        setOptimizeResult(null);
+        return;
+      }
+      setOptimizeResult(await resp.json());
+    } catch (e) {
+      setOptimizeError(String(e?.message || e));
+      setOptimizeResult(null);
+    } finally {
+      setOptimizeBusy(false);
+    }
+  }, [apiBase, telemetry, flight, ofpData]);
+
+  // Re-optimize when the live state changed materially (FL / Mach / weight /
+  // remaining distance), not on every 5 s poll.
+  useEffect(() => {
+    if (!simConnected) {
+      lastOptimizeKeyRef.current = null;
+      return;
+    }
+    const p = telemetry?.flightStatePatch || {};
+    const key = [
+      p.altitudeFt != null ? Math.round(p.altitudeFt / 500) : "x",
+      p.mach != null ? p.mach.toFixed(2) : "x",
+      p.grossWeightKg != null ? Math.round(p.grossWeightKg / 2000) : "x",
+      p.remainingDistanceNm != null ? Math.round(p.remainingDistanceNm / 50) : "x",
+    ].join("|");
+    if (key === lastOptimizeKeyRef.current) return;
+    lastOptimizeKeyRef.current = key;
+    runOptimize();
+  }, [simConnected, telemetry, runOptimize]);
+
+  const recommendation = useMemo(
+    () => (optimizeResult ? mapApplyTargets(optimizeResult, { liveFlightLevel: live.flightLevel }) : null),
+    [optimizeResult, live.flightLevel]
+  );
+
+>>>>>>> origin/main
   return (
     <div className="qr-screen qr-smartops">
       <TopHeader
@@ -1092,6 +1430,10 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
         }
         right={
           <>
+<<<<<<< HEAD
+=======
+            <SimChip status={simStatus} />
+>>>>>>> origin/main
             <Sun size={16} className="qr-topbar__icon" />
             <RefreshCw size={16} className="qr-topbar__icon" />
             <MoreVertical size={16} className="qr-topbar__icon" />
@@ -1156,11 +1498,38 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
             </div>
           </div>
 
+<<<<<<< HEAD
           <div className="qr-fuelrow">
             <div className="qr-fuelcell">
               <span className="qr-label">DEVIATION</span>
               <Dash v={fuel.deviation} />
               <span className="qr-fuelcell__sub">No active check</span>
+=======
+          <LiveStrip live={live} timing={timing} connected={simConnected} />
+
+          <RecommendPanel
+            rec={recommendation}
+            connected={simConnected}
+            onApply={apply}
+            applyState={applyState}
+            busy={optimizeBusy}
+            error={optimizeError}
+          />
+
+          <div className="qr-fuelrow">
+            <div className="qr-fuelcell">
+              <span className="qr-label">DEVIATION</span>
+              <Dash
+                v={
+                  live.deviation
+                    ? `${live.deviation.kg >= 0 ? "+" : ""}${live.deviation.t} t`
+                    : fuel.deviation
+                }
+              />
+              <span className="qr-fuelcell__sub">
+                {live.deviation ? "live vs planned LDG" : simConnected ? "live data unavailable" : "No active check"}
+              </span>
+>>>>>>> origin/main
             </div>
             <div className="qr-fuelcell">
               <span className="qr-label">BLOCK FUEL</span>
@@ -1244,20 +1613,264 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       )}
 
       {tab === "route" && (
+<<<<<<< HEAD
         <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
+=======
+        <RouteScreen
+          flight={flight}
+          ofpData={ofpData}
+          distanceNm={distanceNm}
+          utc={utc}
+          telemetry={telemetry}
+          simConnected={simConnected}
+          live={live}
+          timing={timing}
+        />
+>>>>>>> origin/main
       )}
 
       {tab === "edto" && (
         <EdtoScreen flight={flight} ofpData={ofpData} />
       )}
 
+<<<<<<< HEAD
       {tab === "weather" && (
         <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
+=======
+      {(tab === "runways" || tab === "weather") && (
+        <div className="qr-notice qr-notice--center">
+          {tab === "runways" ? "Runway data follows from the OFP (arrival/departure runways) — not linked to this booking yet." : "Live weather overlay — WX TIME playback and ATC sectors are available on the Route tab."}
+        </div>
+>>>>>>> origin/main
       )}
     </div>
   );
 }
 
+<<<<<<< HEAD
+=======
+/* ─── Route (qatar-04) ─────────────────────────────────────────────── */
+
+function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
+  const [wxPlaying, setWxPlaying] = useState(false);
+  const [wxOffset, setWxOffset] = useState(0);
+  const [altMode, setAltMode] = useState("AUTO");
+
+  // WX TIME playback: Play steps the forecast offset forward one hour per
+  // 1.5 s and wraps at +12 h; Pause freezes it. The offset is the hour the
+  // overlay represents (0 = NOW).
+  useEffect(() => {
+    if (!wxPlaying) return undefined;
+    const id = setInterval(() => {
+      setWxOffset((v) => (v >= 12 ? -12 : v + 1));
+    }, 1500);
+    return () => clearInterval(id);
+  }, [wxPlaying]);
+
+  const view = useMemo(() => {
+    const v = mapRouteView(flight, ofpData);
+    const pts = v.points
+      .map((p) => ({ ...p, xy: projectMap(p.lat, p.lon) }))
+      .filter((p) => p.xy);
+    // Fit: keep all points inside the 1000x560 box with margin.
+    const xs = pts.map((p) => p.xy.x);
+    const ys = pts.map((p) => p.xy.y);
+    const pad = 60;
+    const minx = Math.max(0, Math.min(...xs) - pad);
+    const maxx = Math.min(1000, Math.max(...xs) + pad);
+    const miny = Math.max(0, Math.min(...ys) - pad);
+    const maxy = Math.min(560, Math.max(...ys) + pad);
+    return { ...v, pts, vb: { minx, miny, w: Math.max(200, maxx - minx), h: Math.max(140, maxy - miny) } };
+  }, [flight, ofpData]);
+
+  const routeString = view.route_string ||
+    (view.hero.departure && view.hero.arrival
+      ? `${view.hero.departure} DCT ${view.hero.arrival}`
+      : null);
+
+  // M3 live overlay: aircraft position projected onto the planned route +
+  // the set of waypoints already passed. Everything comes from SimConnect;
+  // without a live position the overlay simply is not drawn.
+  const livePos = useMemo(() => {
+    const rs = telemetry?.rawSummary || {};
+    const lat = rs.latitude ?? null;
+    const lon = rs.longitude ?? null;
+    if (!simConnected || lat == null || lon == null) return null;
+    return { latitude: lat, longitude: lon };
+  }, [telemetry, simConnected]);
+
+  const routeLive = useMemo(
+    () => mapRouteLive(view.points, livePos),
+    [view.points, livePos]
+  );
+  const passedIdents = useMemo(
+    () => new Set(routeLive.passedIdents || []),
+    [routeLive.passedIdents]
+  );
+  const acXy = useMemo(
+    () => (livePos ? projectMap(livePos.latitude, livePos.longitude) : null),
+    [livePos]
+  );
+
+  return (
+    <div className="qr-route">
+      <div className="qr-route__map">
+        <svg viewBox={`${view.vb.minx} ${view.vb.miny} ${view.vb.w} ${view.vb.h}`} className="qr-route__svg" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <radialGradient id="qr-mapglow" cx="50%" cy="40%" r="80%">
+              <stop offset="0%" className="qr-svg-fill-a" />
+              <stop offset="100%" className="qr-svg-fill-b" />
+            </radialGradient>
+          </defs>
+          <rect x={view.vb.minx - 50} y={view.vb.miny - 50} width={view.vb.w + 100} height={view.vb.h + 100} fill="url(#qr-mapglow)" />
+          {/* graticule */}
+          {Array.from({ length: 13 }).map((_, i) => (
+            <line key={`g${i}`} x1={i * 100} y1={view.vb.miny - 50} x2={i * 100} y2={view.vb.miny + view.vb.h + 50} className="qr-svg-grat" strokeWidth="1" />
+          ))}
+          {Array.from({ length: 7 }).map((_, i) => (
+            <line key={`gh${i}`} x1={view.vb.minx - 50} y1={i * 100} x2={view.vb.minx + view.vb.w + 50} y2={i * 100} className="qr-svg-grat" strokeWidth="1" />
+          ))}
+
+          {/* route polyline */}
+          {view.pts.length > 1 && (
+            <polyline
+              points={view.pts.map((p) => `${p.xy.x},${p.xy.y}`).join(" ")}
+              fill="none"
+              className="qr-svg-route"
+              strokeWidth="2"
+            />
+          )}
+
+          {/* waypoints */}
+          {view.pts.map((p, i) => {
+            const isEnd = p.end === "dep" || p.end === "arr";
+            const passed = p.ident ? passedIdents.has(p.ident) : false;
+            return (
+              <g key={i}>
+                {isEnd ? (
+                  <>
+                    <circle cx={p.xy.x} cy={p.xy.y} r="6" fill="none" className="qr-svg-end" strokeWidth="2" />
+                    <circle cx={p.xy.x} cy={p.xy.y} r="2" className="qr-svg-end-fill" />
+                  </>
+                ) : (
+                  <>
+                    <circle cx={p.xy.x} cy={p.xy.y} r="2.5" className={`qr-svg-wp ${passed ? "qr-svg-wp--passed" : ""}`} />
+                    <path
+                      d={`M ${p.xy.x - 5} ${p.xy.y - 12} L ${p.xy.x + 5} ${p.xy.y - 12} L ${p.xy.x} ${p.xy.y - 4} Z`}
+                      className={`qr-svg-wp-tri ${passed ? "qr-svg-tri--passed" : ""}`}
+                    />
+                  </>
+                )}
+                {p.ident && (
+                  <text x={p.xy.x + 8} y={p.xy.y - 8} className={`qr-wp-label mono ${passed ? "qr-wp-label--passed" : ""}`}>
+                    {p.ident}
+                    {p.fl ? ` FL${p.fl}` : ""}
+                    {passed ? " ✓" : ""}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* live aircraft symbol (SimConnect position) */}
+          {acXy && (
+            <g>
+              <circle cx={acXy.x} cy={acXy.y} r="11" className="qr-svg-aircraft-halo" />
+              <path
+                d={`M ${acXy.x} ${acXy.y - 8} L ${acXy.x + 7} ${acXy.y + 7} L ${acXy.x} ${acXy.y + 3} L ${acXy.x - 7} ${acXy.y + 7} Z`}
+                className="qr-svg-aircraft"
+              />
+              <text x={acXy.x + 14} y={acXy.y + 4} className="qr-wp-label mono">
+                {live?.flightLevel != null ? `FL${live.flightLevel}` : "LIVE"}
+              </text>
+            </g>
+          )}
+        </svg>
+
+        <div className="qr-route__layers">
+          <span className="qr-chip">Layers</span>
+        </div>
+        <div className="qr-route__terrain">
+          <Mountain size={18} />
+          <div>
+            <strong>ROUTE TERRAIN</strong>
+            <span>Terrain data available</span>
+          </div>
+          <ChevronRight size={16} />
+        </div>
+
+        <div className="qr-route__wxpanel">
+          <div className="qr-route__wxhead">
+            <span className="qr-label">WX TIME</span>
+            <span className="mono">{utc.time} z • {wxOffset === 0 ? "NOW" : `${wxOffset > 0 ? "+" : ""}${wxOffset}h`}</span>
+          </div>
+          <div className="qr-route__wxrow">
+            <button className="qr-wxbtn" onClick={() => setWxPlaying((v) => !v)}>
+              {wxPlaying ? <Pause size={13} /> : <Play size={13} />}
+            </button>
+            <span className="qr-wxbtn qr-wxbtn--static">-12h</span>
+            <input
+              type="range"
+              min={-12}
+              max={12}
+              value={wxOffset}
+              onChange={(e) => setWxOffset(Number(e.target.value))}
+              className="qr-slider"
+            />
+            <span className="qr-wxbtn qr-wxbtn--static">+12h</span>
+            <span className={`qr-wxbtn ${wxOffset === 0 ? "qr-wxbtn--on" : ""}`} onClick={() => setWxOffset(0)}>NOW</span>
+          </div>
+          <div className="qr-route__atc">
+            <div className="qr-route__wxhead">
+              <span className="qr-label">ATC SECTORS</span>
+              <span className="qr-badge badge--vatsim">VATSIM</span>
+              <span className="mono">FL390</span>
+            </div>
+            <div className="qr-route__wxrow">
+              <input type="range" min={0} max={100} defaultValue={60} className="qr-slider" />
+              <span className="qr-label">DISPLAY ALTITUDE</span>
+              <button className={`qr-wxbtn ${altMode === "AUTO" ? "qr-wxbtn--on" : ""}`} onClick={() => setAltMode("AUTO")}>AUTO</button>
+              <button className={`qr-wxbtn ${altMode === "OFF" ? "qr-wxbtn--on" : ""}`} onClick={() => setAltMode("OFF")}>OFF FL320</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="qr-route__legend">
+          <span className="qr-label">PRECIP</span>
+          {[["#4a2230", "None"], ["#2563eb", "Light"], ["#e8a838", "Moderate"], ["#ef4444", "Heavy"], ["#c74a6a", "CB"]].map(([c, l]) => (
+            <span key={l} className="qr-legend__item"><i style={{ background: c }} />{l}</span>
+          ))}
+          <span className="qr-legend__sep" />
+          <span className="qr-label">SIGMET</span>
+          {[["#ef4444", "Thunderstorm"], ["#e8a838", "Turbulence"], ["#38bdf8", "Icing"], ["#c74a6a", "Volcanic Ash"], ["#4ade80", "TS (Tropical)"]].map(([c, l]) => (
+            <span key={l} className="qr-legend__item"><i style={{ background: c }} />{l}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="qr-route__meta">
+        <div className="mono">{routeString}</div>
+        <div>
+          {distanceNm != null ? `${distanceNm} NM` : "—"} &nbsp;•&nbsp; {view.block_label || "—"}
+          {simConnected ? (
+            routeLive.remainingNm != null ? (
+              <>
+                {" "}&nbsp;•&nbsp; LIVE REM {routeLive.remainingNm} NM
+                {timing?.ete ? ` • ETE ${timing.ete}` : ""}
+              </>
+            ) : (
+              <> &nbsp;•&nbsp; live position unavailable</>
+            )
+          ) : (
+            <> &nbsp;•&nbsp; SIM DISCONNECTED — plan only</>
+          )}
+        </div>
+        <div className="qr-route__alt">LHR / LGW</div>
+      </div>
+    </div>
+  );
+}
+>>>>>>> origin/main
 
 /* ─── EDTO + Risks (qatar-05) ──────────────────────────────────────── */
 

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 
-import pytest
 
 from src.adapters.lufthansa_virtual.simbrief_fetcher import OFPData, OFPWaypoint
 from src.adapters.lufthansa_virtual.vamsys_client import BookedFlight, PilotProfile

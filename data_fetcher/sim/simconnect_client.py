@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import time
 from typing import Any
 
-from SimConnect import SimConnect, AircraftRequests
+from SimConnect import SimConnect, AircraftRequests, AircraftEvents
 
 from data_fetcher.sim.sim_client import SimClient, SimClientError
 from data_fetcher.sim.sim_models import LiveSimState, RawSimState
@@ -47,6 +47,7 @@ class SimConnectClient(SimClient):
         self.cache_ms = cache_ms
         self._simconnect: SimConnect | None = None
         self._aircraft_requests: AircraftRequests | None = None
+        self._aircraft_events: AircraftEvents | None = None
         self._last_fuel_remaining_lb: float | None = None
         self._last_fuel_sample_monotonic: float | None = None
 
@@ -60,6 +61,7 @@ class SimConnectClient(SimClient):
                 self._simconnect,
                 _time=self.cache_ms,
             )
+            self._aircraft_events = AircraftEvents(self._simconnect)
         except Exception as exc:
             raise SimConnectClientError(
                 "Could not connect to MSFS via SimConnect. "
@@ -75,8 +77,121 @@ class SimConnectClient(SimClient):
 
         self._simconnect = None
         self._aircraft_requests = None
+        self._aircraft_events = None
         self._last_fuel_remaining_lb = None
         self._last_fuel_sample_monotonic = None
+
+    # ── target-state commands (optimizer "Apply" into the sim) ─────────
+
+    def set_target_state(
+        self,
+        *,
+        flight_level: int | None = None,
+        mach: float | None = None,
+    ) -> dict:
+        """
+        Push a target flight level / Mach into the running sim.
+
+        Mechanism: SimConnect *autopilot reference events*, not settable
+        position SimVars. This matters — ``PLANE ALTITUDE`` is a settable
+        position variable that would TELEPORT the aircraft, and
+        ``AIRSPEED MACH`` is not settable at all (the python-simconnect
+        binding marks it 'N'). The crew-facing semantics of "apply the
+        optimizer target" is "dial it into the MCP/FMC", which is exactly
+        what these events do:
+
+        - Flight level -> ``AP_ALT_VAR_SET_ENGLISH`` (reference altitude in
+          feet); the autopilot then climbs/descends to it normally.
+        - Mach         -> ``AP_MACH_VAR_SET`` (reference mach); the event
+          takes an integer, so the value is sent as mach x 100.
+
+        Each target is verified by reading the corresponding selected-value
+        SimVar back (``AUTOPILOT ALTITUDE LOCK VAR`` /
+        ``AUTOPILOT MACH HOLD VAR``) — a silently ignored event is reported
+        as a failure instead of a fake success.
+
+        Returns a plain dict with applied flags and per-target errors;
+        never raises — the API layer surfaces the error text to the UI.
+        """
+        if flight_level is None and mach is None:
+            return {
+                "applied": False,
+                "supported": True,
+                "errors": ["Nothing to set: pass flight_level and/or mach."],
+            }
+
+        result: dict[str, Any] = {"applied": False, "supported": True, "errors": []}
+
+        try:
+            self.connect()
+        except SimClientError as exc:
+            result["errors"].append(str(exc))
+            return result
+
+        if self._aircraft_events is None or self._aircraft_requests is None:
+            result["errors"].append(
+                "SimConnect is not connected. Start MSFS and load a flight."
+            )
+            return result
+
+        if flight_level is not None:
+            self._apply_flight_level(flight_level, result)
+        if mach is not None:
+            self._apply_mach(mach, result)
+
+        if not result["errors"]:
+            result["applied"] = True
+        return result
+
+    def _trigger_event(self, group: str, name: str, value: int) -> None:
+        """Fire one autopilot event; raises when the binding has no such event."""
+        helper = getattr(self._aircraft_events, group, None)
+        if helper is None:
+            raise SimConnectClientError(f"SimConnect event group {group} unavailable.")
+        event = helper.get(name)
+        if event is None:
+            raise SimConnectClientError(f"SimConnect event {name} unavailable.")
+        event(value)
+
+    def _apply_flight_level(self, flight_level: int, result: dict) -> None:
+        altitude_ft = float(flight_level) * 100.0
+        result["flightLevel"] = flight_level
+        result["altitudeFt"] = altitude_ft
+        try:
+            self._trigger_event("Autopilot", "AP_ALT_VAR_SET_ENGLISH", int(altitude_ft))
+            selected = self._aircraft_requests.get("AUTOPILOT_ALTITUDE_LOCK_VAR")
+            result["selectedAltitudeFt"] = (
+                float(selected) if selected is not None else None
+            )
+            # Tolerance covers the sim's 100 ft MCP rounding.
+            ok = selected is not None and abs(float(selected) - altitude_ft) <= 100.0
+            result["flightLevelApplied"] = bool(ok)
+            if not ok:
+                result["errors"].append(
+                    f"Sim did not accept FL{flight_level}: selected altitude reads "
+                    f"{selected if selected is not None else 'unavailable'}."
+                )
+        except Exception as exc:
+            result["flightLevelApplied"] = False
+            result["errors"].append(f"Setting flight level {flight_level} failed: {exc}")
+
+    def _apply_mach(self, mach: float, result: dict) -> None:
+        result["mach"] = mach
+        try:
+            # AP_MACH_VAR_SET takes mach x 100 as an integer (DWORD event).
+            self._trigger_event("Autopilot", "AP_MACH_VAR_SET", int(round(mach * 100)))
+            selected = self._aircraft_requests.get("AUTOPILOT_MACH_HOLD_VAR")
+            result["selectedMach"] = float(selected) if selected is not None else None
+            ok = selected is not None and abs(float(selected) - mach) <= 0.01
+            result["machApplied"] = bool(ok)
+            if not ok:
+                result["errors"].append(
+                    f"Sim did not accept M{mach}: selected mach reads "
+                    f"{selected if selected is not None else 'unavailable'}."
+                )
+        except Exception as exc:
+            result["machApplied"] = False
+            result["errors"].append(f"Setting Mach {mach} failed: {exc}")
 
     async def get_live_state(self) -> LiveSimState:
         return await asyncio.to_thread(self._get_live_state_sync)

@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import importlib
 import os
-import tempfile
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from crew_platform.technical.models import Aircraft, Base
 

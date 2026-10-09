@@ -1,0 +1,77 @@
+name: Gitleaks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitleaks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_LINUX_X64_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks (checksum-verified)
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          curl -fsSLo "/tmp/${archive}" "$url"
+          echo "${GITLEAKS_LINUX_X64_SHA256}  /tmp/${archive}" | sha256sum -c -
+          tar -xzf "/tmp/${archive}" -C /tmp gitleaks
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan PR changes (diff against base)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          git fetch origin "${{ github.event.pull_request.base.sha }}" --depth=1
+          # --redact ensures matched secret values never appear in logs or
+          # the uploaded report; only rule id / file / line are shown.
+          gitleaks git \
+            --log-opts="${{ github.event.pull_request.base.sha }}..HEAD" \
+            --redact \
+            --no-banner \
+            --report-format sarif \
+            --report-path gitleaks-pr-diff.sarif \
+            --exit-code 2
+
+      - name: Scan full history (push to main)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          gitleaks git \
+            --redact \
+            --no-banner \
+            --report-format sarif \
+            --report-path gitleaks-history.sarif \
+            --exit-code 2
+
+      - name: Upload Gitleaks report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gitleaks-report
+          path: gitleaks-*.sarif
+          retention-days: 14
+          if-no-files-found: ignore

@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from matplotlib.pylab import seed
 from pydantic import BaseModel, Field
 
 from data_fetcher.simbrief.simbrief_service import SimBriefService

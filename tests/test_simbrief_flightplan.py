@@ -115,8 +115,15 @@ class TestBuildFlightplan:
         assert w["ldw"] == pytest.approx(208.2)
 
     def test_pdf_url_built_from_files_section(self, plan):
+<<<<<<< HEAD
         assert plan["pdf_url"] and plan["pdf_url"].endswith(".pdf")
         assert "simbrief.com" in plan["pdf_url"]
+=======
+        from urllib.parse import urlparse
+
+        assert plan["pdf_url"] and plan["pdf_url"].endswith(".pdf")
+        assert urlparse(plan["pdf_url"]).hostname == "www.simbrief.com"
+>>>>>>> origin/main
 
     def test_missing_sections_are_tolerated(self):
         plan = fps.build_flightplan({})

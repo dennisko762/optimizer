@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import math
 from typing import Any, Mapping, Sequence
 
 from performance_engine.database.boeing_fcom_lookup import query_lrc_cruise
