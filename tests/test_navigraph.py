@@ -357,11 +357,76 @@ class TestNavigraphClient:
         assert first["data"] == b"\x89PNG"
         assert second["status"] == "ok" and calls["n"] == 2
 
-    def test_chart_filename_traversal_is_rejected(self):
-        client = _client(lambda r: httpx.Response(200), subscriptions=["charts"])
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "../../etc/passwd",
+            "..%2f..%2fetc%2fpasswd",
+            r"..\..\windows\win.ini",
+            "chart.png?next=https://evil.example",
+            "chart.png#@evil.example",
+            "https:%2f%2fevil.example/chart.png",
+        ],
+    )
+    def test_chart_filename_attack_is_rejected_before_any_request(self, filename):
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+            raise AssertionError("invalid chart filename must not reach the network")
+
+        client = _client(handler, subscriptions=["charts"])
         with pytest.raises(NavigraphUnavailable) as exc:
-            _run(client.chart_image("OTHH", "../../etc/passwd"))
+            _run(client.chart_image("OTHH", filename))
         assert exc.value.status == "bad_request"
+
+    @pytest.mark.parametrize(
+        "icao",
+        ["../x", "OT%2fHH", "OTHH?x=1", "OTHH#fragment", "evil.example@OTHH"],
+    )
+    def test_icao_attack_is_rejected_before_any_request(self, icao):
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+            raise AssertionError("invalid ICAO must not reach the network")
+
+        client = _client(handler, subscriptions=["charts"])
+        with pytest.raises(NavigraphUnavailable) as exc:
+            _run(client.charts_index(icao))
+        assert exc.value.status == "bad_request"
+
+    def test_valid_identifiers_are_preserved(self):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(str(request.url))
+            return httpx.Response(200, json={"charts": []})
+
+        client = _client(handler, subscriptions=["charts"])
+        _run(client.charts_index("othh"))
+        assert seen == ["https://api.navigraph.com/v2/charts/OTHH?version=STD&rules=IFR"]
+
+    def test_outbound_sink_rejects_a_malicious_host(self):
+        cfg = NavigraphConfig(
+            client_id="c",
+            client_secret="s",
+            risk_url="https://risk.example/api",
+        )
+        client = _client(lambda r: httpx.Response(200), config=cfg)
+        with pytest.raises(NavigraphUnavailable) as exc:
+            _run(
+                client.fetch(
+                    "risk",
+                    "risk:malicious",
+                    "https://risk.example.evil.test/api?host=risk.example",
+                    authenticated=False,
+                )
+            )
+        assert exc.value.status == "bad_request"
+
+    def test_loopback_operator_feed_is_allowed_for_fixtures(self):
+        cfg = NavigraphConfig(notam_url="http://127.0.0.1:8765/notams")
+        client = _client(
+            lambda request: httpx.Response(200, json={"notams": []}),
+            config=cfg,
+        )
+        result = _run(client.notams(["OTHH"]))
+        assert result["status"] == "ok"
 
     def test_tile_uses_cloudfront_cookies_not_a_bearer_only(self):
         seen = {}

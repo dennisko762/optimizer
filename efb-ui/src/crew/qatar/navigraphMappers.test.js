@@ -358,10 +358,13 @@ test("route tile grid: fewer than two valid points yields null", () => {
   assert.equal(routeTileGrid([{ lat: null, lon: null }, { lat: 1, lon: 2 }]), null);
 });
 
-test("tile url: points at the backend proxy, never at navigraph directly", () => {
+test("tile url: points at the exact backend proxy origin, never Navigraph", () => {
   const url = tileUrl("", "ifr.hi.day", { z: 4, x: 9, y: 6 }, true);
   assert.equal(url, "/api/crew/navigraph/tiles/ifr.hi.day/4/9/6?retina=true");
-  assert.ok(!url.includes("navigraph.com"));
+  const parsed = new URL(url, "https://efb.local");
+  assert.equal(parsed.protocol, "https:");
+  assert.equal(parsed.hostname, "efb.local");
+  assert.equal(parsed.pathname, "/api/crew/navigraph/tiles/ifr.hi.day/4/9/6");
   assert.equal(tileUrl("", "ifr.hi.day", null), null);
 });
 

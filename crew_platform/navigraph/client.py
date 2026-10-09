@@ -13,9 +13,11 @@ gracefully: no key (``not_configured``), no subscription
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -50,6 +52,65 @@ class NavigraphUnavailable(RuntimeError):
         super().__init__(detail)
         self.status = status
         self.detail = detail
+
+
+# ---------------------------------------------------------------------------
+# Outbound URL allowlist — the SSRF guard at the HTTP sink
+#
+# Every user-controllable route value (ICAO, chart filename, tile layer/
+# coords) only ever appears as a PATH SEGMENT on a fixed, trusted host. The
+# sink check below parses the FINAL url and refuses any request whose scheme
+# or host is not in an explicit allowlist, so a crafted identifier cannot
+# redirect the outbound request to an attacker host, a ``file://`` path, or
+# a cloud-metadata endpoint.
+# ---------------------------------------------------------------------------
+#: Navigraph product hosts (constants from config). Only these may be used
+#: for Navigraph datatypes, and only over https.
+_NAVIGRAPH_OUTBOUND_HOSTS = frozenset(
+    {
+        urlparse(API_BASE).hostname,  # api.navigraph.com
+        urlparse(ENROUTE_TILE_BASE).hostname,
+    }
+)
+#: Loopback hosts a local fixture server may bind to for operator feeds
+#: (dev/test only). Never an external or link-local (metadata) address.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+#: Identifiers that may appear as a path segment. Deliberately excludes
+#: ``/ @ : ? # %`` and backslashes so a value cannot alter scheme/host or
+#: introduce a traversal. Chart filenames additionally may not contain ``..``.
+_ICAO_SEGMENT = re.compile(r"^[A-Z0-9]{3,4}$")
+_CHART_FILE_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
+_TILE_LAYERS = {
+    name: name
+    for name in (
+        "ifr.hi.day",
+        "ifr.hi.night",
+        "ifr.lo.day",
+        "ifr.lo.night",
+        "vfr.day",
+        "vfr.night",
+        "world.day",
+        "world.night",
+    )
+}
+
+
+def _icao_segment(value: str) -> str:
+    code = value.strip().upper()
+    if not code.isalnum() or _ICAO_SEGMENT.fullmatch(code) is None:
+        raise NavigraphUnavailable("bad_request", "invalid ICAO identifier")
+    return code
+
+
+def _chart_file_segment(value: str) -> str:
+    filename = value.strip()
+    if (
+        not filename
+        or ".." in filename
+        or _CHART_FILE_SEGMENT.fullmatch(filename) is None
+    ):
+        raise NavigraphUnavailable("bad_request", "invalid chart filename")
+    return filename
 
 
 @dataclass(frozen=True)
@@ -303,9 +364,70 @@ class NavigraphClient:
 
     # -- generic fetch ----------------------------------------------------
 
+    def _validated_outbound_url(self, datatype: str, url: str) -> str:
+        """Return a canonical URL only when its final destination is trusted."""
+        parsed = urlparse(url)
+        if (
+            parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+            or not parsed.hostname
+        ):
+            raise NavigraphUnavailable("bad_request", "invalid outbound URL")
+
+        if datatype in ("notam", "risk", "nat"):
+            configured = (
+                self.config.notam_url if datatype == "notam" else self.config.risk_url
+            )
+            expected = urlparse(configured or "")
+            if (
+                not configured
+                or parsed.scheme != expected.scheme
+                or parsed.hostname != expected.hostname
+                or parsed.port != expected.port
+                or parsed.path != expected.path
+                or parsed.params != expected.params
+                or parsed.query != expected.query
+            ):
+                raise NavigraphUnavailable(
+                    "bad_request", "operator feed URL is not allowlisted"
+                )
+            if parsed.hostname in _LOOPBACK_HOSTS:
+                if parsed.scheme not in ("http", "https"):
+                    raise NavigraphUnavailable(
+                        "bad_request", "invalid loopback feed scheme"
+                    )
+            elif parsed.scheme != "https":
+                raise NavigraphUnavailable(
+                    "bad_request", "operator feeds must use HTTPS"
+                )
+        else:
+            expected_host = (
+                urlparse(ENROUTE_TILE_BASE).hostname
+                if datatype == "tile"
+                else urlparse(API_BASE).hostname
+            )
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname != expected_host
+                or parsed.hostname not in _NAVIGRAPH_OUTBOUND_HOSTS
+                or parsed.port is not None
+            ):
+                raise NavigraphUnavailable(
+                    "bad_request", "Navigraph URL is not allowlisted"
+                )
+            if "%" in parsed.path or "\\" in parsed.path or ".." in parsed.path.split("/"):
+                raise NavigraphUnavailable("bad_request", "invalid Navigraph path")
+        return parsed.geturl()
+
     async def _http_json(
-        self, url: str, headers: dict[str, str], params: Optional[dict[str, Any]] = None
+        self,
+        datatype: str,
+        url: str,
+        headers: dict[str, str],
+        params: Optional[dict[str, Any]] = None,
     ) -> Any:
+        url = self._validated_outbound_url(datatype, url)
         async with httpx.AsyncClient(
             timeout=self._timeout, transport=self._transport
         ) as http:
@@ -327,8 +449,13 @@ class NavigraphClient:
             ) from exc
 
     async def _http_bytes(
-        self, url: str, headers: dict[str, str], cookies: Optional[dict[str, str]] = None
+        self,
+        datatype: str,
+        url: str,
+        headers: dict[str, str],
+        cookies: Optional[dict[str, str]] = None,
     ) -> bytes:
+        url = self._validated_outbound_url(datatype, url)
         async with httpx.AsyncClient(
             timeout=self._timeout, transport=self._transport
         ) as http:
@@ -384,9 +511,9 @@ class NavigraphClient:
         try:
             self.limiter.acquire()
             payload: Any = (
-                await self._http_bytes(url, headers, cookies)
+                await self._http_bytes(datatype, url, headers, cookies)
                 if binary
-                else await self._http_json(url, headers, params)
+                else await self._http_json(datatype, url, headers, params)
             )
         except (RateLimitExceeded, NavigraphAuthError, NavigraphUnavailable, httpx.HTTPError) as exc:
             if cacheable:
@@ -416,44 +543,45 @@ class NavigraphClient:
     # -- Navigraph endpoints ---------------------------------------------
 
     async def airport(self, icao: str) -> dict[str, Any]:
-        code = icao.strip().upper()
+        code = _icao_segment(icao)
         return await self.fetch(
-            "airport", f"airport:{code}", f"{API_BASE}/v2/airport/{code}"
+            "airport",
+            f"airport:{code}",
+            str(httpx.URL(API_BASE).copy_with(path=f"/v2/airport/{code}")),
         )
 
     async def charts_index(
         self, icao: str, version: str = "STD", rules: str = "IFR"
     ) -> dict[str, Any]:
-        code = icao.strip().upper()
+        code = _icao_segment(icao)
         version = version.upper() if version.upper() in ("STD", "CAO") else "STD"
         rules = rules.upper() if rules.upper() in ("IFR", "VFR", "ANY") else "IFR"
         return await self.fetch(
             "charts_index",
             f"charts:{code}:{version}:{rules}",
-            f"{API_BASE}/v2/charts/{code}",
+            str(httpx.URL(API_BASE).copy_with(path=f"/v2/charts/{code}")),
             params={"version": version, "rules": rules},
         )
 
     async def chart_image(self, icao: str, filename: str) -> dict[str, Any]:
-        code = icao.strip().upper()
-        safe = filename.strip().lstrip("/")
-        if "/" in safe or ".." in safe:
-            raise NavigraphUnavailable("bad_request", "invalid chart filename")
+        code = _icao_segment(icao)
+        safe = _chart_file_segment(filename)
         return await self.fetch(
             "chart_image",
             f"chart:{code}:{safe}",
-            f"{API_BASE}/v2/charts/{code}/{safe}",
+            str(
+                httpx.URL(API_BASE).copy_with(
+                    path=f"/v2/charts/{code}/{safe}"
+                )
+            ),
             binary=True,
         )
 
     async def enroute_tile(
         self, layer: str, z: int, x: int, y: int, retina: bool = False
     ) -> dict[str, Any]:
-        allowed = {
-            "ifr.hi.day", "ifr.hi.night", "ifr.lo.day", "ifr.lo.night",
-            "vfr.day", "vfr.night", "world.day", "world.night",
-        }
-        if layer not in allowed:
+        safe_layer = _TILE_LAYERS.get(layer)
+        if safe_layer is None:
             raise NavigraphUnavailable("bad_request", f"unknown tile layer '{layer}'")
         if not (0 <= z <= 18):
             raise NavigraphUnavailable("bad_request", "zoom must be 0-18")
@@ -463,8 +591,12 @@ class NavigraphClient:
         suffix = "@2x.png" if retina else ".png"
         return await self.fetch(
             "tile",
-            f"tile:{layer}:{z}:{x}:{y}:{int(retina)}",
-            f"{ENROUTE_TILE_BASE}/styles/{layer}/{z}/{x}/{y}{suffix}",
+            f"tile:{safe_layer}:{z}:{x}:{y}:{int(retina)}",
+            str(
+                httpx.URL(ENROUTE_TILE_BASE).copy_with(
+                    path=f"/styles/{safe_layer}/{z}/{x}/{y}{suffix}"
+                )
+            ),
             binary=True,
             use_tile_cookies=True,
         )
@@ -500,7 +632,7 @@ class NavigraphClient:
 
     async def notams(self, icaos: list[str]) -> dict[str, Any]:
         """NOTAMs for a set of stations from the operator feed."""
-        codes = sorted({c.strip().upper() for c in icaos if c and c.strip()})
+        codes = sorted({_icao_segment(c) for c in icaos if c and c.strip()})
         if not codes:
             raise NavigraphUnavailable("bad_request", "no ICAO codes requested")
         if not self.config.notam_url:
