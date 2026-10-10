@@ -245,13 +245,17 @@
   background: rgba(42, 16, 25, 0.85);
   border-bottom: 1px solid var(--qr-border);
   backdrop-filter: blur(6px);
+  /* The pill tab strip scrolls horizontally inside this band; it must never
+     wrap into rows that render above the bar (iPad widths — G1). */
+  overflow: hidden;
 }
 
 .qr-shell .qr-topbar__left {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  min-width: 200px;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .qr-shell .qr-clock {
@@ -269,9 +273,11 @@
 }
 
 .qr-shell .qr-topbar__center {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   justify-content: center;
+  overflow: hidden;
 }
 
 .qr-shell .qr-topbar__title {
@@ -298,7 +304,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 200px;
+  flex: 0 0 auto;
+  min-width: 0;
   justify-content: flex-end;
   color: var(--qr-muted);
 }
@@ -319,20 +326,39 @@
   color: var(--qr-ok);
 }
 
-/* ─── pill tabs ──────────────────────────────────────────────────── */
+/* ─── pill tabs ──────────────────────────────────────────────────────
+   G1: the strip NEVER wraps. Eight pills in a 48 px band wrapped into
+   rows that rendered at negative Y on every iPad width, making the tabs
+   invisible and unclickable. The strip now scrolls horizontally inside
+   the band and every pill keeps the 44 px iPad touch height (G8). */
 
 .qr-shell .qr-tabs {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.qr-shell .qr-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .qr-shell .qr-tab {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  flex: 0 0 auto;
   padding: 6px 14px;
+  min-height: 44px;
+  white-space: nowrap;
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
@@ -2026,4 +2052,304 @@
   font-size: 10px;
   color: var(--qr-muted);
   letter-spacing: 0.06em;
+}
+
+/* ─── iPad touch targets (G8) ─────────────────────────────────────────
+   DESIGN.md targets the iPad: every interactive control must present at
+   least a 44x44 px hit box. The audit measured 30 px tabs, 19 px link
+   buttons, 34 px map buttons and 28 px WX-time buttons, and 15/15 Route
+   controls under 44 px. These rules raise the hit box without changing
+   the visual density: the glyph/label keeps its size, the control grows
+   its padding.
+
+   Documented exceptions (not interactive, or intentionally inline):
+   - `.qr-toggle__btn` (t/kg) — a non-interactive display toggle,
+   - `.qr-legend__item` / `.qr-badge` / `.qr-chip` — static labels,
+   - native `<input type="range">` sliders, whose 44 px row is provided by
+     their container (`.wx-time__row`, `.qr-route__wxrow`). */
+
+.qr-shell button,
+.qr-shell [role="tab"],
+.qr-shell .qr-side-item,
+.qr-shell select,
+.qr-shell .qr-chip--ghost {
+  min-height: 44px;
+}
+
+/* Icon-only controls need the horizontal minimum too. */
+.qr-shell .wx-navbtn,
+.qr-shell .wx-wxbtn,
+.qr-shell .wx-flbtn,
+.qr-shell .wx-pop__x,
+.qr-shell .qr-wxbtn,
+.qr-shell .qr-iconbtn {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Link-style buttons keep their small type but gain a real hit box. */
+.qr-shell .qr-linkbtn {
+  min-height: 44px;
+  padding: 2px 10px;
+}
+
+/* The WX time / layer rows lay their 44 px controls out on one line. */
+.qr-shell .wx-time__row,
+.qr-shell .qr-route__wxrow {
+  min-height: 44px;
+  align-items: center;
+}
+
+/* Row-shaped controls (checkbox layers) are tappable along the whole row. */
+.qr-shell .wx-layer {
+  min-height: 44px;
+  align-items: center;
+}
+
+/* ─── Overview / Times / Runways screens (G2) ────────────────────────
+   Overview, Times, Flightplan and Briefing used to be four aliases of one
+   render. These are the styles for the three screens that now exist in
+   their own right. */
+
+.qr-shell .qr-screenhead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 18px 8px;
+}
+.qr-shell .qr-screenhead h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--qr-text);
+}
+.qr-shell .qr-screenhead__sub {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--qr-muted);
+}
+
+.qr-shell .qr-overview,
+.qr-shell .qr-times,
+.qr-shell .qr-runways,
+.qr-shell .qr-briefscreen {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 18px 18px;
+  overflow-y: auto;
+}
+
+.qr-shell .qr-overview__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.qr-shell .qr-overview__card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--qr-panel);
+  border: 1px solid var(--qr-border);
+  border-radius: 10px;
+  min-height: 84px;
+}
+.qr-shell .qr-overview__sub {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--qr-muted);
+}
+
+.qr-shell .qr-times__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.qr-shell .qr-times__table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qr-muted);
+  border-bottom: 1px solid var(--qr-border);
+}
+.qr-shell .qr-times__table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--qr-border-soft);
+  color: var(--qr-text);
+}
+.qr-shell .qr-times__sub {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--qr-muted);
+}
+
+/* qatar-03: vertical rules between the three hero blocks (G13). */
+.qr-shell .qr-hero__right {
+  border-left: 1px solid var(--qr-border);
+  padding-left: 18px;
+}
+
+/* qatar-03: ATO / ACT are tappable crew-entry chips, not static dashes. */
+.qr-shell .qr-wpt__chip {
+  width: 56px;
+  min-height: 32px;
+  padding: 4px 6px;
+  text-align: center;
+  background: var(--qr-panel-2);
+  border: 1px solid var(--qr-border);
+  border-radius: 999px;
+  color: var(--qr-text);
+  font-size: 11px;
+}
+.qr-shell .qr-wpt__chip:focus {
+  outline: none;
+  border-color: var(--qr-gold);
+}
+
+/* Crew Desk: full-width area for the Tech Log tab (G7). */
+.qr-shell .qr-crewdesk__full {
+  min-width: 0;
+  grid-column: 2 / -1;
+  background: var(--qr-panel);
+  border: 1px solid var(--qr-border);
+  border-radius: 12px;
+  padding: 12px;
+  overflow: auto;
+}
+
+/* Crew Desk: explicit refresh / stale marker (G11). */
+.qr-shell .qr-inbox__refresh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: rgba(58, 24, 36, 0.35);
+}
+.qr-shell .qr-inbox__refresh--err {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.qr-shell .qr-inbox__refreshtext {
+  font-size: 11px;
+  color: var(--qr-muted);
+}
+
+/* EDTO: full-width route summary bar (G10). */
+.qr-shell .qr-edto {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 18px 18px;
+  overflow-y: auto;
+}
+.qr-shell .qr-edto__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--qr-panel);
+  border: 1px solid var(--qr-border);
+  border-radius: 10px;
+}
+.qr-shell .qr-edto__summarycell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.qr-shell .qr-edto__summarycell--wide {
+  grid-column: span 2;
+}
+.qr-shell .qr-edto__summarycell strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.qr-shell .qr-nat__decoded {
+  font-size: 11px;
+  color: var(--qr-muted);
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+.qr-shell .qr-risk-row__thumb {
+  display: grid;
+  place-items: center;
+}
+.qr-shell .qr-risk-row__thumblbl {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--qr-muted);
+}
+
+/* Route / Weather information architecture under the map (G4). */
+.qr-shell .qr-route__ia {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  padding: 10px 0 0;
+}
+.qr-shell .qr-route__iacard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--qr-panel);
+  border: 1px solid var(--qr-border);
+  border-radius: 10px;
+}
+.qr-shell .qr-route__iahead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.qr-shell .qr-route__iabody {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--qr-muted);
+}
+.qr-shell .qr-route__iarow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 44px;
+}
+.qr-shell .qr-route__legendstrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--qr-muted);
+}
+.qr-shell .qr-route__legendstrip .qr-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.qr-shell .qr-route__legendstrip .qr-legend__item i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+/* TechLog inside the maroon shell: the shell's panel, not its own style. */
+.qr-shell .tech-panel--embedded {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--qr-text);
 }

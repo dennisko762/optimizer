@@ -299,3 +299,60 @@ export function validTimeLabel(cycle, offset) {
   const hh = String(Math.floor((total % 1440) / 60)).padStart(2, "0");
   return day === 0 ? `${hh}Z` : `+${day}d ${hh}Z`;
 }
+
+// ── basemap tint (qatar-04 / DESIGN.md maroon ramp) ──────────────────
+
+/**
+ * DESIGN.md maroon basemap ramp. The CARTO dark-matter vector style ships a
+ * grey/slate palette; the qatar-04 reference map is maroon, so the basemap's
+ * own background/land/water fills are re-coloured to these tokens.
+ */
+export const BASEMAP_TINT = {
+  background: "#2a1019",
+  land: "#5c1a2e",
+  water: "#1a0a12",
+};
+
+/**
+ * Re-colour a MapLibre vector basemap into the maroon ramp.
+ *
+ * Only the basemap's own background/fill layers are touched — never the
+ * route or hazard layers the panel adds on top — and every write is guarded,
+ * so an unexpected style can never throw inside the map `load` handler.
+ *
+ * @param {object} map MapLibre map instance (needs getStyle/setPaintProperty)
+ * @param {object} [tint] { background, land, water } hex colours
+ * @returns {number} how many basemap layers were re-coloured
+ */
+export function tintBasemap(map, tint = BASEMAP_TINT) {
+  if (!map || typeof map.getStyle !== "function") return 0;
+  let style;
+  try {
+    style = map.getStyle();
+  } catch {
+    return 0;
+  }
+  const layers = (style && style.layers) || [];
+  let painted = 0;
+  for (const layer of layers) {
+    const id = String(layer.id || "");
+    try {
+      if (layer.type === "background") {
+        map.setPaintProperty(id, "background-color", tint.background);
+        painted += 1;
+      } else if (layer.type === "fill" && /water|ocean|sea|river/i.test(id)) {
+        map.setPaintProperty(id, "fill-color", tint.water);
+        painted += 1;
+      } else if (
+        layer.type === "fill" &&
+        /land|earth|landcover|landuse|park|wood|sand|ice/i.test(id)
+      ) {
+        map.setPaintProperty(id, "fill-color", tint.land);
+        painted += 1;
+      }
+    } catch {
+      /* this style has no such paint property — skip */
+    }
+  }
+  return painted;
+}

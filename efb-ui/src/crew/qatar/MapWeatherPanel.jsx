@@ -25,8 +25,9 @@ import {
 import "./wxmap.css";
 import {
   mapWeatherStatus, mapLayerFeatures, hazardColor, mapRouteForMap,
-  mapCrossSection, sampleForPoint, fmtFl, validTimeLabel,
+  mapCrossSection, sampleForPoint, fmtFl, validTimeLabel, tintBasemap,
 } from "./weatherMappers.js";
+import { modelSimRoute } from "./qatarMappers.js";
 import { mapLiveOverlay } from "./liveMappers.js";
 import CrossSection from "./CrossSection.jsx";
 
@@ -69,8 +70,25 @@ function emptyRoute() {
  * M3 live layer props (telemetry / simConnected / live) are additive: the
  * map renders exactly as before without them, and with them it also draws
  * the live SimConnect aircraft symbol and dims the fixes already passed.
+ *
+ * `variant` selects the surrounding information architecture — `"route"`
+ * renders the qatar-04 Route IA (ATC sectors, route terrain, precip/SIGMET
+ * legend), `"weather"` renders the station weather summary. The map
+ * instance and its live data contract are identical in both (G3).
+ *
+ * `flight` is the active flight. When the backend has no SimBrief route for
+ * it, the map falls back to the same derived sim-planned route the
+ * Flightplan table shows, clearly labelled as derived (G5).
  */
-export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected, live }) {
+export default function MapWeatherPanel({
+  apiBase,
+  utc,
+  flight,
+  telemetry,
+  simConnected,
+  live,
+  variant = "route",
+}) {
   const mapRef = useRef(null);
   const mapElRef = useRef(null);
   const fittedRef = useRef(false);
@@ -87,6 +105,9 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
   const [hoverIdx, setHoverIdx] = useState(null);
   const [drawer, setDrawer] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  // qatar-04 ATC SECTORS: DISPLAY ALTITUDE AUTO (follow the selected FL) or
+  // OFF. No sector data is drawn — the feed is not configured.
+  const [altMode, setAltMode] = useState("AUTO");
 
   const cycle = status?.cycle || null;
 
@@ -121,6 +142,16 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
   }, [apiBase]);
 
   // ── route + samples (refetch on fl/offset/refreshTick) ─────────────
+  // `derivedRoute` is the sim-planned fallback: the SAME route the
+  // Flightplan table derives for a flight without a SimBrief OFP. It is
+  // used only when the backend has no route for the flight (404), and the
+  // UI labels it DERIVED so it can never be read as a filed route (G5).
+  const derivedRoute = useMemo(
+    () => (flight ? mapRouteForMap(modelSimRoute(flight) || {}) : null),
+    [flight]
+  );
+  const [routeDerived, setRouteDerived] = useState(false);
+
   useEffect(() => {
     let live = true;
     (async () => {
@@ -130,8 +161,20 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
         );
         if (!r.ok) {
           if (live) {
-            if (r.status === 404) setRouteErr("No active SimBrief flightplan — import a plan first.");
-            else if (r.status === 503) setRouteErr("NOAA GFS cycle downloading — route weather arrives shortly.");
+            if (r.status === 404) {
+              // No SimBrief plan: fall back to the derived sim-planned route
+              // instead of showing an empty map with "0 fixes".
+              if (derivedRoute && derivedRoute.points.length > 1) {
+                setRoute(derivedRoute);
+                setRouteDerived(true);
+                setRouteErr(
+                  "No SimBrief flightplan — showing the derived sim-planned great-circle route (not a filed route)."
+                );
+              } else {
+                setRouteDerived(false);
+                setRouteErr("No active SimBrief flightplan — import a plan first.");
+              }
+            } else if (r.status === 503) setRouteErr("NOAA GFS cycle downloading — route weather arrives shortly.");
             else setRouteErr(`Route unavailable (HTTP ${r.status}).`);
           }
           return;
@@ -140,6 +183,7 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
         if (!live) return;
         const mapped = mapRouteForMap(data);
         setRoute(mapped);
+        setRouteDerived(false);
         setRouteErr(null);
         if (mapped.cruiseFl && fl === 340) setFl(mapped.cruiseFl);
       } catch (e) {
@@ -147,7 +191,7 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
       }
     })();
     return () => { live = false; };
-  }, [apiBase, fl, offset, refreshTick]);
+  }, [apiBase, fl, offset, refreshTick, derivedRoute]);
 
   // ── hazard layers (enabled products, per fl/offset/refreshTick) ────
   useEffect(() => {
@@ -228,7 +272,10 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
       });
       map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
       mapRef.current = map;
-      const onStyle = () => setMapStyleLoaded(true);
+      const onStyle = () => {
+        tintBasemap(map);
+        setMapStyleLoaded(true);
+      };
       if (map.isStyleLoaded()) onStyle();
       else map.once("load", onStyle);
       const onAttr = (e) => {
@@ -586,12 +633,14 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
           <button className="wx-navbtn" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in"><Plus size={16} /></button>
           <button className="wx-navbtn" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out"><Minus size={16} /></button>
           <button className="wx-navbtn" onClick={fitRoute} aria-label="Fit route"><Maximize2 size={16} /></button>
+          {/* qatar-04 shows this control LABELLED, not as a bare icon (G4). */}
           <button
-            className={`wx-navbtn ${drawer ? "wx-navbtn--on" : ""}`}
+            className={`wx-navbtn wx-navbtn--labelled ${drawer ? "wx-navbtn--on" : ""}`}
             onClick={() => setDrawer((d) => !d)}
             aria-label="Layers and overlays"
           >
             <Layers size={16} />
+            <span className="wx-navbtn__label">Layers &amp; Overlays</span>
             <span className="wx-navbtn__badge">{Object.values(enabled).filter(Boolean).length}</span>
           </button>
         </div>
@@ -721,6 +770,18 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
             <button className="wx-wxbtn" onClick={() => setPlaying((p) => !p)} aria-label={playing ? "Pause" : "Play"}>
               {playing ? <Pause size={13} /> : <Play size={13} />}
             </button>
+            {/* qatar-04 WX TIME stepper. The GFS proxy horizon is T+0..T+36:
+                there is no reanalysis of the past behind this endpoint, so
+                -12h steps back toward NOW and is disabled at NOW instead of
+                pretending a negative forecast hour exists. */}
+            <button
+              className="wx-wxbtn"
+              onClick={() => { setOffset((o) => Math.max(0, o - 12)); setPlaying(false); }}
+              disabled={offset <= 0}
+              title={offset <= 0 ? "Already at NOW — the GFS proxy has no past cycles" : "Step back 12 h"}
+            >
+              -12h
+            </button>
             <input
               className="wx-slider"
               type="range" min={0} max={36} step={1}
@@ -728,6 +789,14 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
               onChange={(e) => { setOffset(Number(e.target.value)); setPlaying(false); }}
               aria-label="Forecast hour offset"
             />
+            <button
+              className="wx-wxbtn"
+              onClick={() => { setOffset((o) => Math.min(36, o + 12)); setPlaying(false); }}
+              disabled={offset >= 36}
+              title={offset >= 36 ? "End of the T+36 h forecast horizon" : "Step forward 12 h"}
+            >
+              +12h
+            </button>
             <button className={`wx-wxbtn ${offset === 0 ? "wx-wxbtn--on" : ""}`} onClick={() => { setOffset(0); setPlaying(false); }}>NOW</button>
           </div>
           {band != null && band > 0 && (
@@ -741,6 +810,11 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
         {/* click-to-select on fixes */}
         <div className="wx-map__clickhint">
           <RouteIcon size={13} /> Tap a fix for detail · {route.pointCount} fixes
+          {routeDerived && (
+            <span className="wx-chip wx-chip--stale" title="Derived great-circle route from the entered ICAOs — not a filed SimBrief route">
+              DERIVED
+            </span>
+          )}
           {route.unresolved.length > 0 && (
             <span className="wx-chip wx-chip--stale">
               {route.unresolved.length} unresolved
@@ -782,6 +856,147 @@ export default function MapWeatherPanel({ apiBase, utc, telemetry, simConnected,
           }}
         />
       </div>
+
+      {/* qatar-04 Route information architecture (G4). Route-variant only —
+          the Weather tab carries the station/cycle summary instead, so the
+          two screens are genuinely different (G2) while sharing one map
+          data contract (G3). */}
+      {variant === "route" ? (
+        <div className="qr-route__ia" data-testid="route-ia">
+          <section className="qr-route__iacard" data-testid="route-atc">
+            <div className="qr-route__iahead">
+              <span className="qr-label">ATC SECTORS</span>
+              <span className="qr-badge badge--vatsim">VATSIM</span>
+              <span className="qr-badge badge--notam">NOT CONFIGURED</span>
+            </div>
+            <div className="qr-route__iabody">
+              No VATSIM sector feed is configured, so no controller boundaries
+              or online-sector altitudes are drawn. DISPLAY ALTITUDE follows
+              the selected flight level.
+            </div>
+            <div className="qr-route__iarow">
+              <span className="qr-label">DISPLAY ALTITUDE</span>
+              <button
+                className={`wx-wxbtn ${altMode === "AUTO" ? "wx-wxbtn--on" : ""}`}
+                onClick={() => setAltMode("AUTO")}
+              >
+                AUTO
+              </button>
+              <button
+                className={`wx-wxbtn ${altMode === "OFF" ? "wx-wxbtn--on" : ""}`}
+                onClick={() => setAltMode("OFF")}
+              >
+                OFF
+              </button>
+              <span className="mono">
+                {altMode === "AUTO" ? `FL${String(fl).padStart(3, "0")}` : "—"}
+              </span>
+            </div>
+          </section>
+
+          <section className="qr-route__iacard" data-testid="route-terrain">
+            <div className="qr-route__iahead">
+              <Mountain size={15} />
+              <span className="qr-label">ROUTE TERRAIN</span>
+            </div>
+            <div className="qr-route__iabody">
+              {route.points.length > 1 ? (
+                <>
+                  Highest planned level on this route:{" "}
+                  <strong className="mono">
+                    {(() => {
+                      const fls = route.points
+                        .map((p) => p.fl)
+                        .filter((v) => v != null);
+                      return fls.length ? `FL${Math.max(...fls)}` : "—";
+                    })()}
+                  </strong>
+                  . No terrain elevation dataset is configured, so no MSA or
+                  terrain clearance is computed here.
+                </>
+              ) : (
+                "No route loaded — terrain profile unavailable."
+              )}
+            </div>
+          </section>
+
+          <section className="qr-route__iacard qr-route__iacard--legend" data-testid="route-legend">
+            <div className="qr-route__iahead">
+              <span className="qr-label">PRECIP</span>
+            </div>
+            <div className="qr-route__legendstrip">
+              {[["#4a2230", "None"], ["#2563eb", "Light"], ["#e8a838", "Moderate"], ["#ef4444", "Heavy"], ["#c74a6a", "CB"]].map(
+                ([c, l]) => (
+                  <span key={l} className="qr-legend__item">
+                    <i style={{ background: c }} />
+                    {l}
+                  </span>
+                )
+              )}
+            </div>
+            <div className="qr-route__iahead">
+              <span className="qr-label">SIGMET</span>
+            </div>
+            <div className="qr-route__legendstrip">
+              {[["#ef4444", "Thunderstorm"], ["#e8a838", "Turbulence"], ["#38bdf8", "Icing"], ["#c74a6a", "Volcanic Ash"], ["#4ade80", "TS (Tropical)"]].map(
+                ([c, l]) => (
+                  <span key={l} className="qr-legend__item">
+                    <i style={{ background: c }} />
+                    {l}
+                  </span>
+                )
+              )}
+            </div>
+            <div className="qr-route__iabody">
+              Legend only — hazard polygons come from the NOAA GFS proxies in
+              the layer drawer, not from official SIGMET/precip products.
+            </div>
+          </section>
+        </div>
+      ) : (
+        <div className="qr-route__ia" data-testid="weather-ia">
+          <section className="qr-route__iacard" data-testid="weather-cycle">
+            <div className="qr-route__iahead">
+              <Cloud size={15} />
+              <span className="qr-label">FORECAST CYCLE</span>
+              <span className={`wx-chip wx-chip--${status?.state || "idle"}`}>
+                {status ? status.label : "LOADING"}
+              </span>
+            </div>
+            <div className="qr-route__iabody mono">
+              {cycle ? `CYCLE ${cycle}` : "NO CYCLE"} ·{" "}
+              {wxTime ? `VALID ${wxTime}` : "VALID —"} · FL
+              {String(fl).padStart(3, "0")} · T+{offset}h
+            </div>
+            <div className="qr-route__iabody">
+              NOAA GFS 0.25° proxies — not official WAFS/eWAS products.
+            </div>
+          </section>
+          <section className="qr-route__iacard" data-testid="weather-products">
+            <div className="qr-route__iahead">
+              <span className="qr-label">HAZARD PRODUCTS</span>
+            </div>
+            <div className="qr-route__iabody">
+              {PRODUCTS.map(({ key, label }) => {
+                const l = layers[key];
+                const state = !enabled[key]
+                  ? "off"
+                  : l && l.unavailable
+                    ? String(l.unavailable)
+                    : l
+                      ? `${l.features.length} areas`
+                      : "loading";
+                return (
+                  <div className="qr-route__iarow" key={key}>
+                    <span className="qr-label">{label}</span>
+                    <span className="mono">{state}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

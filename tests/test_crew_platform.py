@@ -42,11 +42,29 @@ from crew_platform.vamsys_pilot_auth import PilotFlight
 
 
 class TestProviderRegistry:
-    def test_list_providers_returns_three(self):
+    def test_list_providers_returns_all_four(self):
+        """Qatar Airways Virtual is a first-class, selectable provider.
+
+        The EFB's reference interface is the Qatar "QR SmartOps" shell, so
+        Qatar must appear in the registry instead of being an unlisted
+        implicit default (EFB design audit G9).
+        """
         providers = list_providers()
-        assert len(providers) == 3
+        assert len(providers) == 4
         ids = {p.id for p in providers}
-        assert ids == {"lhvirtual", "emiratesvirtual", "etihadvirtual"}
+        assert ids == {
+            "qatarvirtual",
+            "lhvirtual",
+            "emiratesvirtual",
+            "etihadvirtual",
+        }
+
+    def test_get_provider_qatarvirtual(self):
+        p = get_provider("qatarvirtual")
+        assert p.display_name == "Qatar Airways Virtual"
+        assert p.icao == "QTR"
+        assert p.short_code == "QRV"
+        assert p.callsign_prefix == "QTR"
 
     def test_get_provider_lhvirtual(self):
         p = get_provider("lhvirtual")

@@ -1276,3 +1276,15 @@
     width: 100%;
   }
 }
+
+/* Provider-gate provenance note (G9) + iPad touch targets on the cards. */
+.airline-selector__note {
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--airline-text-secondary, #c9a3ad);
+}
+.airline-card,
+.airline-auth-btn {
+  min-height: 44px;
+}

@@ -405,3 +405,20 @@
   .qr-shell .wx-map__time { width: 220px; }
   .qr-shell .wx-map__status { max-width: calc(100% - 200px); }
 }
+
+/* The layers control is labelled on the Route screen (qatar-04, G4). */
+.qr-shell .wx-navbtn--labelled {
+  width: auto;
+  padding: 0 12px;
+  gap: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.qr-shell .wx-navbtn__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
