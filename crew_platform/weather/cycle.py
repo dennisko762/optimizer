@@ -22,7 +22,7 @@ import os
 import re
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Optional, Sequence
 
 # Public endpoint; env-overridable for tests / regional mirrors.
 DEFAULT_GFS_BASE = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
@@ -82,7 +82,7 @@ class GfsConfig:
         return cls()
 
 
-def _get(config: GfsConfig, url: str) -> bytes:
+def _get(config: GfsConfig, url: str) -> tuple[int, Optional[bytes]]:
     import httpx
 
     with httpx.Client(timeout=config.timeout_s, follow_redirects=True) as client:

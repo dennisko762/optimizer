@@ -239,6 +239,31 @@ def test_fetch_sigmets_parses_polygon(monkeypatch):
     assert len(out[0].geometry["coordinates"][0]) == 3
 
 
+def test_fetch_sigmets_is_a_faithful_proxy_no_dedup(monkeypatch):
+    """DECISION (follow-up #2 from PR #16 review): duplicate upstream SIGMET
+    records are passed through as-is, never silently dropped — dedup, if
+    ever wanted, belongs in the UI mapper layer, not this adapter."""
+    from crew_platform.weather.briefing import aviationweather as awc
+
+    rec = {
+        "firId": "OTHH", "hazard": "TURB",
+        "rawSigmet": "WSQT31 OTHH 091200",
+        "issueTime": "2026-10-09T12:00:00Z",
+        "validTimeFrom": "2026-10-09T12:00:00Z", "validTimeTo": "2026-10-09T16:00:00Z",
+        "coords": [{"lat": 25.0, "lon": 50.0}, {"lat": 26.0, "lon": 51.0}, {"lat": 25.0, "lon": 52.0}],
+    }
+    fixture = [dict(rec), dict(rec)]  # upstream repeats the exact same record
+
+    def responder(url, params):
+        return _FakeResponse(200, fixture)
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", lambda **kw: _FakeClient(responder))
+
+    out = awc.fetch_sigmets(intl=True)
+    assert len(out) == 2, "the adapter must stay a transparent 1:1 proxy (no dedup)"
+
+
 # ---------------------------------------------------------------------
 # VATSIM ATIS: feature gate + label
 # ---------------------------------------------------------------------

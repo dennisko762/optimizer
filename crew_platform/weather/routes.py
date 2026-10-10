@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import Any, Optional
 
@@ -34,6 +35,11 @@ from .store import STORE
 from . import scheduler
 
 router = APIRouter(prefix="/api/crew/weather", tags=["crew-platform"])
+
+#: exact mirror of crew_platform.weather.store._cycle_dir's format check —
+#: validated here so a malformed value is rejected with a clear 4xx instead
+#: of surfacing as an uncaught ValueError -> 500 from the store layer.
+_CYCLE_ID_RE = re.compile(r"^[0-9]{8}_[0-9]{2}$")
 
 
 def _active_plan() -> dict[str, Any]:
@@ -211,6 +217,12 @@ async def ingest(
     if cycle_id is None:
         config = GfsConfig.from_env()
         cycle_id = await asyncio.to_thread(_discover_newest, config)
+    elif not _CYCLE_ID_RE.match(cycle_id):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Malformed cycle_id {cycle_id!r}; expected YYYYMMDD_HH "
+                   "(e.g. '20261005_18').",
+        )
     req = IngestRequest(cycle_id, ll, rl, tp, bl, offsets=tuple(range(0, 37)))
     config = GfsConfig.from_env()
 
@@ -237,6 +249,10 @@ async def ingest(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except GfsDownloadError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        # defense in depth: any other malformed-cycle_id ValueError surfacing
+        # from the store/ingest layer is still a client error, never a 500.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return out
 
 
