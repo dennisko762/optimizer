@@ -204,6 +204,16 @@ def test_cycles_endpoint(client):
     assert body["cycles"][0]["cycle_id"] == "20261005_18"
 
 
+def test_ingest_malformed_cycle_id_returns_422(client):
+    """POST /ingest with a malformed cycle_id must be a clear 4xx, never the
+    uncaught ValueError -> 500 that store._cycle_dir used to raise."""
+    r = client.post("/api/crew/weather/ingest", params={"cycle_id": "not-a-cycle"})
+    assert r.status_code == 422, r.text
+    body = r.json()
+    assert "cycle_id" in body["detail"]
+    assert "not-a-cycle" in body["detail"]
+
+
 def test_status_no_plan_degraded_state(monkeypatch, client):
     # delete the active plan -> /route degrades to 404 with a clear message
     from optimizer.api import flightplan_service as fps

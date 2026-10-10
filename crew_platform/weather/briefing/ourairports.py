@@ -76,6 +76,8 @@ def lookup(icao: str, *, config: Optional[OurAirportsConfig] = None) -> Optional
     row = table.get(icao)
     if not row:
         return None
+    lat: Optional[float]
+    lon: Optional[float]
     try:
         lat = float(row.get("latitude_deg") or "nan")
         lon = float(row.get("longitude_deg") or "nan")

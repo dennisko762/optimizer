@@ -134,6 +134,9 @@ def fetch_lightning(
     now = time.time()
     start_iso = to_utc_iso(now - lookback_minutes * 60.0)
     end_iso = to_utc_iso(now)
+    assert start_iso is not None and end_iso is not None, (
+        "to_utc_iso(time.time()) must always succeed for a numeric input"
+    )
     key = ("eumetsat_lightning", box, round(now / 60.0))  # 1-min cache granularity
     try:
         body = CACHE.get_or_fetch(key, config.ttl_s, lambda: _search(config, box, start_iso, end_iso))

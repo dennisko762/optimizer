@@ -19,7 +19,7 @@ unresolved-fix cases are unit-tested without any SimBrief fetch.
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Optional
 
 from .sampler import route_geometry, split_around_antimeridian
 
@@ -28,14 +28,17 @@ class RouteDataError(ValueError):
     """The plan has no usable route (no coordinates at all)."""
 
 
-def _valid_coord(lat: Any, lon: Any) -> bool:
+def _parse_coord(lat: Any, lon: Any) -> Optional[tuple[float, float]]:
+    """Validate + parse a (lat, lon) pair; ``None`` if missing/invalid/NaN."""
     try:
         la, lo = float(lat), float(lon)
     except (TypeError, ValueError):
-        return False
+        return None
     if math.isnan(la) or math.isnan(lo):
-        return False
-    return -90.0 <= la <= 90.0 and -180.0 <= lo <= 180.0
+        return None
+    if -90.0 <= la <= 90.0 and -180.0 <= lo <= 180.0:
+        return (la, lo)
+    return None
 
 
 def _occ(counters: dict[str, int], ident: str) -> int:
@@ -72,7 +75,8 @@ def extract_route(view: dict[str, Any]) -> dict[str, Any]:
     for i, row in enumerate(rows):
         ident = str(row.get("ident") or "").upper() or f"IDX{i}"
         lat, lon = row.get("lat"), row.get("lon")
-        if not _valid_coord(lat, lon):
+        coord = _parse_coord(lat, lon)
+        if coord is None:
             reason = "missing coordinates" if (
                 lat is None or lon is None
             ) else "invalid coordinates"
@@ -83,13 +87,14 @@ def extract_route(view: dict[str, Any]) -> dict[str, Any]:
                 "reason": reason,
             })
             continue
+        la, lo = coord
         resolved.append({
             "index": i,
             "ident": ident,
             "occurrence": _occ(occ_counters, ident),
             "name": row.get("name"),
-            "lat": float(lat),
-            "lon": float(lon),
+            "lat": la,
+            "lon": lo,
             "alt": row.get("alt"),
             "ete": row.get("ete"),
             "stage": str(row.get("stage") or "").upper() or None,
@@ -116,7 +121,7 @@ def extract_route(view: dict[str, Any]) -> dict[str, Any]:
 
     total_nm = geo[-1]["cum_nm"] if geo else 0.0
 
-    geojson = {
+    geojson: dict[str, Any] = {
         "type": "FeatureCollection",
         "features": [
             {
