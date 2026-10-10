@@ -41,7 +41,7 @@ import {
   LogIn,
   CheckCircle2,
   XCircle,
-  CloudRain,
+
   Gauge,
   Download,
 } from "lucide-react";
@@ -84,6 +84,8 @@ import {
   NAVIGRAPH_TILE_LAYERS,
 } from "./navigraphMappers.js";
 import CrewLogin from "./CrewLogin.jsx";
+import MapWeatherPanel from "./MapWeatherPanel.jsx";
+import BriefingPanel from "./BriefingPanel.jsx";
 import BoardingPanel from "../BoardingPanel.jsx";
 import TechPanel from "../tech/TechPanel.jsx";
 
@@ -523,6 +525,7 @@ export default function QatarShell({ onOpenOptimizer }) {
           utc={utc}
           onNavigate={setScreen}
           pilotName={crewSession.pilotId}
+          defaultStation={lastPlan?.origin || flight?.departure_icao || null}
           flight={flight}
         />
       )}
@@ -655,7 +658,7 @@ function CompanyNewsPanel() {
 
 /* ─── Crew Desk (qatar-02) ─────────────────────────────────────────── */
 
-export function CrewDeskScreen({ utc, onNavigate, pilotName, flight }) {
+export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, flight }) {
   const { session, apiBase } = useCrewPlatform();
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
@@ -763,7 +766,7 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, flight }) {
             ) : tab === "preflight" ? (
               <PreflightBriefing onOpenTech={() => setTab("techlog")} />
             ) : tab === "weather" ? (
-              <WeatherBriefing />
+              <WeatherBriefing apiBase={apiBase} station={defaultStation} />
             ) : (
               messages.map((m) => (
                 <button
@@ -837,20 +840,8 @@ function PreflightBriefing({ onOpenTech }) {
   );
 }
 
-function WeatherBriefing() {
-  return (
-    <div className="qr-briefing">
-      <h3>WEATHER BRIEFING</h3>
-      <div className="qr-brief-item">
-        <CloudRain size={15} className="qr-brief-ok" />
-        <div>
-          <div>WX briefing available in Inbox</div>
-          <div className="qr-brief-sub">Enroute + destination MET/TAF per flight</div>
-        </div>
-      </div>
-      <div className="qr-notice">Live METAR/TAF feed is not connected yet — briefing content follows from the selected flight's OFP.</div>
-    </div>
-  );
+function WeatherBriefing({ apiBase, station }) {
+  return <BriefingPanel apiBase={apiBase} station={station} />;
 }
 
 /* ─── Home (M2b): Company News + My Flights + check-in ────────────── */
@@ -1682,15 +1673,13 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       )}
 
       {tab === "route" && (
-        <RouteScreen
-          flight={flight}
-          ofpData={ofpData}
-          distanceNm={distanceNm}
+        <MapWeatherPanel
+          apiBase={apiBase}
           utc={utc}
+          flight={flight}
           telemetry={telemetry}
           simConnected={simConnected}
           live={live}
-          timing={timing}
         />
       )}
 
@@ -1698,10 +1687,14 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
         <EdtoScreen flight={flight} ofpData={ofpData} />
       )}
 
-      {(tab === "runways" || tab === "weather") && (
+      {tab === "runways" && (
         <div className="qr-notice qr-notice--center">
-          {tab === "runways" ? "Runway data follows from the OFP (arrival/departure runways) — not linked to this booking yet." : "Live weather overlay — WX TIME playback and ATC sectors are available on the Route tab."}
+          Runway data follows from the OFP (arrival/departure runways) — not linked to this booking yet.
         </div>
+      )}
+
+      {tab === "weather" && (
+        <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
       )}
     </div>
   );
@@ -1709,6 +1702,15 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
 
 /* ─── Route (qatar-04) ─────────────────────────────────────────────── */
 
+/**
+ * Legacy SVG route view (pre-M5-P). The active Route tab renders
+ * `MapWeatherPanel` (MapLibre); this component is kept as the exported
+ * standalone SVG fallback. The M3 live state it pioneered — SimConnect
+ * aircraft symbol + passed-waypoint marking — is ALSO wired into the
+ * active MapLibre Route tab (see `mapLiveOverlay` in liveMappers.js and
+ * the `wx-live-ac` / `passed` layers in MapWeatherPanel.jsx), so the live
+ * route behaviour is reachable from the UI regardless of this component.
+ */
 export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
   const { apiBase } = useCrewPlatform();
   const [wxPlaying, setWxPlaying] = useState(false);
