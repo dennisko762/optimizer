@@ -356,3 +356,29 @@ export function tintBasemap(map, tint = BASEMAP_TINT) {
   }
   return painted;
 }
+
+/**
+ * Corner bounds `[[west, south], [east, north]]` for a set of route points.
+ *
+ * MapLibre's `fitBounds` takes a two-corner bounds, not a coordinate list:
+ * handing it every fix left the map at the world view with the route smeared
+ * across both edges. Returns null when fewer than two points carry a usable
+ * position (the caller then leaves the camera alone).
+ *
+ * @param {Array<{lat:number, lon:number}>} points
+ */
+export function routeBounds(points) {
+  const usable = (points || []).filter(
+    (p) => Number.isFinite(p?.lat) && Number.isFinite(p?.lon)
+  );
+  if (usable.length < 2) return null;
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const p of usable) {
+    if (p.lon < w) w = p.lon;
+    if (p.lon > e) e = p.lon;
+    if (p.lat < s) s = p.lat;
+    if (p.lat > n) n = p.lat;
+  }
+  if (w === e && s === n) return null;
+  return [[w, s], [e, n]];
+}

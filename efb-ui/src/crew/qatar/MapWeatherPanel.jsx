@@ -25,7 +25,7 @@ import {
 import "./wxmap.css";
 import {
   mapWeatherStatus, mapLayerFeatures, hazardColor, mapRouteForMap,
-  mapCrossSection, sampleForPoint, fmtFl, validTimeLabel, tintBasemap,
+  mapCrossSection, sampleForPoint, fmtFl, validTimeLabel, tintBasemap, routeBounds,
 } from "./weatherMappers.js";
 import { modelSimRoute } from "./qatarMappers.js";
 import { mapLiveOverlay } from "./liveMappers.js";
@@ -450,9 +450,13 @@ export default function MapWeatherPanel({
       if ((route.points || []).length < 2) return;
       const cv = map.getCanvas ? map.getCanvas() : null;
       if (!cv || cv.clientWidth < 2 || cv.clientHeight < 2) return;
-      const coords = route.points.map((p) => [p.lon, p.lat]);
+      // fitBounds takes a 2-corner bounds, NOT a list of coordinates: passing
+      // the whole fix list left the map at the world view with the route
+      // smeared across both edges. Reduce to [[w,s],[e,n]] first.
+      const bounds = routeBounds(route.points);
+      if (!bounds) return;
       try {
-        map.fitBounds(coords, { padding: 60, duration: 600 });
+        map.fitBounds(bounds, { padding: 60, duration: 600 });
         fittedRef.current = true;
         map.off("resize", tryFit);
       } catch { /* degenerate bounds */ }
@@ -595,7 +599,9 @@ export default function MapWeatherPanel({
   function fitRoute() {
     const map = mapRef.current;
     if (!map || route.points.length < 2) return;
-    map.fitBounds(route.points.map((p) => [p.lon, p.lat]), { padding: 60, duration: 500 });
+    const bounds = routeBounds(route.points);
+    if (!bounds) return;
+    map.fitBounds(bounds, { padding: 60, duration: 500 });
   }
 
   // occurrence-aware sample join (repeated fix idents are distinct)
@@ -948,8 +954,9 @@ export default function MapWeatherPanel({
               )}
             </div>
             <div className="qr-route__iabody">
-              Legend only — hazard polygons come from the NOAA GFS proxies in
-              the layer drawer, not from official SIGMET/precip products.
+              Legend only — hazard polygons come from the NOAA GFS 0.25°
+              proxies in the layer drawer: not official WAFS/eWAS SIGMET or
+              precipitation products.
             </div>
           </section>
         </div>

@@ -251,7 +251,16 @@ test("the nav buttons drive zoom and fit-route on the real map", async () => {
   assert.equal(mapCalls.zoomIn, 1);
   assert.equal(mapCalls.zoomOut, 1);
   assert.equal(mapCalls.fitBounds.length, 1);
-  assert.equal(mapCalls.fitBounds[0].length, 4, "fitBounds must cover every fix");
+  // MapLibre's fitBounds takes a 2-corner bounds, not a coordinate list
+  // (passing every fix left the camera at the world view). The corners must
+  // still enclose every fix on the route.
+  const bounds = mapCalls.fitBounds[0];
+  assert.equal(bounds.length, 2, "fitBounds takes [[w,s],[e,n]] corners");
+  const [[w, s], [e, n]] = bounds;
+  for (const p of ROUTE_BODY.points) {
+    assert.ok(p.lon >= w && p.lon <= e, `fix ${p.ident} outside the fitted lon range`);
+    assert.ok(p.lat >= s && p.lat <= n, `fix ${p.ident} outside the fitted lat range`);
+  }
 });
 
 test("the time slider plays, scrubs and returns to NOW", async () => {

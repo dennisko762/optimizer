@@ -1436,7 +1436,7 @@ export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLog
 
 /* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
 
-function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
+export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
   const { apiBase } = useCrewPlatform();
   const ofpData = ofp?.ofp_data || null;
   const hero = useMemo(() => mapOfpHero(flight, ofpData), [flight, ofpData]);

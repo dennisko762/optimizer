@@ -304,10 +304,35 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 0 0 auto;
+  /* Shrinkable: the tab strip in the centre has priority over the status
+     cluster, otherwise the pills are squeezed to zero width on iPad (G1). */
+  flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
   justify-content: flex-end;
   color: var(--qr-muted);
+}
+
+/* Narrow (iPad) widths: drop the long SimConnect explanation and the date
+   from the bar so the eight tabs keep their room. The information is not
+   lost — the chip keeps its title tooltip and the Flightplan screen states
+   the same thing in full. */
+@media (max-width: 1440px) {
+  .qr-shell .qr-simchip__sub {
+    display: none;
+  }
+}
+@media (max-width: 1200px) {
+  .qr-shell .qr-date {
+    display: none;
+  }
+  .qr-shell .qr-topbar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+  .qr-shell .qr-tab {
+    padding: 6px 10px;
+  }
 }
 
 .qr-shell .qr-topbar__icon {
@@ -338,6 +363,11 @@
   flex-wrap: nowrap;
   justify-content: flex-start;
   align-items: center;
+  /* min-width:0 is what actually lets the strip shrink below its
+     min-content width and scroll; without it the flex item keeps the full
+     650 px and overflows the bar to the left (negative x). */
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
@@ -2072,6 +2102,10 @@
 .qr-shell [role="tab"],
 .qr-shell .qr-side-item,
 .qr-shell select,
+.qr-shell input:not([type]),
+.qr-shell input[type="text"],
+.qr-shell input[type="password"],
+.qr-shell input[type="number"],
 .qr-shell .qr-chip--ghost {
   min-height: 44px;
 }
@@ -2200,7 +2234,7 @@
 /* qatar-03: ATO / ACT are tappable crew-entry chips, not static dashes. */
 .qr-shell .qr-wpt__chip {
   width: 56px;
-  min-height: 32px;
+  min-height: 44px;
   padding: 4px 6px;
   text-align: center;
   background: var(--qr-panel-2);
@@ -2352,4 +2386,29 @@
   border: 0;
   padding: 0;
   color: var(--qr-text);
+}
+
+/* The tab-strip wrapper must shrink with the bar, or its default
+   min-width:auto pins it at the pills' min-content width (650 px) and the
+   strip overflows the top bar to the LEFT on iPad portrait (G1). */
+.qr-shell .qr-tabstrip {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Below ~1100 px the eight pills no longer fit side by side, so the strip
+   scrolls. A soft edge fade makes that affordance visible instead of the
+   last tab simply ending at the bar edge. */
+@media (max-width: 1100px) {
+  .qr-shell .qr-tabs {
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 20px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 20px), transparent 100%);
+    scroll-snap-type: x proximity;
+  }
+  .qr-shell .qr-tab {
+    scroll-snap-align: start;
+  }
 }
