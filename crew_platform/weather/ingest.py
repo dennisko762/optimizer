@@ -196,11 +196,12 @@ def _hazard_grids(
                     u_hi, v_hi = uh, vh
                     upper_mb = mb - d
                     break
-        if any(g is None for g in (u, v, u_hi, v_hi)):
+        if u is None or v is None or u_hi is None or v_hi is None:
             continue
         dz_level = hazards.LEVEL_PAIR_SPACING_M.get((float(mb), float(upper_mb)), 2000.0)
         ti1, _ti2 = hazards.ti_from_grid(
-            u, v, u_hi, v_hi, dx_east, dz_level, dx_lat_m=dx_north,
+            u.tolist(), v.tolist(), u_hi.tolist(), v_hi.tolist(),
+            dx_east, dz_level, dx_lat_m=dx_north,
         )
         # Store the WMO/TITAN-form index: S*DEF in (1e-6 /s)^2 units. The raw
         # S*DEF is ~1e-6..1e-5 /s^2, i.e. 1..15 on the 1e6 scale, which is what
@@ -213,7 +214,7 @@ def _hazard_grids(
         t = fields.get(("t", mb))
         r = fields.get(("r", mb))
         w = fields.get(("w", mb))
-        if any(g is None for g in (t, r, w)):
+        if t is None or r is None or w is None:
             continue
         out[f"ice_{mb}"] = hazards.icing_grid(t - 273.15, r, w).astype(np.float32)
 
@@ -231,7 +232,7 @@ def _hazard_grids(
     r_lo = fields.get(("r", 850))
     t_hi = fields.get(("t", 500))
     r_hi = fields.get(("r", 500))
-    if all(g is not None for g in (t_lo, r_lo, t_hi, r_hi)):
+    if t_lo is not None and r_lo is not None and t_hi is not None and r_hi is not None:
         te_lo = hazards.theta_e_grid(t_lo - 273.15, r_lo, 850.0)
         te_hi = hazards.theta_e_grid(t_hi - 273.15, r_hi, 500.0)
         with np.errstate(invalid="ignore", divide="ignore"):
@@ -254,7 +255,12 @@ def _save_bundle(
         payload[f"{var}_{mb}"] = g
     for name, g in hz.items():
         payload[name] = g
-    np.savez_compressed(_npz_path(cycle_id, box, offset), **payload)
+    np.savez_compressed(
+        # mypy: **payload (arbitrary field-name keys) vs. the
+        # savez_compressed stub's keyword-only allow_pickle:bool; payload
+        # never contains that key.
+        _npz_path(cycle_id, box, offset), **payload,  # type: ignore[arg-type]
+    )
 
 
 def ingest_cycle(
@@ -301,10 +307,16 @@ def ingest_cycle(
             if lat is None:
                 lat, lon = la, lo
             merged.update(fields)
+        assert lat is not None and lon is not None, (
+            "lat/lon must be set by the first parsed GRIB family"
+        )
         hz = _hazard_grids(lat, merged)
         _save_bundle(req.cycle_id, box, off, lat, lon, merged, hz)
         field_stems |= {k[0] for k in merged} | {n.split("_")[0] for n in hz}
 
+    assert lat is not None and lon is not None, (
+        "ingest requires at least one forecast offset to publish a cycle"
+    )
     meta = CycleMeta(
         cycle_id=req.cycle_id, run_date=date, run_hour=hour, box=box,
         offsets=sorted(int(o) for o in req.offsets),

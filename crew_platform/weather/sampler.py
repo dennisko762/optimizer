@@ -8,7 +8,7 @@ python so the interpolation and antimeridian cases are unit-testable.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 EARTH_RADIUS_NM = 3440.065
 
@@ -109,7 +109,7 @@ def bilinear(
 
 
 def sample_at_fl(
-    field_by_level: dict[float, Sequence[Sequence[float]]],
+    field_by_level: Mapping[float, Sequence[Sequence[float]]],
     level_order: Sequence[float],
     lat: Sequence[float],
     lon: Sequence[float],

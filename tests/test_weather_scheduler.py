@@ -85,6 +85,33 @@ def test_set_active_box_replaces_previous(tmp_store):
     assert (req.leftlon, req.rightlon, req.toplat, req.bottomlat) == (0.0, 10.0, 50.0, 40.0)
 
 
+# --- current_box documented semantics (follow-up #3 from PR #16 review) ----
+
+
+def test_current_box_prefers_active_route_over_last_ingest(tmp_store):
+    """``current_box`` means "the box the UI should request for the ACTIVE
+    route right now" — it reports the active route's box whenever one is
+    set, even if the last completed ingest published a different box."""
+    with scheduler._status_lock:
+        scheduler._status["current_box"] = "1.00_2.00_3.00_4.00"
+    scheduler.set_active_box(25.0, 75.0, 65.0, 10.0)
+    st = scheduler.status_payload()
+    assert st["current_box"] == str(scheduler.active_box_key())
+    assert st["current_box"] != "1.00_2.00_3.00_4.00"
+
+
+def test_current_box_falls_back_to_last_ingest_with_no_active_route(tmp_store):
+    """With no active route (no saved plan), current_box falls back to the
+    last *completed* ingest's box — never the per-response "box actually
+    served" field, which each layer/route payload reports separately."""
+    assert scheduler._active_box is None
+    with scheduler._status_lock:
+        scheduler._status["current_box"] = "1.00_2.00_3.00_4.00"
+    st = scheduler.status_payload()
+    assert st["current_box"] == "1.00_2.00_3.00_4.00"
+    assert st["has_route"] is False
+
+
 # --- tick -> ingest -> publish -> SSE --------------------------------------
 
 

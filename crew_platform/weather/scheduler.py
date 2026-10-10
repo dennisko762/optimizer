@@ -314,6 +314,17 @@ def status_payload() -> dict[str, Any]:
             if current_box_usable
             else (latest.cycle_id if latest else None)
         ),
+        # DOCUMENTED SEMANTICS (follow-up #3 from PR #16 review):
+        # ``current_box`` means "the box the UI should be requesting for the
+        # ACTIVE route right now" — the active route's box when one is set
+        # (``active_box_key()``), falling back to the last *completed*
+        # ingest's box only when there is no active route (e.g. no saved
+        # plan). It intentionally does NOT mean "the box of the dataset
+        # actually served in this response" — that is reported separately,
+        # per-offset, as each layer/route response's own ``box`` field (see
+        # ``service.py``'s ``str(meta.box)``). A client that needs "what box
+        # backs THIS payload" must read that per-response field, not status's
+        # current_box.
         "current_box": str(active) if active is not None else s.get("current_box"),
         "in_progress_cycle": s["in_progress_cycle"],
         "in_progress_box": s.get("in_progress_box"),
