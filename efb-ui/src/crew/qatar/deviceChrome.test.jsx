@@ -301,9 +301,49 @@ describe("DeviceChromeProvider", () => {
     assert.equal(globalThis.__chrome.offline, false);
     assert.equal(calls, 1, "resuming re-fetches the screen once");
   });
-});
+  test("refresh with no registered handler is a declared failure", async () => {
+    await mountProvider();
+    let out;
+    await act(async () => {
+      out = await globalThis.__chrome.refresh();
+    });
+    assert.equal(out.ok, false);
+    assert.match(out.text, /nothing to refresh/i);
+  });
 
-/* ── C. components ────────────────────────────────────────────────── */
+  test("a throwing refresh handler is surfaced honestly, not swallowed", async () => {
+    await mountProvider();
+    act(() => {
+      globalThis.__chrome.registerRefresh(() => {
+        throw new Error("sim bridge down");
+      }, "Test");
+    });
+    let out;
+    await act(async () => {
+      out = await globalThis.__chrome.refresh();
+    });
+    assert.equal(out.ok, false);
+    assert.match(out.text, /sim bridge down/);
+  });
+
+  test("mounting without onNavigate leaves navigation entries null", async () => {
+    let renderer;
+    await act(async () => {
+      renderer = create(
+        React.createElement(
+          DeviceChromeProvider,
+          { screen: "home" },
+          React.createElement(Probe, null, null)
+        )
+      );
+    });
+    assert.equal(globalThis.__chrome.goHome, null);
+    assert.equal(globalThis.__chrome.goToSettings, null);
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+});
 
 import { DeviceStatusCluster, NoticeHost } from "./DeviceChrome.jsx";
 
@@ -312,18 +352,93 @@ function renderTree(renderer) {
   return node == null ? "null" : JSON.stringify(node);
 }
 
-async function mountCluster() {
+async function mountCluster({ onNavigate = () => {} } = {}) {
   let renderer;
   await act(async () => {
     renderer = create(
       React.createElement(
         DeviceChromeProvider,
-        { screen: "home", onNavigate: () => {}, appVersion: "v-test" },
-        React.createElement(DeviceStatusCluster)
+        { screen: "home", onNavigate, appVersion: "v-test" },
+        React.createElement(Probe, null, React.createElement(DeviceStatusCluster))
       )
     );
   });
   return renderer;
+}
+
+// Walk the host tree (renderer.toJSON()) for the first node matching pred.
+function findNode(node, pred) {
+  if (node == null) return null;
+  if (pred(node)) return node;
+  const kids = Array.isArray(node.children)
+    ? node.children
+    : node.children
+      ? [node.children]
+      : [];
+  for (const child of kids) {
+    const hit = findNode(child, pred);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function byLabel(node, label) {
+  return findNode(node, (n) => n.type && n.type !== "#text" && n.props && n.props["aria-label"] === label);
+}
+
+async function invoke(node, prop) {
+  await act(async () => {
+    node.props[prop]?.();
+  });
+}
+
+// The quick-settings item buttons carry no aria-label (the label lives in a
+// child span), so look a menu item up by the text inside its subtree.
+function subtreeText(node) {
+  if (node == null) return "";
+  if (typeof node === "string") return node;
+  const kids = Array.isArray(node.children)
+    ? node.children
+    : node.children
+      ? [node.children]
+      : [];
+  return kids.map(subtreeText).join(" ");
+}
+
+function findMenuItem(node, label) {
+  return findNode(
+    node,
+    (n) =>
+      n.props &&
+      (n.props.role === "menuitem" || n.props.role === "menuitemcheckbox") &&
+      subtreeText(n).includes(label)
+  );
+}
+
+// BrightnessControl and QuickSettings share the "qr-qs" wrapper class and both
+// carry an onKeyDown; disambiguate by the role of the popover they own.
+function findQrQsWrapper(node, role) {
+  let found = null;
+  (function walk(n) {
+    if (n == null || found) return;
+    if (
+      n.type === "div" &&
+      n.props &&
+      n.props.className === "qr-qs" &&
+      n.props.onKeyDown &&
+      findNode(n, (x) => x.props && x.props.role === role)
+    ) {
+      found = n;
+      return;
+    }
+    const kids = Array.isArray(n.children)
+      ? n.children
+      : n.children
+        ? [n.children]
+        : [];
+    kids.forEach(walk);
+  })(node);
+  return found;
 }
 
 describe("DeviceStatusCluster", () => {
@@ -351,6 +466,151 @@ describe("DeviceStatusCluster", () => {
     const renderer = await mountCluster();
     const html = renderTree(renderer);
     assert.ok(html.includes("OFFLINE"), "offline navigator ⇒ OFFLINE shown");
+  });
+
+  test("a real battery API renders a numeric level, not an em dash", async () => {
+    globalThis.navigator = { getBattery: () => Promise.resolve({ level: 0.6, charging: false }) };
+    globalThis.window = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    const renderer = await mountCluster();
+    const html = renderTree(renderer);
+    assert.ok(html.includes("60"), "60% battery shown from navigator.getBattery()");
+  });
+
+  test("HOME button navigates home", async () => {
+    const calls = [];
+    const renderer = await mountCluster({ onNavigate: (s) => calls.push(s) });
+    const home = byLabel(renderer.toJSON(), "Home");
+    assert.ok(home, "Home button found");
+    await invoke(home, "onClick");
+    assert.deepEqual(calls, ["home"]);
+  });
+
+  test("Refresh button re-fetches the registered screen handler", async () => {
+    let fetched = 0;
+    const renderer = await mountCluster();
+    act(() => {
+      globalThis.__chrome.registerRefresh(async () => {
+        fetched += 1;
+        return { ok: true, text: "done" };
+      }, "Test screen");
+    });
+    const refresh = byLabel(renderer.toJSON(), "Refresh this screen");
+    assert.ok(refresh, "Refresh button found");
+    await invoke(refresh, "onClick");
+    assert.equal(fetched, 1, "the screen handler was invoked exactly once");
+  });
+
+  test("brightness popover steps up and down and closes on Escape", async () => {
+    const renderer = await mountCluster();
+    let node = renderer.toJSON();
+    const brightBtn = findNode(
+      node,
+      (n) => n.props && typeof n.props["aria-label"] === "string" && n.props["aria-label"].startsWith("Brightness")
+    );
+    assert.ok(brightBtn, "brightness button found");
+    await invoke(brightBtn, "onClick");
+    node = renderer.toJSON();
+    assert.ok(
+      findNode(node, (n) => n.props && n.props["aria-label"] === "Increase brightness"),
+      "increase control present"
+    );
+    await invoke(
+      findNode(node, (n) => n.props && n.props["aria-label"] === "Increase brightness"),
+      "onClick"
+    );
+    node = renderer.toJSON();
+    await invoke(
+      findNode(node, (n) => n.props && n.props["aria-label"] === "Decrease brightness"),
+      "onClick"
+    );
+    node = renderer.toJSON();
+    const wrapper = findQrQsWrapper(node, "dialog");
+    assert.ok(wrapper, "brightness wrapper found");
+    await act(async () => {
+      wrapper.props.onKeyDown({ key: "Escape", stopPropagation() {} });
+    });
+    node = renderer.toJSON();
+    assert.equal(
+      findNode(node, (n) => n.type === "div" && n.props && n.props.role === "dialog"),
+      null,
+      "dialog closed after Escape"
+    );
+  });
+
+  test("quick-settings opens, toggles airplane mode and navigates to Settings", async () => {
+    const calls = [];
+    const renderer = await mountCluster({ onNavigate: (s) => calls.push(s) });
+    let node = renderer.toJSON();
+    const kebab = byLabel(node, "Quick settings");
+    assert.ok(kebab, "kebab found");
+    await invoke(kebab, "onClick");
+    node = renderer.toJSON();
+    assert.ok(
+      findNode(node, (n) => n.type === "div" && n.props && n.props.role === "menu"),
+      "menu opened"
+    );
+    // Item buttons carry no aria-label (the label lives in a child span), so
+    // look them up by the text inside their subtree.
+    const airplane = findMenuItem(node, "Airplane mode");
+    assert.ok(airplane, "airplane-mode toggle found");
+    await invoke(airplane, "onClick");
+    assert.equal(globalThis.__chrome.offline, true, "airplane mode ⇒ offline");
+    assert.equal(globalThis.__chrome.prefs.airplaneMode, true);
+    node = renderer.toJSON();
+    const settings = findMenuItem(node, "Settings");
+    assert.ok(settings, "Settings item found");
+    await invoke(settings, "onClick");
+    assert.deepEqual(calls, ["settings"]);
+    node = renderer.toJSON();
+    assert.equal(
+      findNode(node, (n) => n.type === "div" && n.props && n.props.role === "menu"),
+      null,
+      "menu closed after navigation"
+    );
+  });
+
+  test("quick-settings keyboard: ArrowDown/End/Escape drive focus and close", async () => {
+    const renderer = await mountCluster();
+    let node = renderer.toJSON();
+    const kebab = byLabel(node, "Quick settings");
+    await invoke(kebab, "onClick");
+    node = renderer.toJSON();
+    // Both BrightnessControl and QuickSettings use className="qr-qs"; the
+    // quick-settings wrapper is the one owning the open role="menu" popover.
+    const wrapper = findQrQsWrapper(node, "menu");
+    assert.ok(wrapper, "quick-settings wrapper found");
+    const key = (k) =>
+      act(async () => {
+        wrapper.props.onKeyDown({ key: k, preventDefault() {}, stopPropagation() {} });
+      });
+    await key("ArrowDown");
+    await key("End");
+    await key("Escape");
+    node = renderer.toJSON();
+    assert.equal(
+      findNode(node, (n) => n.type === "div" && n.props && n.props.role === "menu"),
+      null,
+      "Escape closed the menu"
+    );
+  });
+
+  test("outside click (backdrop mousedown) closes the quick-settings menu", async () => {
+    const renderer = await mountCluster();
+    let node = renderer.toJSON();
+    await invoke(byLabel(node, "Quick settings"), "onClick");
+    node = renderer.toJSON();
+    const backdrop = findNode(
+      node,
+      (n) => n.props && n.props["data-testid"] === "quicksettings-backdrop"
+    );
+    assert.ok(backdrop, "backdrop found");
+    await invoke(backdrop, "onMouseDown");
+    node = renderer.toJSON();
+    assert.equal(
+      findNode(node, (n) => n.type === "div" && n.props && n.props.role === "menu"),
+      null,
+      "menu closed on outside click"
+    );
   });
 });
 
@@ -394,6 +654,38 @@ describe("NoticeHost", () => {
     assert.ok(html.includes("Notifications off"), "suppression line shown");
     assert.ok(html.includes("suppressed"), "count stated");
     assert.ok(!html.includes("hidden alert"), "the alert itself is withheld");
+    delete globalThis.__chrome;
+  });
+
+  test("an active alert is rendered and dismissed via its button", async () => {
+    let renderer;
+    await act(async () => {
+      renderer = create(
+        React.createElement(
+          DeviceChromeProvider,
+          { screen: "home", onNavigate: () => {} },
+          React.createElement(Probe, null, React.createElement(NoticeHost))
+        )
+      );
+    });
+    act(() => {
+      globalThis.__chrome.notify({ kind: "error", text: "link lost" });
+    });
+    let node = renderer.toJSON();
+    const host = findNode(
+      node,
+      (n) => n.props && n.props["data-testid"] === "notice-host"
+    );
+    assert.ok(host, "notice host rendered");
+    const dismiss = byLabel(node, "Dismiss alert");
+    assert.ok(dismiss, "dismiss button present");
+    await invoke(dismiss, "onClick");
+    node = renderer.toJSON();
+    assert.equal(
+      findNode(node, (n) => n.props && n.props["data-testid"] === "notice-host"),
+      null,
+      "no notices left ⇒ host unmounted"
+    );
     delete globalThis.__chrome;
   });
 });
