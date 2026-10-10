@@ -655,21 +655,56 @@ export function mapEdtoView(flight, ofpData) {
         direction: "WESTBOUND",
         valid: "02 OCT 1130-1900Z",
         track: "VENIR 5330/20 51/30 48/40 45/50 RAFTN",
+        levels: ["FL350", "FL360", "FL370", "FL390", "FL400"],
+        decoded: decodeNatTrack("VENIR 5330/20 51/30 48/40 45/50 RAFTN"),
       },
       {
         name: "NAT B",
         direction: "WESTBOUND",
         valid: "02 OCT 1130-1900Z",
         track: "NEBIN 5230/20 50/40 47/50 BOBTU JAROM",
+        levels: ["FL350", "FL360", "FL370", "FL390", "FL400"],
+        decoded: decodeNatTrack("NEBIN 5230/20 50/40 47/50 BOBTU JAROM"),
       },
       {
         name: "NAT C",
         direction: "WESTBOUND",
         valid: "02 OCT 1130-1900Z",
         track: "TOBOR 5130/20 49/30 46/40 43/50 JEBBY",
+        levels: ["FL350", "FL360", "FL370", "FL390", "FL400"],
+        decoded: decodeNatTrack("TOBOR 5130/20 49/30 46/40 43/50 JEBBY"),
       },
     ],
   };
+}
+
+/**
+ * Decode a coded NAT track string into the reference's lat/long chain
+ * (qatar-05 renders four lines per track: name/direction, validity, the FL
+ * band and the decoded coordinate chain).
+ *
+ * Coded forms handled, per the NAT Track Message convention:
+ *   `5330/20` → 53°30'N 020°00'W   (4-digit latitude = DDMM)
+ *   `51/30`   → 51°00'N 030°00'W   (2-digit latitude = whole degrees)
+ * Named fixes (VENIR, RAFTN, …) pass through unchanged, so nothing is
+ * invented for tokens the decoder does not understand.
+ */
+export function decodeNatTrack(track) {
+  if (!track) return null;
+  const out = String(track)
+    .trim()
+    .split(/\s+/)
+    .map((tok) => {
+      const m = tok.match(/^(\d{2})(\d{2})?\/(\d{2})(\d{2})?$/);
+      if (!m) return tok;
+      const latDeg = m[1];
+      const latMin = m[2] || "00";
+      const lonDeg = m[3];
+      const lonMin = m[4] || "00";
+      return `${latDeg}°${latMin}'N ${lonDeg.padStart(3, "0")}°${lonMin}'W`;
+    })
+    .join(" ");
+  return out || null;
 }
 
 /* ── Crew Desk inbox messages ───────────────────────────────────────── */
@@ -711,9 +746,56 @@ export function mapNotification(n) {
   };
 }
 
+/**
+ * Seed-ops timestamp helper.
+ *
+ * The seeded inbox entries are a demo ops snapshot; every row carries the
+ * nominal UTC time that its own text refers to (e.g. the A-CDM row says
+ * "TOBT 15:45Z"), stamped onto the current UTC date. They stay flagged
+ * `static: true`, so the UI can mark them as seed data — but they no longer
+ * render as a bare em-dash (G12).
+ */
+function seedStamp(hhmmUtc, now) {
+  const base = now instanceof Date ? now : new Date();
+  const [h, m] = String(hhmmUtc).split(":").map((v) => Number(v));
+  return Math.floor(
+    Date.UTC(
+      base.getUTCFullYear(),
+      base.getUTCMonth(),
+      base.getUTCDate(),
+      h,
+      m,
+      0
+    ) / 1000
+  );
+}
+
+const MONTHS_SHORT = [
+  "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+  "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
+
+/**
+ * Inbox row timestamp in the qatar-02 reference format: `02 OCT · 17:34z`.
+ * Returns null for a missing/unparsable value — the caller decides what to
+ * render then (never a fabricated time).
+ */
+export function formatInboxStamp(timestamp) {
+  if (timestamp == null || timestamp === "") return null;
+  const ms = typeof timestamp === "number" ? timestamp * 1000 : Date.parse(timestamp);
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day} ${MONTHS_SHORT[d.getUTCMonth()]} · ${hh}:${mm}z`;
+}
+
 /** Static ops snapshot shown when no live notifications exist yet. */
-export function defaultInboxMessages(flight) {
+export function defaultInboxMessages(flight, options) {
   const fno = flight?.flight_number || "QR815";
+  const now = options?.now;
   const route = flight
     ? `${flight.departure_icao || "DOH"}/${flight.arrival_icao || "LHR"}`
     : "DOH/LHR";
@@ -725,7 +807,7 @@ export function defaultInboxMessages(flight) {
       title: `Dispatch message - ${fno}`,
       sender: "QR Operations",
       preview: `DISPATCH MSG FLIGHT ${fno} ${route} NO SIG WX / ALL SYSTEMS NOMINAL…`,
-      timestamp: null,
+      timestamp: seedStamp("15:12", now),
       body: `Dispatch release for ${fno} ${route}. No significant weather. All systems nominal.`,
       static: true,
     },
@@ -736,7 +818,7 @@ export function defaultInboxMessages(flight) {
       title: "A-CDM DOH - TOBT 15:45Z in 10 min",
       sender: "Hamad Airport A-CDM",
       preview: `TOBT REMINDER ${fno} ${route} CURRENT TOBT 15:45Z, EXPECT START UP…`,
-      timestamp: null,
+      timestamp: seedStamp("15:35", now),
       body: `TOBT reminder ${fno}. Current TOBT 15:45Z. Expect start-up within 10 minutes.`,
       static: true,
     },
@@ -747,7 +829,7 @@ export function defaultInboxMessages(flight) {
       title: `NOTAM briefing - ${fno} • 5 stations`,
       sender: "Qatar Airways Ops",
       preview: `NOTAM BRIEFING ${fno} ${route} 5 STATIONS AFFECTED. SEE DETAILS…`,
-      timestamp: null,
+      timestamp: seedStamp("15:05", now),
       body: `NOTAM briefing ${fno}: 5 stations affected. See details.`,
       static: true,
     },
@@ -758,7 +840,7 @@ export function defaultInboxMessages(flight) {
       title: `WX briefing - ${fno}`,
       sender: "Qatar Airways Meteo",
       preview: `WX BRIEFING ${fno} ${route} ENROUTE AND DESTINATION WEATHER…`,
-      timestamp: null,
+      timestamp: seedStamp("14:58", now),
       body: `Weather briefing ${fno}: enroute and destination weather attached.`,
       static: true,
     },
@@ -769,7 +851,7 @@ export function defaultInboxMessages(flight) {
       title: "A-CDM DOH - TOBT confirmed",
       sender: "Hamad Airport A-CDM",
       preview: `CDM STATUS ${fno} ${route} TOBT 15:45Z CONFIRMED, TSAT 15:30Z…`,
-      timestamp: null,
+      timestamp: seedStamp("15:45", now),
       body: `CDM status ${fno}: TOBT 15:45Z confirmed, TSAT 15:30Z.`,
       static: true,
     },
@@ -780,9 +862,242 @@ export function defaultInboxMessages(flight) {
       title: `Connected - ${fno}`,
       sender: "Qatar Airways Ops Network",
       preview: `CONNECTED TO QR OPS NETWORK ATC AND COMPANY MESSAGES AVAILABLE F…`,
-      timestamp: null,
+      timestamp: seedStamp("14:40", now),
       body: "Connected to QR Ops network. ATC and company messages available.",
       static: true,
     },
   ];
+}
+
+/* ── Overview / Times screens (qatar-03 tab set) ─────────────────────
+   Overview, Times, Flightplan and Briefing were four aliases of the same
+   Flightplan render (G2). These mappers back the two screens that had no
+   view model at all. Both are pure, and every cell is null when the source
+   has no value — nothing is modelled or invented here. */
+
+/**
+ * Overview cards: the at-a-glance status block of the qatar-03 tab set.
+ *
+ * @param {object} hero mapOfpHero result
+ * @param {object} ctx  { ofpData, simPlan, distanceNm, simConnected, waypointCount, live }
+ * @returns {{cards: Array<{id,label,value,sub}>, provenance: string, planned: boolean}}
+ */
+export function mapOverviewCards(hero, ctx) {
+  const c = ctx || {};
+  const h = hero || {};
+  const t = (v, unit) => (v == null ? null : `${v}${unit || ""}`);
+  const cards = [
+    {
+      id: "status",
+      label: "FLIGHT STATUS",
+      value: c.ofpData ? "OFP LINKED" : c.simPlan ? "SIM PLANNED" : "NO PLAN",
+      sub: c.ofpData
+        ? "SimBrief operational flightplan"
+        : c.simPlan
+          ? "derived from entered ICAOs — display only"
+          : "link or import a flightplan",
+    },
+    {
+      id: "route",
+      label: "ROUTE",
+      value: h.departure && h.arrival ? `${h.departure} → ${h.arrival}` : null,
+      sub: c.distanceNm != null ? `${c.distanceNm} NM planned` : "distance —",
+    },
+    {
+      id: "aircraft",
+      label: "AIRCRAFT",
+      value: h.aircraft_type || null,
+      sub: h.aircraft_reg ? `REG ${h.aircraft_reg}` : "registration —",
+    },
+    {
+      id: "alternate",
+      label: "ALTERNATE",
+      value: h.alternate || null,
+      sub: h.alternate ? "from flightplan" : "no alternate in plan",
+    },
+    {
+      id: "blockfuel",
+      label: "BLOCK FUEL",
+      value: t(h.fuel?.block, " t"),
+      sub: h.fuel?.trip != null ? `TRIP ${h.fuel.trip} t` : "trip —",
+    },
+    {
+      id: "payload",
+      label: "PAYLOAD",
+      value: h.pax != null ? `${h.pax} PAX` : null,
+      sub: h.cargo_t != null ? `CARGO ${h.cargo_t} t` : "cargo —",
+    },
+    {
+      id: "waypoints",
+      label: "WAYPOINTS",
+      value: c.waypointCount != null ? String(c.waypointCount) : null,
+      sub: "in the flightplan table",
+    },
+    {
+      id: "sim",
+      label: "SIMCONNECT",
+      value: c.simConnected ? "CONNECTED" : "DISCONNECTED",
+      sub: c.simConnected
+        ? c.live?.flightLevel != null
+          ? `live FL${c.live.flightLevel}`
+          : "live state warming up"
+        : "plan-only values",
+    },
+  ];
+  return {
+    cards,
+    planned: Boolean(c.ofpData || c.simPlan),
+    provenance: c.ofpData
+      ? "SimBrief OFP"
+      : c.simPlan
+        ? "sim-planned (no OFP)"
+        : "no flightplan source",
+  };
+}
+
+/**
+ * Times rows: planned vs. live timeline for the Times tab.
+ *
+ * `actual` is only ever filled from live SimConnect timing — when the sim is
+ * not connected every actual stays null and renders as "—".
+ */
+export function mapTimesRows(hero, ctx) {
+  const c = ctx || {};
+  const h = hero || {};
+  const connected = Boolean(c.simConnected);
+  const timing = c.timing || {};
+  const rows = [
+    {
+      id: "std",
+      label: "STD (OFF BLOCK)",
+      planned: h.std || null,
+      actual: null,
+      sub: "scheduled out",
+    },
+    {
+      id: "sta",
+      label: "STA (ON BLOCK)",
+      planned: h.sta || null,
+      actual: null,
+      sub: "scheduled in",
+    },
+    {
+      id: "eet",
+      label: "EET (BLOCK)",
+      planned: h.eet || null,
+      actual: connected ? timing.ete || null : null,
+      sub: connected ? "live ETE from SimConnect" : "live ETE unavailable",
+    },
+    {
+      id: "delta",
+      label: "ETE DELTA",
+      planned: null,
+      actual:
+        connected && timing.deltaMin != null
+          ? `${timing.deltaMin >= 0 ? "+" : ""}${timing.deltaMin} min`
+          : null,
+      sub: connected ? "vs planned block" : "requires SimConnect",
+    },
+    {
+      id: "taxi",
+      label: "TAXI FUEL TIME",
+      planned: h.fuel?.taxi != null ? `${h.fuel.taxi} t` : null,
+      actual: null,
+      sub: "planned taxi allowance",
+    },
+  ];
+  return { rows, connected };
+}
+
+/* ── Sim-planned route geometry (G5) ─────────────────────────────────
+   The Route/Weather map sources its fixes from the backend SimBrief route
+   endpoint. For a sim-planned flight that endpoint answers 404, and the map
+   showed "0 fixes" while the Flightplan table listed the full derived
+   waypoint set for the same flight — two screens disagreeing about one
+   flight. This mapper derives the SAME route the Flightplan table shows, in
+   the shape the weather-route endpoint returns, so `mapRouteForMap` can map
+   it unchanged. It is explicitly labelled as derived: a great-circle track
+   between the entered ICAOs, never presented as a filed route. */
+
+/** Great-circle interpolation between two lat/lon pairs (fraction 0..1). */
+export function interpolateGreatCircle(lat1, lon1, lat2, lon2, fraction) {
+  const toRad = Math.PI / 180;
+  const φ1 = lat1 * toRad;
+  const λ1 = lon1 * toRad;
+  const φ2 = lat2 * toRad;
+  const λ2 = lon2 * toRad;
+  const d =
+    2 *
+    Math.asin(
+      Math.min(
+        1,
+        Math.sqrt(
+          Math.sin((φ2 - φ1) / 2) ** 2 +
+            Math.cos(φ1) * Math.cos(φ2) * Math.sin((λ2 - λ1) / 2) ** 2
+        )
+      )
+    );
+  if (!Number.isFinite(d) || d === 0) return [lat1, lon1];
+  const a = Math.sin((1 - fraction) * d) / Math.sin(d);
+  const b = Math.sin(fraction * d) / Math.sin(d);
+  const x = a * Math.cos(φ1) * Math.cos(λ1) + b * Math.cos(φ2) * Math.cos(λ2);
+  const y = a * Math.cos(φ1) * Math.sin(λ1) + b * Math.cos(φ2) * Math.sin(λ2);
+  const z = a * Math.sin(φ1) + b * Math.sin(φ2);
+  return [
+    Math.atan2(z, Math.sqrt(x * x + y * y)) / toRad,
+    Math.atan2(y, x) / toRad,
+  ];
+}
+
+/**
+ * Derived sim-planned route in the `/api/crew/weather/route` payload shape.
+ * Returns null when the flight has no resolvable ICAO pair (then the map
+ * keeps its honest "no active flightplan" state).
+ */
+export function modelSimRoute(flight) {
+  const plan = modelSimPlan(flight);
+  if (!plan) return null;
+  const dep = String(flight.departure_icao).toUpperCase();
+  const arr = String(flight.arrival_icao).toUpperCase();
+  const depPos = icaoLatlon(dep);
+  const arrPos = icaoLatlon(arr);
+  if (!depPos || !arrPos) return null;
+  const rows = plan.rows || [];
+  const last = rows.length - 1;
+  const points = rows.map((r, i) => {
+    const fraction = last > 0 ? i / last : 0;
+    const [lat, lon] = interpolateGreatCircle(
+      depPos[0], depPos[1], arrPos[0], arrPos[1], fraction
+    );
+    const isDep = i === 0;
+    const isArr = i === last;
+    return {
+      index: i,
+      ident: r.ident || `WP${i - 1}`,
+      lat,
+      lon,
+      alt: isDep || isArr ? 0 : r.alt,
+      ete: r.ete || null,
+      stage: isDep ? "DEP" : isArr ? "ARR" : "ENR",
+      is_origin: isDep,
+      is_dest: isArr,
+      cum_nm:
+        plan.distance_nm != null
+          ? Math.round(plan.distance_nm * fraction)
+          : null,
+    };
+  });
+  return {
+    origin: dep,
+    destination: arr,
+    cruise_fl: 360,
+    callsign: flight.callsign || null,
+    aircraft: flight.aircraft_icao || null,
+    route: `${dep} DCT ${arr} (derived)`,
+    total_nm: plan.distance_nm,
+    point_count: points.length,
+    points,
+    unresolved: [],
+    derived: true,
+  };
 }

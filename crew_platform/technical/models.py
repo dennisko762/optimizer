@@ -53,8 +53,12 @@ class Aircraft(Base):
     type = Column(String, nullable=True)
     manufacturer = Column(String, nullable=True)
     operator = Column(String, nullable=True)
-    flight_hours = Column(Float, nullable=True)
-    flight_cycles = Column(Integer, nullable=True)
+    # A newly registered airframe starts at zero recorded hours/cycles —
+    # never NULL. The alembic baseline (7c3e1a9d5b02) already declares both
+    # columns NOT NULL with server_default '0'; the model now matches it so
+    # ORM-created rows (and the API response) agree with the schema.
+    flight_hours = Column(Float, nullable=False, default=0.0, server_default="0")
+    flight_cycles = Column(Integer, nullable=False, default=0, server_default="0")
     current_technical_status = Column(
         String, default="SERVICEABLE", server_default="SERVICEABLE"
     )

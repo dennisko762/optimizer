@@ -155,8 +155,16 @@ export function TechStatusCard({ onOpenTech }) {
 
 /**
  * The full TECH area panel.
+ *
+ * @param {object}  props
+ * @param {boolean} props.embedded When true the panel is rendered inside the
+ *   QR SmartOps maroon shell (Crew Desk → Tech Log). It then drops its own
+ *   "Tech" standalone heading and takes the shell's panel styling, as
+ *   DESIGN.md requires ("TechLog-Inhalte in dieselbe Maroon-Optik
+ *   integriert — nicht als separater Stil"). Standalone (false/undefined)
+ *   renders exactly as before.
  */
-export default function TechPanel() {
+export default function TechPanel({ embedded = false }) {
   const { apiBase, session } = useCrewPlatform();
 
   const [aircraft, setAircraft] = useState([]);
@@ -419,12 +427,18 @@ export default function TechPanel() {
   const openDefects = status?.defects || [];
 
   return (
-    <div className="tech-panel">
+    <div className={`tech-panel ${embedded ? "tech-panel--embedded" : ""}`}>
       {/* Aircraft picker */}
       <div className="tech-header">
         <div className="tech-header-flight">
-          <span className="tech-header-title">Tech</span>
-          <span className="tech-header-sub">Aircraft Technical Log</span>
+          {embedded ? (
+            <span className="qr-label">TECH LOG — AIRCRAFT TECHNICAL LOG</span>
+          ) : (
+            <>
+              <span className="tech-header-title">Tech</span>
+              <span className="tech-header-sub">Aircraft Technical Log</span>
+            </>
+          )}
         </div>
         <div className="tech-picker">
           <select

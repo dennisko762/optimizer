@@ -103,7 +103,12 @@ def create_engine() -> Engine:
     """
     path = get_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    engine = _sa_create_engine(build_database_url())
+    # check_same_thread=False: FastAPI/uvicorn serves requests from a thread
+    # pool, so sessions opened per request must be usable off the creating
+    # thread (the engine pool still serialises access).
+    engine = _sa_create_engine(
+        build_database_url(), connect_args={"check_same_thread": False}
+    )
     _configure_sqlite(engine)
     return engine
 

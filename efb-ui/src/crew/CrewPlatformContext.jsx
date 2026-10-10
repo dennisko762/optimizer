@@ -10,6 +10,9 @@ import { createContext, useState, useEffect, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
+/** localStorage key for the selected airline (survives a reload — G9). */
+export const PROVIDER_STORAGE_KEY = "qr.crew.provider.v1";
+
 export const CrewContext = createContext(null);
 
 /**
@@ -23,15 +26,18 @@ function applyTheme(themeVars) {
 }
 
 /**
- * Default (neutral) theme applied before provider selection.
+ * Default theme applied before provider selection.
+ *
+ * DESIGN.md: the product's own brand surface is the QR SmartOps maroon, so
+ * the provider gate opens in maroon rather than a neutral navy/slate (G9).
  */
 const DEFAULT_THEME = {
-  "--airline-primary": "#334155",
-  "--airline-accent": "#64748b",
-  "--airline-bg": "#0a0e14",
-  "--airline-surface": "#111820",
-  "--airline-text": "#e8ecf0",
-  "--airline-text-secondary": "#a0a0a0",
+  "--airline-primary": "#5c1a2e",
+  "--airline-accent": "#e8a838",
+  "--airline-bg": "#1a0a12",
+  "--airline-surface": "#2a1019",
+  "--airline-text": "#f6edf0",
+  "--airline-text-secondary": "#c9a3ad",
 };
 
 export function CrewPlatformProvider({ children }) {
@@ -42,11 +48,26 @@ export function CrewPlatformProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch providers on mount
+  // Fetch providers on mount. The previously chosen airline is restored in
+  // the same async callback: the crew session already survives a reload
+  // (crewAuth localStorage) but the airline choice did not, so every reload
+  // dropped back to the selector (G9).
   useEffect(() => {
     fetch(`${API_BASE}/api/crew/providers`)
       .then((r) => (r.ok ? r.json() : []))
-      .then(setProviders)
+      .then((list) => {
+        const providerList = Array.isArray(list) ? list : [];
+        setProviders(providerList);
+        let storedId = null;
+        try {
+          storedId = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
+        } catch {
+          storedId = null;
+        }
+        if (!storedId) return;
+        const provider = providerList.find((p) => p.id === storedId);
+        if (provider) setSelectedProvider(provider);
+      })
       .catch(() => setProviders([]));
   }, []);
 
@@ -105,6 +126,11 @@ export function CrewPlatformProvider({ children }) {
         setSelectedProvider(provider);
         setSession(null);
         setError(null);
+        try {
+          window.localStorage.setItem(PROVIDER_STORAGE_KEY, provider.id);
+        } catch {
+          /* storage unavailable (private mode) — selection still applies */
+        }
       }
     },
     [providers]

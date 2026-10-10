@@ -56,6 +56,26 @@ class ProviderProfile:
 # Built-in airline profiles
 # ---------------------------------------------------------------------------
 
+# The EFB's reference interface (DESIGN.md / the archived qatar-0x mockups)
+# is the Qatar Airways "QR SmartOps" shell, so Qatar must be a selectable
+# provider instead of an unlisted implicit default.
+QATAR_VIRTUAL = ProviderProfile(
+    id="qatarvirtual",
+    display_name="Qatar Airways Virtual",
+    short_code="QRV",
+    icao="QTR",
+    callsign_prefix="QTR",
+    theme=ThemeColors(
+        primary="#5c1a2e",
+        accent="#e8a838",
+        background="#1a0a12",
+        surface="#2a1019",
+        text="#f6edf0",
+        text_secondary="#c9a3ad",
+    ),
+    terminology={"crew_id": "Crew ID", "flight_deck": "Flight Deck"},
+)
+
 LH_VIRTUAL = ProviderProfile(
     id="lhvirtual",
     display_name="Lufthansa Virtual",
@@ -109,7 +129,7 @@ ETIHAD_VIRTUAL = ProviderProfile(
 # ---------------------------------------------------------------------------
 
 _PROVIDERS: dict[str, ProviderProfile] = {
-    p.id: p for p in [LH_VIRTUAL, EMIRATES_VIRTUAL, ETIHAD_VIRTUAL]
+    p.id: p for p in [QATAR_VIRTUAL, LH_VIRTUAL, EMIRATES_VIRTUAL, ETIHAD_VIRTUAL]
 }
 
 

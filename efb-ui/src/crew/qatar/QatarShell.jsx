@@ -55,7 +55,10 @@ import {
   mapRouteView,
   mapEdtoView,
   mapNotification,
+  mapOverviewCards,
+  mapTimesRows,
   defaultInboxMessages,
+  formatInboxStamp,
   projectMap,
   icaoLatlon,
 } from "./qatarMappers.js";
@@ -663,6 +666,9 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
   const [selectedMsg, setSelectedMsg] = useState(null);
+  // Last refresh outcome: { ok, at } or { ok: false, text }. Drives the
+  // explicit stale/error marker required by DESIGN.md (G11).
+  const [refreshState, setRefreshState] = useState(null);
 
   // M4: NOTAMs for the active flight's stations, folded into the inbox.
   const stations = useMemo(
@@ -680,14 +686,33 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
   );
 
   async function loadNotifications() {
-    if (!session?.session_id) return;
+    if (!session?.session_id) {
+      setRefreshState({
+        ok: false,
+        text: "No crew session — sign in before refreshing the inbox.",
+      });
+      return;
+    }
     try {
       const resp = await fetch(
         `${apiBase}/api/crew/notifications?session_id=${session.session_id}`
       );
-      if (resp.ok) setNotifications((await resp.json()).map(mapNotification));
-    } catch {
-      /* pass */
+      if (!resp.ok) {
+        // Honest failure: the list on screen is whatever was last loaded,
+        // and it is marked as such — never silently "refreshed" (G11).
+        setRefreshState({
+          ok: false,
+          text: `Refresh failed (HTTP ${resp.status}) — showing last loaded messages.`,
+        });
+        return;
+      }
+      setNotifications((await resp.json()).map(mapNotification));
+      setRefreshState({ ok: true, at: Date.now() });
+    } catch (e) {
+      setRefreshState({
+        ok: false,
+        text: `Refresh failed (${String(e?.message || e)}) — offline? Showing last loaded messages.`,
+      });
     }
   }
 
@@ -737,6 +762,14 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
       <div className="qr-crewdesk__body">
         <Sidebar active="crewdesk" onNavigate={onNavigate} pilotName={pilotName} />
 
+        {/* Tech Log is a full-width area, not a third inbox column: it
+            replaces the message list AND the detail panel (G7). */}
+        {tab === "techlog" ? (
+          <section className="qr-crewdesk__full">
+            <TechPanel embedded />
+          </section>
+        ) : (
+          <>
         <section className="qr-inbox">
           <div className="qr-inbox__head">
             <span className="qr-label">
@@ -751,6 +784,21 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
               </button>
             </span>
           </div>
+          {refreshState && (
+            <div
+              className={`qr-inbox__refresh ${refreshState.ok ? "" : "qr-inbox__refresh--err"}`}
+              data-testid="inbox-refresh-state"
+            >
+              <span className={`qr-badge ${refreshState.ok ? "badge--ok" : "badge--notam"}`}>
+                {refreshState.ok ? "REFRESHED" : "STALE"}
+              </span>
+              <span className="qr-inbox__refreshtext">
+                {refreshState.ok
+                  ? `Last refresh ${new Date(refreshState.at).toISOString().slice(11, 16)}z`
+                  : refreshState.text}
+              </span>
+            </div>
+          )}
           <div className="qr-inbox__notam">
             <span className={`qr-badge ${notamStatus.badgeClass}`}>NOTAM</span>
             <span className="qr-inbox__notamtext">{notamStatus.text}</span>
@@ -759,9 +807,7 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
             </button>
           </div>
           <div className="qr-inbox__list">
-            {tab === "techlog" ? (
-              <TechPanel embedded />
-            ) : tab === "trash" ? (
+            {tab === "trash" ? (
               <div className="qr-empty">Trash is empty.</div>
             ) : tab === "preflight" ? (
               <PreflightBriefing onOpenTech={() => setTab("techlog")} />
@@ -779,7 +825,7 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
                   <div className="qr-msg__top">
                     <span className={`qr-badge ${m.badge_class}`}>{m.kind}</span>
                     <span className="qr-msg__time mono">
-                      {m.timestamp ? new Date(m.timestamp * 1000).toISOString().slice(11, 16) + "z" : "—"}
+                      {formatInboxStamp(m.timestamp) || "NO TIMESTAMP"}
                     </span>
                   </div>
                   <div className="qr-msg__title">{m.title}</div>
@@ -796,7 +842,12 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
             <>
               <span className={`qr-badge ${selectedMsg.badge_class}`}>{selectedMsg.kind}</span>
               <h2>{selectedMsg.title}</h2>
-              <div className="qr-detail__meta">{selectedMsg.sender}</div>
+              <div className="qr-detail__meta">
+                {selectedMsg.sender}
+                {formatInboxStamp(selectedMsg.timestamp)
+                  ? ` · ${formatInboxStamp(selectedMsg.timestamp)}`
+                  : ""}
+              </div>
               <p className={selectedMsg.navigraph ? "qr-detail__notam mono" : ""}>
                 {selectedMsg.body}
               </p>
@@ -809,6 +860,8 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
             </div>
           )}
         </section>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1254,6 +1307,13 @@ export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLog
             <div><span className="qr-label">CREW ID</span><strong className="mono">{session?.crew_id || "—"}</strong></div>
             <div><span className="qr-label">RANK</span><strong>{session?.rank || "—"}</strong></div>
             <div><span className="qr-label">AIRLINE</span><strong>{selectedProvider?.display_name || "—"}</strong></div>
+            {/* The QR SmartOps interface is the Qatar reference shell for
+                every provider in this build. Stating that explicitly keeps
+                the AIRLINE row honest against the rendered branding (G9). */}
+            <div>
+              <span className="qr-label">INTERFACE</span>
+              <strong>QR SmartOps (Qatar Airways reference shell)</strong>
+            </div>
           </div>
 
           <h3>CONFIGURATION READINESS</h3>
@@ -1376,7 +1436,7 @@ export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLog
 
 /* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
 
-function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
+export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
   const { apiBase } = useCrewPlatform();
   const ofpData = ofp?.ofp_data || null;
   const hero = useMemo(() => mapOfpHero(flight, ofpData), [flight, ofpData]);
@@ -1432,6 +1492,13 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
   const [optimizeBusy, setOptimizeBusy] = useState(false);
   const [optimizeError, setOptimizeError] = useState(null);
   const lastOptimizeKeyRef = useRef(null);
+
+  // qatar-03 renders ATO/ACT as tappable chips the crew fills in. They are
+  // crew-entered actual times — never derived or back-filled from the plan.
+  const [actuals, setActuals] = useState({});
+  const setActual = useCallback((key, value) => {
+    setActuals((prev) => ({ ...prev, [key]: value.replace(/[^\d:]/g, "") }));
+  }, []);
 
   const runOptimize = useCallback(async () => {
     const body = buildLiveOptimizeRequest(telemetry, { flight, ofpData });
@@ -1517,7 +1584,7 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
         )}
       </div>
 
-      {(tab === "flightplan" || tab === "overview" || tab === "times" || tab === "briefing") && (
+      {tab === "flightplan" && (
         <>
           <div className="qr-hero">
             <div className="qr-hero__left">
@@ -1658,8 +1725,28 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
                     <td className="mono">{w.wind || "—"}</td>
                     <td className="mono">{w.burn != null ? `${Math.round(w.burn / 100) / 10} t` : "—"}</td>
                     <td className="mono qr-wpt__fuel">{w.planFuel != null ? `${w.planFuel} t` : "—"}</td>
-                    <td className="mono">—</td>
-                    <td className="mono">—</td>
+                    <td className="mono">
+                      <input
+                        className="qr-wpt__chip mono"
+                        value={actuals[`${i}:ato`] || ""}
+                        onChange={(e) => setActual(`${i}:ato`, e.target.value)}
+                        placeholder="--:--"
+                        aria-label={`ATO ${w.ident || `WP${i - 1}`}`}
+                        maxLength={5}
+                        inputMode="numeric"
+                      />
+                    </td>
+                    <td className="mono">
+                      <input
+                        className="qr-wpt__chip mono"
+                        value={actuals[`${i}:act`] || ""}
+                        onChange={(e) => setActual(`${i}:act`, e.target.value)}
+                        placeholder="--:--"
+                        aria-label={`ACT ${w.ident || `WP${i - 1}`}`}
+                        maxLength={5}
+                        inputMode="numeric"
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1672,8 +1759,46 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
         </>
       )}
 
+      {tab === "overview" && (
+        <OverviewScreen
+          hero={hero}
+          overview={mapOverviewCards(hero, {
+            ofpData,
+            simPlan,
+            distanceNm,
+            simConnected,
+            waypointCount: waypoints?.rows?.length ?? null,
+            live,
+          })}
+        />
+      )}
+
+      {tab === "times" && (
+        <TimesScreen
+          hero={hero}
+          times={mapTimesRows(hero, { simConnected, timing })}
+        />
+      )}
+
+      {tab === "briefing" && (
+        <div className="qr-briefscreen">
+          <div className="qr-screenhead">
+            <h2>BRIEFING</h2>
+            <span className="qr-screenhead__sub">
+              ATIS · METAR · TAF · SIGMET · SIGWX for {hero.departure || "—"} /{" "}
+              {hero.arrival || "—"}
+            </span>
+          </div>
+          <BriefingPanel apiBase={apiBase} station={hero.departure || null} />
+          {hero.arrival && hero.arrival !== hero.departure && (
+            <BriefingPanel apiBase={apiBase} station={hero.arrival} />
+          )}
+        </div>
+      )}
+
       {tab === "route" && (
         <MapWeatherPanel
+          variant="route"
           apiBase={apiBase}
           utc={utc}
           flight={flight}
@@ -1688,14 +1813,129 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
       )}
 
       {tab === "runways" && (
-        <div className="qr-notice qr-notice--center">
-          Runway data follows from the OFP (arrival/departure runways) — not linked to this booking yet.
-        </div>
+        <RunwaysScreen hero={hero} ofpData={ofpData} />
       )}
 
+      {/* The Weather tab is the same map instance contract as Route — the
+          M3 live props are identical (G3) — with the station briefing
+          instead of the route IA panels (G2: distinct screens). */}
       {tab === "weather" && (
-        <MapWeatherPanel apiBase={apiBase} utc={utc} flight={flight} />
+        <MapWeatherPanel
+          variant="weather"
+          apiBase={apiBase}
+          utc={utc}
+          flight={flight}
+          telemetry={telemetry}
+          simConnected={simConnected}
+          live={live}
+        />
       )}
+    </div>
+  );
+}
+
+/* ─── Overview (qatar-03 tab set) ──────────────────────────────────── */
+
+function HeroStrip({ hero, title, sub }) {
+  return (
+    <div className="qr-screenhead">
+      <h2>{title}</h2>
+      <span className="qr-screenhead__sub">
+        {hero?.flight_number || "—"} · {hero?.departure || "—"} → {hero?.arrival || "—"}
+        {sub ? ` · ${sub}` : ""}
+      </span>
+    </div>
+  );
+}
+
+export function OverviewScreen({ hero, overview }) {
+  const view = overview || { cards: [], provenance: "no flightplan source" };
+  return (
+    <div className="qr-overview">
+      <HeroStrip hero={hero} title="OVERVIEW" sub={view.provenance} />
+      <div className="qr-overview__grid">
+        {view.cards.map((c) => (
+          <div className="qr-overview__card" key={c.id}>
+            <span className="qr-label">{c.label}</span>
+            <Dash v={c.value} />
+            <span className="qr-overview__sub">{c.sub}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Times (qatar-03 tab set) ─────────────────────────────────────── */
+
+export function TimesScreen({ hero, times }) {
+  const view = times || { rows: [], connected: false };
+  return (
+    <div className="qr-times">
+      <HeroStrip
+        hero={hero}
+        title="TIMES"
+        sub={view.connected ? "live SimConnect timing" : "planned times only"}
+      />
+      <table className="qr-times__table">
+        <thead>
+          <tr>
+            <th>EVENT</th>
+            <th>PLANNED</th>
+            <th>ACTUAL / LIVE</th>
+            <th>SOURCE</th>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((r) => (
+            <tr key={r.id}>
+              <td>{r.label}</td>
+              <td className="mono">{r.planned || "—"}</td>
+              <td className="mono">{r.actual || "—"}</td>
+              <td className="qr-times__sub">{r.sub}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!view.connected && (
+        <div className="qr-notice">
+          Actual times require a connected SimConnect session — planned values
+          are shown as planned, never as actuals.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Runways ──────────────────────────────────────────────────────── */
+
+export function RunwaysScreen({ hero, ofpData }) {
+  const depRwy = ofpData?.origin?.plan_rwy || ofpData?.origin?.rwy || null;
+  const arrRwy = ofpData?.destination?.plan_rwy || ofpData?.destination?.rwy || null;
+  return (
+    <div className="qr-runways">
+      <HeroStrip hero={hero} title="RUNWAYS" sub={ofpData ? "from OFP" : "no OFP linked"} />
+      <div className="qr-overview__grid">
+        <div className="qr-overview__card">
+          <span className="qr-label">DEPARTURE {hero?.departure || "—"}</span>
+          <Dash v={depRwy} />
+          <span className="qr-overview__sub">
+            {depRwy ? "planned departure runway (OFP)" : "no runway in the flightplan source"}
+          </span>
+        </div>
+        <div className="qr-overview__card">
+          <span className="qr-label">ARRIVAL {hero?.arrival || "—"}</span>
+          <Dash v={arrRwy} />
+          <span className="qr-overview__sub">
+            {arrRwy ? "planned arrival runway (OFP)" : "no runway in the flightplan source"}
+          </span>
+        </div>
+      </div>
+      <div className="qr-notice">
+        Runway data comes from the linked OFP. Navigraph airport/runway data is
+        a licensed datatype and is reported as NOT CONFIGURED in Profile until a
+        subscription is present — no runway geometry is invented here.
+      </div>
     </div>
   );
 }
@@ -2065,40 +2305,39 @@ export function EdtoScreen({ flight, ofpData }) {
     () => mapRiskView(navigraph.risks, staticView),
     [navigraph.risks, staticView]
   );
+  const hero = view.hero || {};
+  const routeString =
+    view.route_string ||
+    (hero.departure && hero.arrival ? `${hero.departure} DCT ${hero.arrival}` : null);
   return (
     <div className="qr-edto">
-      <div className="qr-edto__map">
-        <svg viewBox="140 40 720 460" className="qr-route__svg" preserveAspectRatio="xMidYMid meet">
-          <rect x="90" y="10" width="820" height="540" className="qr-svg-bg" />
-          {(() => {
-            const dep = projectMap(25.2731, 51.1671);
-            const arr = projectMap(51.47, -0.4543);
-            return (
-              <>
-                <polyline
-                  points={[dep, ...Array.from({ length: 5 }, (_, i) => {
-                    const [la, lo] = [25.2731 + (51.47 - 25.2731) * ((i + 1) / 6), 51.1671 + (-0.4543 - 51.1671) * ((i + 1) / 6)];
-                    return projectMap(la, lo);
-                  }), arr].map((p) => `${p.x},${p.y}`).join(" ")}
-                  fill="none" className="qr-svg-route" strokeWidth="2"
-                />
-                <circle cx={dep.x} cy={dep.y} r="6" fill="none" className="qr-svg-end" strokeWidth="2" />
-                <circle cx={dep.x} cy={dep.y} r="2" className="qr-svg-end-fill" />
-                <text x={dep.x + 10} y={dep.y + 4} className="qr-wp-label mono">DOH</text>
-                <circle cx={arr.x} cy={arr.y} r="6" fill="none" className="qr-svg-end" strokeWidth="2" />
-                <circle cx={arr.x} cy={arr.y} r="2" className="qr-svg-end-fill" />
-                <text x={arr.x + 10} y={arr.y + 4} className="qr-wp-label mono">LHR</text>
-              </>
-            );
-          })()}
-        </svg>
-        <div className="qr-edto__routeinfo">
-          <div className="mono">{view.route_string || "DOH – LHR"}</div>
-          <div className="qr-edto__stats">
-            {view.distance_nm != null && <span>{view.distance_nm} NM</span>}
-            {view.block_label && <span>{view.block_label}</span>}
-            <span>LHR / LGW</span>
-          </div>
+      {/* qatar-05: a FULL-WIDTH route summary bar across the top, with the
+          risk content full width underneath — not a 50/50 split with a
+          near-empty map half (G10). */}
+      <div className="qr-edto__summary" data-testid="edto-summary">
+        <div className="qr-edto__summarycell">
+          <span className="qr-label">ROUTE</span>
+          <strong className="mono">
+            {hero.departure || "—"} – {hero.arrival || "—"}
+          </strong>
+        </div>
+        <div className="qr-edto__summarycell qr-edto__summarycell--wide">
+          <span className="qr-label">ROUTE STRING</span>
+          <strong className="mono">{routeString || "—"}</strong>
+        </div>
+        <div className="qr-edto__summarycell">
+          <span className="qr-label">DISTANCE</span>
+          <strong className="mono">
+            {view.distance_nm != null ? `${view.distance_nm} NM` : "—"}
+          </strong>
+        </div>
+        <div className="qr-edto__summarycell">
+          <span className="qr-label">FLIGHT TIME (PLAN)</span>
+          <strong className="mono">{hero.eet || "—"}</strong>
+        </div>
+        <div className="qr-edto__summarycell">
+          <span className="qr-label">ALTERNATE(S)</span>
+          <strong className="mono">{hero.alternate || "—"}</strong>
         </div>
       </div>
 
@@ -2132,7 +2371,9 @@ export function EdtoScreen({ flight, ofpData }) {
           </div>
           {view.operator_risks.map((r) => (
             <div key={r.country} className="qr-risk-row">
-              <div className="qr-risk-row__thumb" />
+              <div className="qr-risk-row__thumb" title="Country risk map — licensed imagery not configured">
+                <span className="qr-risk-row__thumblbl">NO MAP</span>
+              </div>
               <div className="qr-risk-row__body">
                 <strong>{r.country}</strong>
                 <span className="qr-risk-row__status">{r.level}</span>
@@ -2148,15 +2389,21 @@ export function EdtoScreen({ flight, ofpData }) {
           </div>
           {view.nat_tracks.map((t) => (
             <div key={t.name} className="qr-nat">
+              {/* qatar-05 renders four lines per track. */}
               <div className="qr-nat__head">
                 <strong>{t.name} {t.direction}</strong>
                 <span className="mono qr-nat__valid">{t.valid}</span>
                 {t.tmi && <span className="qr-badge badge--ok">TMI {t.tmi}</span>}
               </div>
               <div className="mono qr-nat__track">{t.track}</div>
-              {Array.isArray(t.levels) && t.levels.length > 0 && (
-                <div className="mono qr-nat__levels">{t.levels.join(" ")}</div>
-              )}
+              <div className="mono qr-nat__levels">
+                {Array.isArray(t.levels) && t.levels.length > 0
+                  ? t.levels.join(" ")
+                  : "FL band not published in this message"}
+              </div>
+              <div className="mono qr-nat__decoded">
+                {t.decoded || "coordinates not decodable from this message"}
+              </div>
             </div>
           ))}
         </section>
