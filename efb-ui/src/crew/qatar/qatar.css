@@ -1185,7 +1185,17 @@
   left: 12px;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
+  padding: 8px;
+  background: rgba(26, 10, 18, 0.78);
+  border: 1px solid var(--qr-border);
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+}
+.qr-shell .qr-route__layers .qr-wxbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .qr-shell .qr-route__terrain {
@@ -1908,4 +1918,112 @@
   .qr-shell .qr-livestrip {
     grid-template-columns: repeat(3, 1fr);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   M4 — Navigraph (subscription-gated charts / NOTAM / risk)
+   Palette-only additions: no new colors, no layout change to the
+   qatar-02/04/05 screens themselves.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Crew Desk: NOTAM status strip under the inbox header (qatar-02). */
+.qr-shell .qr-inbox__notam {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--qr-border-soft);
+  background: rgba(58, 24, 36, 0.35);
+}
+.qr-shell .qr-inbox__notamtext {
+  flex: 1;
+  font-size: 11px;
+  color: var(--qr-muted);
+  letter-spacing: 0.04em;
+}
+
+/* A critical NOTAM gets a left marker, no colour outside the palette. */
+.qr-shell .qr-msg--critical {
+  border-left: 3px solid var(--qr-danger);
+}
+
+/* NOTAM detail text keeps the ICAO line breaks. */
+.qr-shell .qr-detail__notam {
+  white-space: pre-line;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Route: AIRAC / airspace provenance line in the meta footer (qatar-04). */
+.qr-shell .qr-route__airac {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--qr-muted);
+}
+.qr-shell .qr-route__airacnote {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+/* EDTO/Risks: data-source label next to the section heading (qatar-05). */
+.qr-shell .qr-risk-section__src {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qr-muted);
+}
+.qr-shell .qr-nat__levels {
+  font-size: 11px;
+  color: var(--qr-gold);
+  letter-spacing: 0.06em;
+}
+
+/* Profile: subscription gate panel. */
+.qr-shell .qr-nav-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--qr-panel-2);
+  border: 1px solid var(--qr-border);
+  border-radius: 10px;
+}
+.qr-shell .qr-nav-gate__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--qr-border-soft);
+}
+.qr-shell .qr-nav-gate__device {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: rgba(26, 10, 18, 0.6);
+  border: 1px dashed var(--qr-gold);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.qr-shell .qr-nav-gate__device a {
+  color: var(--qr-gold);
+}
+.qr-shell .qr-nav-gate__code {
+  font-size: 22px;
+  letter-spacing: 0.2em;
+  color: var(--qr-gold);
+}
+.qr-shell .qr-nav-gate__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 6px;
+}
+.qr-shell .qr-nav-gate__meta {
+  font-size: 10px;
+  color: var(--qr-muted);
+  letter-spacing: 0.06em;
 }

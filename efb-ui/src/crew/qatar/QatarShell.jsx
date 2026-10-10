@@ -11,7 +11,8 @@
  * no hardcoded brand colors.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// eslint-disable-next-line no-unused-vars -- Vitest uses the classic JSX transform in component tests.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plane,
   PlaneTakeoff,
@@ -68,6 +69,20 @@ import {
   formatApiError,
 } from "./liveMappers.js";
 import { useSimTelemetry } from "./useSimTelemetry.js";
+import { useNavigraph } from "./useNavigraph.js";
+import {
+  annotateAirspace,
+  mapNavigraphEnvelope,
+  mapNavigraphStatus,
+  mapNotamMessages,
+  mapNotamSummary,
+  mapRiskView,
+  projectTilePixels,
+  routeTileGrid,
+  tileGridViewBox,
+  tileUrl,
+  NAVIGRAPH_TILE_LAYERS,
+} from "./navigraphMappers.js";
 import CrewLogin from "./CrewLogin.jsx";
 import MapWeatherPanel from "./MapWeatherPanel.jsx";
 import BriefingPanel from "./BriefingPanel.jsx";
@@ -511,6 +526,7 @@ export default function QatarShell({ onOpenOptimizer }) {
           onNavigate={setScreen}
           pilotName={crewSession.pilotId}
           defaultStation={lastPlan?.origin || flight?.departure_icao || null}
+          flight={flight}
         />
       )}
 
@@ -642,11 +658,26 @@ function CompanyNewsPanel() {
 
 /* ─── Crew Desk (qatar-02) ─────────────────────────────────────────── */
 
-function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
+export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, flight }) {
   const { session, apiBase } = useCrewPlatform();
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
   const [selectedMsg, setSelectedMsg] = useState(null);
+
+  // M4: NOTAMs for the active flight's stations, folded into the inbox.
+  const stations = useMemo(
+    () => [flight?.departure_icao, flight?.arrival_icao].filter(Boolean),
+    [flight?.departure_icao, flight?.arrival_icao]
+  );
+  const navigraph = useNavigraph({ apiBase, stations });
+  const notamMessages = useMemo(
+    () => mapNotamMessages(navigraph.notams),
+    [navigraph.notams]
+  );
+  const notamStatus = useMemo(
+    () => mapNotamSummary(navigraph.notams),
+    [navigraph.notams]
+  );
 
   async function loadNotifications() {
     if (!session?.session_id) return;
@@ -674,7 +705,14 @@ function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
     }
   }
 
-  const messages = notifications.length ? notifications : defaultInboxMessages(null);
+  // Live NOTAMs come first; the rest of the inbox is unchanged.
+  const baseMessages = notifications.length
+    ? notifications
+    : defaultInboxMessages(flight || null).filter(
+        // Drop the static NOTAM placeholder once real NOTAMs exist.
+        (m) => !(notamMessages.length && m.kind === "NOTAM")
+      );
+  const messages = [...notamMessages, ...baseMessages];
 
   const TABS = [
     { id: "inbox", label: "Inbox", icon: Mail },
@@ -713,6 +751,13 @@ function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
               </button>
             </span>
           </div>
+          <div className="qr-inbox__notam">
+            <span className={`qr-badge ${notamStatus.badgeClass}`}>NOTAM</span>
+            <span className="qr-inbox__notamtext">{notamStatus.text}</span>
+            <button className="qr-linkbtn" onClick={navigraph.refreshNotams}>
+              RELOAD
+            </button>
+          </div>
           <div className="qr-inbox__list">
             {tab === "techlog" ? (
               <TechPanel embedded />
@@ -726,7 +771,9 @@ function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
               messages.map((m) => (
                 <button
                   key={m.id}
-                  className={`qr-msg ${selectedMsg?.id === m.id ? "qr-msg--selected" : ""}`}
+                  className={`qr-msg ${selectedMsg?.id === m.id ? "qr-msg--selected" : ""} ${
+                    m.severity === "critical" ? "qr-msg--critical" : ""
+                  }`}
                   onClick={() => setSelectedMsg(m)}
                 >
                   <div className="qr-msg__top">
@@ -750,7 +797,9 @@ function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation }) {
               <span className={`qr-badge ${selectedMsg.badge_class}`}>{selectedMsg.kind}</span>
               <h2>{selectedMsg.title}</h2>
               <div className="qr-detail__meta">{selectedMsg.sender}</div>
-              <p>{selectedMsg.body}</p>
+              <p className={selectedMsg.navigraph ? "qr-detail__notam mono" : ""}>
+                {selectedMsg.body}
+              </p>
             </>
           ) : (
             <div className="qr-detail__empty">
@@ -1184,8 +1233,10 @@ function HomeScreen({
 
 /* ─── Profile (Setup functionality, Qatar look) ────────────────────── */
 
-function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) {
-  const { session, selectedProvider, configReady, logout } = useCrewPlatform();
+export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) {
+  const { session, selectedProvider, configReady, logout, apiBase } = useCrewPlatform();
+  const navigraph = useNavigraph({ apiBase });
+  const navView = useMemo(() => mapNavigraphStatus(navigraph.status), [navigraph.status]);
   return (
     <div className="qr-screen">
       <TopHeader
@@ -1225,6 +1276,82 @@ function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) 
               {configReady.ready ? "✓ All configured" : "⚠ Missing configuration"}
             </div>
           )}
+
+          <h3>NAVIGRAPH SUBSCRIPTION</h3>
+          <div className="qr-nav-gate">
+            <div className="qr-nav-gate__head">
+              <span className={navView.authenticated ? "qr-cfg-ok" : "qr-cfg-miss"}>
+                {navView.authenticated ? "✓" : "✗"}
+              </span>
+              <span>{navView.headline}</span>
+              {navigraph.busy && <span className="qr-chip">…</span>}
+            </div>
+            {navView.rows.map((row) => (
+              <div key={row.id} className="qr-configrow">
+                <span className={row.allowed ? "qr-cfg-ok" : "qr-cfg-miss"}>
+                  {row.allowed ? "✓" : "✗"}
+                </span>
+                <span>{row.label}</span>
+                <span className={`qr-badge ${row.badgeClass}`}>{row.statusLabel}</span>
+              </div>
+            ))}
+            {navView.rows.length === 0 && (
+              <div className="qr-notice">
+                Navigraph status unavailable — the crew platform did not answer.
+              </div>
+            )}
+            {navigraph.signIn?.status === "pending" && navigraph.signIn.user_code && (
+              <div className="qr-nav-gate__device">
+                <div>
+                  Open{" "}
+                  <a
+                    href={
+                      navigraph.signIn.verification_uri_complete ||
+                      navigraph.signIn.verification_uri
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {navigraph.signIn.verification_uri}
+                  </a>{" "}
+                  and enter this code:
+                </div>
+                <strong className="mono qr-nav-gate__code">
+                  {navigraph.signIn.user_code}
+                </strong>
+              </div>
+            )}
+            {navigraph.signIn && !["pending", "authorized"].includes(navigraph.signIn.status) && (
+              <div className="qr-notice">
+                Navigraph sign-in {navigraph.signIn.status}
+                {navigraph.signIn.detail ? ` — ${navigraph.signIn.detail}` : ""}
+              </div>
+            )}
+            <div className="qr-nav-gate__actions">
+              {!navView.authenticated && navView.configured && (
+                <button className="qr-goldbtn" onClick={navigraph.startSignIn}>
+                  <LogIn size={14} /> SIGN IN TO NAVIGRAPH
+                </button>
+              )}
+              {navView.authenticated && (
+                <button className="qr-ghostbtn" onClick={navigraph.signOut}>
+                  <LogOut size={14} /> NAVIGRAPH SIGN OUT
+                </button>
+              )}
+              <button className="qr-ghostbtn" onClick={navigraph.refreshAll}>
+                <RefreshCw size={14} /> REFRESH
+              </button>
+            </div>
+            {navView.rateLimit && (
+              <div className="qr-nav-gate__meta mono">
+                RATE {navView.rateLimit.rpm}/min
+                {navView.rateLimit.backing_off
+                  ? ` • backing off ${navView.rateLimit.backoff_seconds_remaining}s`
+                  : ""}
+                {navView.cache ? ` • CACHE ${navView.cache.entries} entries` : ""}
+              </div>
+            )}
+          </div>
 
           <div className="qr-profile__actions">
             <button className="qr-goldbtn" onClick={() => onOpenOptimizer?.(null)}>
@@ -1585,9 +1712,21 @@ function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, on
  * route behaviour is reachable from the UI regardless of this component.
  */
 export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
+  const { apiBase } = useCrewPlatform();
   const [wxPlaying, setWxPlaying] = useState(false);
   const [wxOffset, setWxOffset] = useState(0);
   const [altMode, setAltMode] = useState("AUTO");
+  // M4: Navigraph enroute chart underlay. OFF by default so the maroon
+  // qatar-04 look is unchanged until the crew asks for the chart.
+  const [chartLayer, setChartLayer] = useState(null);
+
+  const stations = useMemo(
+    () => [flight?.departure_icao, flight?.arrival_icao].filter(Boolean),
+    [flight?.departure_icao, flight?.arrival_icao]
+  );
+  const navigraph = useNavigraph({ apiBase, stations });
+  const tileGate = navigraph.status?.datatypes?.tile || null;
+  const tilesAvailable = Boolean(tileGate?.allowed);
 
   // WX TIME playback: Play steps the forecast offset forward one hour per
   // 1.5 s and wraps at +12 h; Pause freezes it. The offset is the hour the
@@ -1645,9 +1784,84 @@ export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simCo
     [livePos]
   );
 
+  // M4 chart-underlay geometry. Only computed when a Navigraph layer is on;
+  // the tile count is capped in routeTileGrid so one route view never fans
+  // out more than a dozen tile requests.
+  const chartGrid = useMemo(
+    () => (chartLayer ? routeTileGrid(view.points, { maxTiles: 12, maxZoom: 6 }) : null),
+    [chartLayer, view.points]
+  );
+  const chartVb = useMemo(() => tileGridViewBox(chartGrid), [chartGrid]);
+  const chartPts = useMemo(() => {
+    if (!chartGrid) return [];
+    return (view.points || [])
+      .map((p) => ({ ...p, xy: projectTilePixels(p.lat, p.lon, chartGrid) }))
+      .filter((p) => p.xy);
+  }, [chartGrid, view.points]);
+  const chartAcXy = useMemo(
+    () =>
+      chartGrid && livePos
+        ? projectTilePixels(livePos.latitude, livePos.longitude, chartGrid)
+        : null,
+    [chartGrid, livePos]
+  );
+  const navStatus = useMemo(
+    () => mapNavigraphEnvelope({ status: tileGate?.status || "not_configured" }),
+    [tileGate?.status]
+  );
+
+  // AIRAC provenance for the waypoint/airspace data (qatar-04 WP table).
+  const airspace = useMemo(
+    () => annotateAirspace(view.points, navigraph.navdata),
+    [view.points, navigraph.navdata]
+  );
+
   return (
     <div className="qr-route">
       <div className="qr-route__map">
+        {chartLayer && chartGrid ? (
+          <svg
+            viewBox={`0 0 ${chartVb.w} ${chartVb.h}`}
+            className="qr-route__svg"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {/* Navigraph enroute chart tiles (proxied + cached by the backend) */}
+            {chartGrid.tiles.map((t) => (
+              <image
+                key={`${t.z}/${t.x}/${t.y}`}
+                href={tileUrl(apiBase, chartLayer, t, true)}
+                x={(t.x - chartGrid.x0) * 256}
+                y={(t.y - chartGrid.y0) * 256}
+                width={256}
+                height={256}
+              />
+            ))}
+            {chartPts.length > 1 && (
+              <polyline
+                points={chartPts.map((p) => `${p.xy.x},${p.xy.y}`).join(" ")}
+                fill="none"
+                className="qr-svg-route"
+                strokeWidth="3"
+              />
+            )}
+            {chartPts.map((p, i) => (
+              <g key={`c${i}`}>
+                <circle cx={p.xy.x} cy={p.xy.y} r="3" className="qr-svg-wp" />
+                {p.ident && (
+                  <text x={p.xy.x + 6} y={p.xy.y - 6} className="qr-wp-label mono">
+                    {p.ident}
+                  </text>
+                )}
+              </g>
+            ))}
+            {chartAcXy && (
+              <path
+                d={`M ${chartAcXy.x} ${chartAcXy.y - 9} L ${chartAcXy.x + 8} ${chartAcXy.y + 8} L ${chartAcXy.x} ${chartAcXy.y + 3} L ${chartAcXy.x - 8} ${chartAcXy.y + 8} Z`}
+                className="qr-svg-aircraft"
+              />
+            )}
+          </svg>
+        ) : (
         <svg viewBox={`${view.vb.minx} ${view.vb.miny} ${view.vb.w} ${view.vb.h}`} className="qr-route__svg" preserveAspectRatio="xMidYMid meet">
           <defs>
             <radialGradient id="qr-mapglow" cx="50%" cy="40%" r="80%">
@@ -1719,9 +1933,33 @@ export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simCo
             </g>
           )}
         </svg>
+        )}
 
         <div className="qr-route__layers">
           <span className="qr-chip">Layers</span>
+          {NAVIGRAPH_TILE_LAYERS.map((l) => (
+            <button
+              key={l.id}
+              className={`qr-wxbtn ${chartLayer === l.id ? "qr-wxbtn--on" : ""}`}
+              disabled={!tilesAvailable}
+              title={
+                tilesAvailable
+                  ? `Navigraph ${l.label} chart`
+                  : tileGate?.detail || "Navigraph enroute tiles not available"
+              }
+              onClick={() => setChartLayer(chartLayer === l.id ? null : l.id)}
+            >
+              {l.label}
+            </button>
+          ))}
+          {!tilesAvailable && (
+            <span className={`qr-badge ${navStatus.badgeClass || "badge--notam"}`}>
+              {navStatus.label || "NOT SUBSCRIBED"}
+            </span>
+          )}
+          {chartLayer && !chartGrid && (
+            <span className="qr-chip">route unknown — no chart grid</span>
+          )}
         </div>
         <div className="qr-route__terrain">
           <Mountain size={18} />
@@ -1799,6 +2037,17 @@ export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simCo
           )}
         </div>
         <div className="qr-route__alt">LHR / LGW</div>
+        <div className="qr-route__airac">
+          <span className={`qr-badge ${airspace.badgeClass}`}>AIRSPACE</span>
+          <span className="mono">
+            {airspace.available
+              ? `AIRAC ${airspace.cycle || "—"}${airspace.entitled ? "" : " (outdated)"}`
+              : airspace.statusLabel}
+          </span>
+          {!airspace.available && airspace.detail && (
+            <span className="qr-route__airacnote">{airspace.detail}</span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1806,8 +2055,16 @@ export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simCo
 
 /* ─── EDTO + Risks (qatar-05) ──────────────────────────────────────── */
 
-function EdtoScreen({ flight, ofpData }) {
-  const view = useMemo(() => mapEdtoView(flight, ofpData), [flight, ofpData]);
+export function EdtoScreen({ flight, ofpData }) {
+  const { apiBase } = useCrewPlatform();
+  const staticView = useMemo(() => mapEdtoView(flight, ofpData), [flight, ofpData]);
+  const navigraph = useNavigraph({ apiBase });
+  // M4: live operational risk + NAT tracks replace the static snapshot when
+  // the feed is reachable; otherwise the snapshot stays, clearly labelled.
+  const view = useMemo(
+    () => mapRiskView(navigraph.risks, staticView),
+    [navigraph.risks, staticView]
+  );
   return (
     <div className="qr-edto">
       <div className="qr-edto__map">
@@ -1849,6 +2106,10 @@ function EdtoScreen({ flight, ofpData }) {
         <section className="qr-risk-section">
           <div className="qr-risk-section__head">
             <h3>OPERATIONAL RISK INFORMATION</h3>
+            <span className={`qr-badge ${view.badgeClass || "badge--dispatch"}`}>
+              {view.statusLabel || "STATIC"}
+            </span>
+            <span className="qr-risk-section__src">{view.sourceLabel}</span>
           </div>
           <div className="qr-risk-sub">
             <span className="qr-label">OFFICIAL RISK NOTICES</span>
@@ -1890,8 +2151,12 @@ function EdtoScreen({ flight, ofpData }) {
               <div className="qr-nat__head">
                 <strong>{t.name} {t.direction}</strong>
                 <span className="mono qr-nat__valid">{t.valid}</span>
+                {t.tmi && <span className="qr-badge badge--ok">TMI {t.tmi}</span>}
               </div>
               <div className="mono qr-nat__track">{t.track}</div>
+              {Array.isArray(t.levels) && t.levels.length > 0 && (
+                <div className="mono qr-nat__levels">{t.levels.join(" ")}</div>
+              )}
             </div>
           ))}
         </section>

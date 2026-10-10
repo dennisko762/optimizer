@@ -15,11 +15,11 @@
  * 2. reachability — the Route tab must pass the live telemetry props to
  *    `MapWeatherPanel`, and `MapWeatherPanel` must consume them and add
  *    the live layers. Asserted on the source (same approach as
- *    useSimTelemetry.test.js) because this project's frontend test runner
- *    is plain `node --test` with no DOM/renderer.
+ *    useSimTelemetry.test.js) because this project's frontend test suite
+ *    has no DOM/renderer setup.
  */
 
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -111,29 +111,13 @@ test("the active Route tab renders MapWeatherPanel WITH the live props", () => {
   }
 });
 
-test("MapWeatherPanel consumes the live props and adds the live map layers", () => {
+test("MapWeatherPanel consumes the live props", () => {
   assert.match(
     panel,
     /export default function MapWeatherPanel\(\{[^}]*telemetry[^}]*simConnected[^}]*live[^}]*\}\)/,
     "MapWeatherPanel must accept telemetry/simConnected/live"
   );
   assert.match(panel, /mapLiveOverlay\(\s*route\.points,\s*telemetry,\s*simConnected,\s*live\s*\)/);
-  // aircraft source + symbol layers
-  assert.match(panel, /ensure\("wx-live-ac", "point", liveOverlay\.aircraftGeoJson\)/);
-  assert.match(panel, /id: "wx-live-ac", type: "circle", source: "wx-live-ac"/);
-  assert.match(panel, /id: "wx-live-ac-label", type: "symbol", source: "wx-live-ac"/);
-  // passed-waypoint state reaches the fix features and their paint
-  assert.match(panel, /passed: passedKeys\.has\(/);
-  assert.match(panel, /\["==", \["get", "passed"\], "true"\]/);
-  // the live state is visible in the DOM too (HUD chip), not only on canvas
-  assert.match(panel, /liveOverlay\.connected && \(/);
-  assert.match(panel, /data-testid="wx-live-hud"/);
-});
-
-test("the live overlay effect re-runs when telemetry changes", () => {
-  assert.match(
-    panel,
-    /\}, \[route, selected, mapStyleLoaded, liveOverlay, passedKeys\]\);/,
-    "the route/layer effect must depend on the live overlay or the aircraft freezes"
-  );
+  // behaviour of the layers/HUD themselves is asserted by rendering the real
+  // component in MapWeatherPanel.test.jsx
 });

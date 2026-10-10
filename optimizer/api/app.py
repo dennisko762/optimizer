@@ -19,6 +19,7 @@ from crew_platform.routes import router as crew_router, callback_router as crew_
 from crew_platform.weather.routes import router as crew_weather_router
 from crew_platform.weather import scheduler as weather_scheduler
 from crew_platform.weather.briefing.routes import router as crew_briefing_router
+from crew_platform.navigraph.routes import router as navigraph_router
 
 
 def _load_dotenv() -> None:
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(crew_technical_router)
     app.include_router(crew_weather_router)
     app.include_router(crew_briefing_router)
+    app.include_router(navigraph_router)
     # Browser OAuth callback — must be registered before the catch-all
     # static-file mount below so the redirect URL is not swallowed.
     app.include_router(crew_callback_router)

@@ -10,6 +10,10 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+coverage
+lcov.info
+node-diff-coverage.html
+npm-audit.json
 *.local
 
 # Editor directories and files
