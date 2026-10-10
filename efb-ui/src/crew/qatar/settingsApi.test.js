@@ -63,7 +63,7 @@ test("Navigraph client id and secret have their own shapes", () => {
 });
 
 test("the portal hint points at Navigraph's developer site", () => {
-  assert.match(NAVIGRAPH_PORTAL_URL, /^https:\/\/developers\.navigraph\.com/);
+  assert.match(NAVIGRAPH_PORTAL_URL, /^https:\/\/developers\.navigraph\.com(\/|$)/);
 });
 
 /* ── mappers ─────────────────────────────────────────────────────────── */

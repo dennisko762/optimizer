@@ -334,7 +334,7 @@ class TestSettingsState:
     def test_field_catalog_carries_labels_and_hints_only(self, env_file):
         fields = {f["name"]: f for f in settings_state()["fields"]}
         assert fields["navigraph_client_id"]["env_key"] == "NAVIGRAPH_CLIENT_ID"
-        assert "developers.navigraph.com" in fields["navigraph_client_id"]["hint"]
+        assert "https://developers.navigraph.com" in fields["navigraph_client_id"]["hint"]
         assert fields["navigraph_client_secret"]["secret"] is True
         assert fields["simbrief_user"]["secret"] is False
         for field in fields.values():
