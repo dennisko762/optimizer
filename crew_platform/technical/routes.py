@@ -215,8 +215,10 @@ def create_aircraft(body: AircraftIn):
             type=body.type,
             manufacturer=body.manufacturer,
             operator=body.operator,
-            flight_hours=body.flight_hours,
-            flight_cycles=body.flight_cycles,
+            # A new airframe has zero recorded hours/cycles until a flight is
+            # logged — an omitted field must not persist NULL.
+            flight_hours=body.flight_hours if body.flight_hours is not None else 0.0,
+            flight_cycles=body.flight_cycles if body.flight_cycles is not None else 0,
             current_technical_status=body.current_technical_status
             or "SERVICEABLE",
         )

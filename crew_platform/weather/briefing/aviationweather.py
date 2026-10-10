@@ -190,7 +190,19 @@ def _sigmet_to_product(rec: dict[str, Any], *, intl: bool) -> Product:
 
 def fetch_sigmets(*, intl: bool = True, config: Optional[AwcConfig] = None) -> list[Product]:
     """All currently active SIGMETs (bounded: whole current product set only,
-    no polling loop, filtering to the route box is the caller's job)."""
+    no polling loop, filtering to the route box is the caller's job).
+
+    DECISION (follow-up from PR #16 review, kept a faithful 1:1 proxy):
+    aviationweather.gov's ``/api/data/isigmet`` sometimes republishes the same
+    advisory more than once (e.g. an amended SIGMET alongside its original).
+    This adapter intentionally does NOT dedupe — identical-looking records can
+    still be genuinely distinct advisories (same FIR/hazard reissued with a
+    different validity window or amendment), and silently dropping one is a
+    safety regression risk worse than an occasional visual duplicate. If
+    dedup is ever wanted, it belongs in the UI/mapper layer
+    (``efb-ui/src/crew/qatar/briefingMappers.js``) keyed on the full
+    (firId, hazard, validTimeFrom, validTimeTo, rawSigmet) tuple — never here.
+    """
     config = config or AwcConfig.from_env()
     path = "isigmet" if intl else "airsigmet"
     key = (path, config.base_url)

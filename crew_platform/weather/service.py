@@ -313,7 +313,7 @@ def hazard_layer(
     lat = bund["lat"]
     lon = bund["lon"]
     feats = polygonize.polygonize_grid(
-        grid, lat, lon, spec["thresholds"], epsilon=epsilon
+        grid.tolist(), lat.tolist(), lon.tolist(), spec["thresholds"], epsilon=epsilon
     )
     return {
         "type": "FeatureCollection",
@@ -423,6 +423,8 @@ def route_samples(
     for i, row in enumerate(rows):
         latw = row.get("lat")
         lonw = row.get("lon")
+        if latw is None or lonw is None:
+            continue
         try:
             la, lo = float(latw), float(lonw)
         except (TypeError, ValueError):
@@ -497,6 +499,7 @@ def route_samples(
             continue
         served_offsets.add(off_w)
         lat, lon = bund["lat"], bund["lon"]
+        lat_l, lon_l = lat.tolist(), lon.tolist()
 
         # per-level field maps for FL interpolation (this waypoint's bundle)
         def fmap(var: str) -> dict[float, list[list[float]]]:
@@ -512,9 +515,9 @@ def route_samples(
         t_by_lvl = fmap("t")
         lvl_order = sorted(u_by_lvl.keys())
 
-        u = sampler.sample_at_fl(u_by_lvl, lvl_order, lat, lon, la, lo, fl)
-        v = sampler.sample_at_fl(v_by_lvl, lvl_order, lat, lon, la, lo, fl)
-        t = sampler.sample_at_fl(t_by_lvl, lvl_order, lat, lon, la, lo, fl)
+        u = sampler.sample_at_fl(u_by_lvl, lvl_order, lat_l, lon_l, la, lo, fl)
+        v = sampler.sample_at_fl(v_by_lvl, lvl_order, lat_l, lon_l, la, lo, fl)
+        t = sampler.sample_at_fl(t_by_lvl, lvl_order, lat_l, lon_l, la, lo, fl)
 
         speed_ms = None
         dir_from = None
@@ -523,10 +526,12 @@ def route_samples(
         nxt = rows[i + 1] if i + 1 < len(rows) else None
         nxt_lat = nxt_lon = None
         if nxt is not None:
-            try:
-                nxt_lat, nxt_lon = float(nxt.get("lat")), float(nxt.get("lon"))
-            except (TypeError, ValueError):
-                nxt_lat = nxt_lon = None
+            nlat, nlon = nxt.get("lat"), nxt.get("lon")
+            if nlat is not None and nlon is not None:
+                try:
+                    nxt_lat, nxt_lon = float(nlat), float(nlon)
+                except (TypeError, ValueError):
+                    nxt_lat = nxt_lon = None
         if u is not None and v is not None:
             speed_ms = math.hypot(u, v)
             # meteorological wind direction (FROM), deg — u east, v north
@@ -542,13 +547,13 @@ def route_samples(
         turb_val = None
         turb_tier = None
         if ti_grid is not None:
-            ti = sampler.bilinear(ti_grid, lat, lon, la, lo)
+            ti = sampler.bilinear(ti_grid.tolist(), lat_l, lon_l, la, lo)
             turb_val = ti
             turb_tier = hazards.turbulence_tier(ti) if ti is not None else None
         ice_grid = _hazard_grid_at_fl(bund, "ice", (850, 700, 500), fl)
         ice_val = ice_tier = None
         if ice_grid is not None:
-            ice_val = sampler.bilinear(ice_grid, lat, lon, la, lo)
+            ice_val = sampler.bilinear(ice_grid.tolist(), lat_l, lon_l, la, lo)
             ice_tier = hazards.icing_tier(ice_val) if ice_val is not None else None
         jet_tier = hazards.jet_tier(speed_ms) if speed_ms is not None else None
 

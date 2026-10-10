@@ -11,6 +11,8 @@
  * single view model with a human label and never throw on a missing field.
  */
 
+import { decodeNatTrack } from "./qatarMappers.js";
+
 export const NAVIGRAPH_STATUS_LABEL = {
   ok: "LIVE",
   stale: "CACHED",
@@ -182,7 +184,9 @@ export function mapNotamMessages(resp) {
         title: `${n.icao || "ENR"} ${n.id || ""}`.trim(),
         sender: env.status === "stale" ? `Navigraph NOTAM • ${env.age}` : "Navigraph NOTAM",
         preview: text.slice(0, 90),
-        timestamp: null,
+        // Real NOTAM effective start time when the feed carries one; null
+        // (rendered as "NO TIMESTAMP") when it does not — never invented.
+        timestamp: n.start || n.effective_start || null,
         body: `${text}\n\nVALIDITY: ${validity}${n.q_code ? `\nQ-CODE: ${n.q_code}` : ""}`,
         navigraph: true,
       };
@@ -315,6 +319,8 @@ export function mapRiskView(resp, staticView) {
       valid: t.valid || "",
       track: t.track || "",
       levels: Array.isArray(t.levels) ? t.levels : [],
+      // qatar-05 shows the decoded lat/long chain as its own line.
+      decoded: decodeNatTrack(t.track || ""),
       tmi: t.tmi || null,
     })),
   };

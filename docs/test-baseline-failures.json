@@ -4,9 +4,6 @@
   "known_failing_ids": [
     "tests.test_gefs_ensemble",
     "tests.test_wind_reconciliation",
-    "tests.performance_engine.test_ci_mach_physics_invariants.CiMachPhysicsInvariantTests::test_docs_exist_and_mention_main_sources",
-    "tests.test_techlog_aircraft_api::test_create_aircraft",
-    "tests.test_techlog_aircraft_api::test_create_duplicate_409",
-    "tests.test_techlog_aircraft_api::test_data_survives_restart"
+    "tests.performance_engine.test_ci_mach_physics_invariants.CiMachPhysicsInvariantTests::test_docs_exist_and_mention_main_sources"
   ]
 }

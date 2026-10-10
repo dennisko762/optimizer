@@ -15,6 +15,13 @@ export default function AirlineSelector() {
         <Plane size={28} />
         <h1>Crew Operations Platform</h1>
         <p>Select your airline to continue</p>
+        {/* Honest statement of what the shell will look like: this build
+            renders the QR SmartOps (Qatar reference) interface for every
+            provider; only the theme tokens differ (G9). */}
+        <p className="airline-selector__note">
+          Interface: QR SmartOps (Qatar Airways reference shell) for all
+          airlines in this build.
+        </p>
       </div>
 
       <div className="airline-selector__grid">

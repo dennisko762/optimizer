@@ -44,14 +44,14 @@ STANDARD_LEVELS_HPA = (
 )
 
 
-def fl_altitude_ft(fl: int) -> float:
+def fl_altitude_ft(fl: float) -> float:
     """Geometric altitude in ft for a flight level (FL050 -> 5000 ft)."""
     if fl < 0:
         raise ValueError("flight level must be >= 0")
     return fl * 100.0
 
 
-def fl_to_pressure_hpa(fl: int) -> float:
+def fl_to_pressure_hpa(fl: float) -> float:
     """ISA pressure (hPa) at the geometric altitude of flight level ``fl``."""
     h_m = fl_altitude_ft(fl) / FT_PER_M
     if h_m <= H_TROPO_M:
@@ -75,7 +75,7 @@ def pressure_hpa_to_fl(p_hpa: float) -> float:
     return (h_m * FT_PER_M) / 100.0
 
 
-def fl_pressure_band(fl: int) -> tuple[float, float]:
+def fl_pressure_band(fl: float) -> tuple[float, float]:
     """(p_upper, p_lower): the standard GFS levels bracketing the FL.
 
     ``p_upper`` is at the higher altitude (smaller pressure), ``p_lower`` at
@@ -88,7 +88,7 @@ def fl_pressure_band(fl: int) -> tuple[float, float]:
     p = fl_to_pressure_hpa(fl)
     if p < STANDARD_LEVELS_HPA[-1] - 0.5:
         raise ValueError(
-            f"FL{fl:03d} (≈{p:.1f} hPa) is above the {STANDARD_LEVELS_HPA[-1]:.0f} hPa "
+            f"FL{int(fl):03d} (≈{p:.1f} hPa) is above the {STANDARD_LEVELS_HPA[-1]:.0f} hPa "
             "level stack"
         )
     if p > STANDARD_LEVELS_HPA[0]:
@@ -103,7 +103,7 @@ def fl_pressure_band(fl: int) -> tuple[float, float]:
     return (float(p_upper), float(p_lower))
 
 
-def fl_fraction(fl: int) -> float:
+def fl_fraction(fl: float) -> float:
     """Fraction of the FL's ISA pressure between its bracketing levels.
 
     ``t = 0`` at ``p_lower`` (the larger pressure) and ``t = 1`` at
