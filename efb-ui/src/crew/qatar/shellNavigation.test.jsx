@@ -255,10 +255,11 @@ test("opening a flight hands off to SmartOps and every tab is reachable", async 
     seen.add(body);
   }
 
-  // ← HOME returns to Home.
+  // The always-on chrome HOME control returns to Home.
   const back = renderer.root.findAll(
-    (n) => n.type === "button" && n.children.some((c) => typeof c === "string" && c.includes("HOME"))
+    (n) => n.type === "button" && n.props["aria-label"] === "Home"
   )[0];
+  assert.ok(back, "chrome Home button missing");
   await act(async () => back.props.onClick());
   assert.match(textOf(renderer), /COMPANY NEWS/);
 });

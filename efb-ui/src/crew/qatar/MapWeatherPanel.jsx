@@ -30,6 +30,7 @@ import {
 import { modelSimRoute } from "./qatarMappers.js";
 import { mapLiveOverlay } from "./liveMappers.js";
 import CrossSection from "./CrossSection.jsx";
+import { useDeviceChrome } from "./useDeviceChrome.jsx";
 
 // Legally usable dark basemap (vector style) with required attribution.
 const BASE_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -92,6 +93,9 @@ export default function MapWeatherPanel({
   const mapRef = useRef(null);
   const mapElRef = useRef(null);
   const fittedRef = useRef(false);
+  // Airplane mode (device chrome) suspends every weather network poll and the
+  // SSE auto-refresh; the map keeps its last drawn state, clearly stale.
+  const { offline } = useDeviceChrome();
 
   const [status, setStatus] = useState(null);
   const [route, setRoute] = useState(emptyRoute());
@@ -125,6 +129,7 @@ export default function MapWeatherPanel({
 
   // ── status ────────────────────────────────────────────────────────
   useEffect(() => {
+    if (offline) return undefined; // airplane mode — no weather status polls
     let live = true;
     (async () => {
       try {
@@ -139,7 +144,7 @@ export default function MapWeatherPanel({
         .catch(() => {});
     }, 15000);
     return () => { live = false; clearInterval(id); };
-  }, [apiBase]);
+  }, [apiBase, offline]);
 
   // ── route + samples (refetch on fl/offset/refreshTick) ─────────────
   // `derivedRoute` is the sim-planned fallback: the SAME route the
@@ -154,6 +159,11 @@ export default function MapWeatherPanel({
 
   useEffect(() => {
     let live = true;
+    if (offline) {
+      // Airplane mode: no route fetch. The map keeps its last drawn state —
+      // the status banner's STALE chip is what tells the crew it is stale.
+      return undefined;
+    }
     (async () => {
       try {
         const r = await fetch(
@@ -191,7 +201,7 @@ export default function MapWeatherPanel({
       }
     })();
     return () => { live = false; };
-  }, [apiBase, fl, offset, refreshTick, derivedRoute]);
+  }, [apiBase, fl, offset, refreshTick, derivedRoute, offline]);
 
   // ── hazard layers (enabled products, per fl/offset/refreshTick) ────
   useEffect(() => {
@@ -200,6 +210,16 @@ export default function MapWeatherPanel({
       const on = Object.keys(enabled).filter((k) => enabled[k]);
       if (!on.length) {
         setLayers({});
+        return;
+      }
+      // Airplane mode: suspend layer fetches; mark enabled products as
+      // suspended so the drawer/legend can stay honest about the gap.
+      if (offline) {
+        const next = {};
+        on.forEach((prod) => {
+          next[prod] = { features: [], unavailable: "airplane_mode", fl, offset, label: prod, unit: "", thresholds: [] };
+        });
+        setLayers(next);
         return;
       }
       const next = {};
@@ -219,7 +239,7 @@ export default function MapWeatherPanel({
       if (live) setLayers(next);
     })();
     return () => { live = false; };
-  }, [apiBase, fl, offset, enabled, refreshTick]);
+  }, [apiBase, fl, offset, enabled, refreshTick, offline]);
 
   // ── MapLibre init (once the container has a real size) ─────────────
   // A maplibre Map built on a 0×0 container computes its projection null and
@@ -550,6 +570,7 @@ export default function MapWeatherPanel({
 
   // ── SSE auto-refresh on new completed cycle ───────────────────────
   useEffect(() => {
+    if (offline) return undefined; // airplane mode — no SSE auto-refresh
     let es;
     try {
       es = new EventSource(`${apiBase}/api/crew/weather/events`);
@@ -557,7 +578,7 @@ export default function MapWeatherPanel({
       es.onerror = () => { /* will retry; EventSource auto-reconnects */ };
     } catch { /* EventSource unsupported */ }
     return () => { if (es) es.close(); };
-  }, [apiBase]);
+  }, [apiBase, offline]);
 
   // ── time playback ─────────────────────────────────────────────────
   useEffect(() => {

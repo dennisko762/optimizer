@@ -21,12 +21,7 @@ import {
   Trash2,
   ClipboardCheck,
   Cloud,
-  Sun,
   RefreshCw,
-  MoreVertical,
-  BatteryFull,
-  Signal,
-  Wifi,
   WifiOff,
   Mail,
   User,
@@ -89,6 +84,13 @@ import {
 } from "./navigraphMappers.js";
 import CrewLogin from "./CrewLogin.jsx";
 import SettingsPanel from "./SettingsPanel.jsx";
+import { brightnessStyle } from "./deviceChrome.js";
+import {
+  DeviceChromeProvider,
+  useDeviceChrome,
+  useScreenRefresh,
+} from "./useDeviceChrome.jsx";
+import { DeviceStatusCluster, NoticeHost, APP_VERSION } from "./DeviceChrome.jsx";
 import MapWeatherPanel from "./MapWeatherPanel.jsx";
 import BriefingPanel from "./BriefingPanel.jsx";
 import BoardingPanel from "../BoardingPanel.jsx";
@@ -96,6 +98,12 @@ import TechPanel from "../tech/TechPanel.jsx";
 
 /* ─── shared bits ──────────────────────────────────────────────────── */
 
+/**
+ * The shared top band. The device chrome (Home, brightness, refresh, quick
+ * settings and the real battery/network indicators) is rendered here rather
+ * than per screen, so every screen gets an identical, functional status
+ * cluster — that is acceptance criterion 1.
+ */
 function TopHeader({ center, right, utc }) {
   return (
     <header className="qr-topbar">
@@ -106,11 +114,7 @@ function TopHeader({ center, right, utc }) {
       <div className="qr-topbar__center">{center}</div>
       <div className="qr-topbar__right">
         {right}
-        <Signal size={15} />
-        <Wifi size={15} />
-        <span className="qr-batt mono">
-          97 <BatteryFull size={16} className="qr-batt__icon" />
-        </span>
+        <DeviceStatusCluster />
       </div>
     </header>
   );
@@ -368,14 +372,30 @@ const SMARTOPS_TABS = [
 ];
 
 export default function QatarShell({ onOpenOptimizer }) {
+  // Screen state lives above the device-chrome provider so the always-on
+  // Home button and the quick-settings "Settings" entry can navigate from
+  // anywhere in the shell.
+  const [screen, setScreen] = useState("home"); // home | crewdesk | profile | smartops | settings
+  return (
+    <DeviceChromeProvider screen={screen} onNavigate={setScreen} appVersion={APP_VERSION}>
+      <ShellBody
+        onOpenOptimizer={onOpenOptimizer}
+        screen={screen}
+        setScreen={setScreen}
+      />
+    </DeviceChromeProvider>
+  );
+}
+
+function ShellBody({ onOpenOptimizer, screen, setScreen }) {
   const { selectedProvider, apiBase } = useCrewPlatform();
   const utc = useUtcClock();
+  const { offline, prefs, notify } = useDeviceChrome();
 
   // M2b: VA crew login gate — persisted session (crewAuth) from a previous
   // app start, or a fresh login screen when absent.
   const [crewSession, setCrewSession] = useState(() => loadSession());
 
-  const [screen, setScreen] = useState("home"); // home | crewdesk | profile | smartops | settings
   const [tab, setTab] = useState("flightplan");
   const [flight, setFlight] = useState(null);
   const [ofp, setOfp] = useState(null);
@@ -396,7 +416,9 @@ export default function QatarShell({ onOpenOptimizer }) {
 
   // The last saved SimBrief plan is loaded at app start (spec 4/4): the
   // first flight the crew opens then shows that plan instead of re-fetching.
+  // Airplane mode suspends this outbound call like every other poll.
   useEffect(() => {
+    if (offline) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -416,12 +438,16 @@ export default function QatarShell({ onOpenOptimizer }) {
     return () => {
       cancelled = true;
     };
-  }, [apiBase]);
+  }, [apiBase, offline]);
 
   // OFP load: the live SimBrief OFP is fetched once per session (it is a
   // single "current flight" document). The first flight open triggers it;
   // later picks reuse the cached plan.
   async function loadLiveFlightplan() {
+    if (offline) {
+      setOfpError("Airplane mode is on — SimBrief fetch suspended.");
+      return;
+    }
     setOfpError(null);
     try {
       const resp = await fetch(`${apiBase}/api/simbrief/flightplan/live`);
@@ -439,6 +465,11 @@ export default function QatarShell({ onOpenOptimizer }) {
   }
 
   async function doImportNewPlan() {
+    if (offline) {
+      setOfpError("Airplane mode is on — SimBrief import suspended.");
+      notify({ kind: "warn", text: "Airplane mode is on — SimBrief import suspended." });
+      return;
+    }
     setImporting(true);
     try {
       const resp = await fetch(`${apiBase}/api/simbrief/flightplan/import`, { method: "POST" });
@@ -446,11 +477,15 @@ export default function QatarShell({ onOpenOptimizer }) {
       if (resp.ok) {
         setOfp({ ofp_data: body.flightplan });
         setOfpError(null);
+        notify({ kind: "info", text: "SimBrief plan imported." });
       } else {
-        setOfpError(body?.detail || `SimBrief import failed (HTTP ${resp.status}).`);
+        const detail = body?.detail || `SimBrief import failed (HTTP ${resp.status}).`;
+        setOfpError(detail);
+        notify({ kind: "error", text: detail });
       }
     } catch (e) {
       setOfpError(String(e.message || e));
+      notify({ kind: "error", text: `SimBrief import failed (${String(e.message || e)}).` });
     } finally {
       setImporting(false);
     }
@@ -461,6 +496,9 @@ export default function QatarShell({ onOpenOptimizer }) {
   // "Import New Plan"). On success the freshly saved plan becomes the
   // last-plan used when the next flight is opened.
   async function loadFlights() {
+    if (offline) {
+      return { ok: false, detail: "Airplane mode is on — SimBrief fetch suspended." };
+    }
     try {
       const resp = await fetch(`${apiBase}/api/simbrief/flightplan/import`, { method: "POST" });
       const body = await resp.json().catch(() => ({}));
@@ -500,14 +538,15 @@ export default function QatarShell({ onOpenOptimizer }) {
   // M2b: every app start lands on the crew login until a session exists.
   if (!crewSession) {
     return (
-      <div className="qr-shell">
+      <div className="qr-shell" style={brightnessStyle(prefs.brightness)}>
         <CrewLogin session={crewSession} onLoggedIn={setCrewSession} />
+        <div className="qr-dim" aria-hidden="true" data-testid="qr-dim" />
       </div>
     );
   }
 
   return (
-    <div className="qr-shell">
+    <div className="qr-shell" style={brightnessStyle(prefs.brightness)}>
       {screen === "home" && (
         <HomeScreen
           utc={utc}
@@ -538,7 +577,6 @@ export default function QatarShell({ onOpenOptimizer }) {
       {screen === "profile" && (
         <ProfileScreen
           utc={utc}
-          onBack={() => setScreen("home")}
           onOpenOptimizer={onOpenOptimizer}
           crewSession={crewSession}
           onLogout={handleLogout}
@@ -564,7 +602,6 @@ export default function QatarShell({ onOpenOptimizer }) {
           tab={tab}
           setTab={setTab}
           onImportNewPlan={doImportNewPlan}
-          onBack={() => setScreen("home")}
         />
       )}
 
@@ -574,6 +611,11 @@ export default function QatarShell({ onOpenOptimizer }) {
           onClose={() => setBoarding(false)}
         />
       )}
+
+      <NoticeHost />
+      {/* Perceived-brightness layer: driven by --qr-dim from the chrome
+          preferences, never interactive. */}
+      <div className="qr-dim" aria-hidden="true" data-testid="qr-dim" />
     </div>
   );
 }
@@ -681,6 +723,7 @@ function CompanyNewsPanel() {
 
 export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, flight }) {
   const { session, apiBase } = useCrewPlatform();
+  const { offline } = useDeviceChrome();
   const [tab, setTab] = useState("inbox");
   const [notifications, setNotifications] = useState([]);
   const [selectedMsg, setSelectedMsg] = useState(null);
@@ -693,7 +736,7 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
     () => [flight?.departure_icao, flight?.arrival_icao].filter(Boolean),
     [flight?.departure_icao, flight?.arrival_icao]
   );
-  const navigraph = useNavigraph({ apiBase, stations });
+  const navigraph = useNavigraph({ apiBase, stations, enabled: !offline });
   const notamMessages = useMemo(
     () => mapNotamMessages(navigraph.notams),
     [navigraph.notams]
@@ -704,12 +747,15 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
   );
 
   async function loadNotifications() {
+    if (offline) {
+      const text = "Airplane mode is on — inbox refresh suspended.";
+      setRefreshState({ ok: false, text });
+      return { ok: false, text };
+    }
     if (!session?.session_id) {
-      setRefreshState({
-        ok: false,
-        text: "No crew session — sign in before refreshing the inbox.",
-      });
-      return;
+      const text = "No crew session — sign in before refreshing the inbox.";
+      setRefreshState({ ok: false, text });
+      return { ok: false, text };
     }
     try {
       const resp = await fetch(
@@ -718,21 +764,29 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
       if (!resp.ok) {
         // Honest failure: the list on screen is whatever was last loaded,
         // and it is marked as such — never silently "refreshed" (G11).
-        setRefreshState({
-          ok: false,
-          text: `Refresh failed (HTTP ${resp.status}) — showing last loaded messages.`,
-        });
-        return;
+        const text = `Refresh failed (HTTP ${resp.status}) — showing last loaded messages.`;
+        setRefreshState({ ok: false, text });
+        return { ok: false, text };
       }
       setNotifications((await resp.json()).map(mapNotification));
       setRefreshState({ ok: true, at: Date.now() });
+      return { ok: true, text: "Crew Desk inbox re-fetched." };
     } catch (e) {
-      setRefreshState({
-        ok: false,
-        text: `Refresh failed (${String(e?.message || e)}) — offline? Showing last loaded messages.`,
-      });
+      const text = `Refresh failed (${String(e?.message || e)}) — offline? Showing last loaded messages.`;
+      setRefreshState({ ok: false, text });
+      return { ok: false, text };
     }
   }
+
+  // The chrome Refresh button re-fetches what this screen shows: the crew
+  // inbox plus the NOTAMs folded into it.
+  useScreenRefresh(async () => {
+    const [inbox] = await Promise.all([
+      loadNotifications(),
+      navigraph.refreshNotams ? navigraph.refreshNotams() : Promise.resolve(null),
+    ]);
+    return inbox;
+  }, "Crew Desk");
 
   async function clearAll() {
     if (!session?.session_id) return;
@@ -794,7 +848,7 @@ export function CrewDeskScreen({ utc, onNavigate, pilotName, defaultStation, fli
               INBOX — {messages.length} MESSAGES
             </span>
             <span style={{ display: "flex", gap: 4 }}>
-              <button className="qr-linkbtn" onClick={loadNotifications}>
+              <button className="qr-linkbtn" onClick={loadNotifications} disabled={offline}>
                 REFRESH
               </button>
               <button className="qr-linkbtn" onClick={clearAll}>
@@ -949,10 +1003,13 @@ function HomeScreen({
   const [checkinError, setCheckinError] = useState(null);
   const [loadBusy, setLoadBusy] = useState(false);
   const [loadMsg, setLoadMsg] = useState(null);
+  const { offline } = useDeviceChrome();
 
   // Roster: fetch when the screen mounts / platform session is up
   // (subscription-style — setState only in the async callback).
+  // Airplane mode suspends the outbound roster fetch like every other poll.
   useEffect(() => {
+    if (offline) return undefined;
     if (!platformSession?.authenticated) return;
     let cancelled = false;
     (async () => {
@@ -968,11 +1025,12 @@ function HomeScreen({
     return () => {
       cancelled = true;
     };
-  }, [platformSession?.authenticated, platformSession?.session_id, apiBase]);
+  }, [offline, platformSession?.authenticated, platformSession?.session_id, apiBase]);
 
   // Saved SimBrief flightplans: subscription-style fetch; REFRESH /
   // delete bump the tick to re-run it.
   useEffect(() => {
+    if (offline) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -988,7 +1046,7 @@ function HomeScreen({
     return () => {
       cancelled = true;
     };
-  }, [apiBase, plansTick]);
+  }, [offline, apiBase, plansTick]);
 
   async function deletePlan(key) {
     try {
@@ -1304,9 +1362,10 @@ function HomeScreen({
 
 /* ─── Profile (Setup functionality, Qatar look) ────────────────────── */
 
-export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) {
+export function ProfileScreen({ utc, onOpenOptimizer, crewSession, onLogout }) {
   const { session, selectedProvider, configReady, logout, apiBase } = useCrewPlatform();
-  const navigraph = useNavigraph({ apiBase });
+  const { offline } = useDeviceChrome();
+  const navigraph = useNavigraph({ apiBase, enabled: !offline });
   const navView = useMemo(() => mapNavigraphStatus(navigraph.status), [navigraph.status]);
   return (
     <div className="qr-screen">
@@ -1317,7 +1376,6 @@ export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLog
       />
       <div className="qr-screen__body">
         <div className="qr-hero-card">
-          <button className="qr-linkbtn" onClick={onBack}>← HOME</button>
           <h3>PILOT PROFILE</h3>
           <div className="qr-idgrid">
             <div><span className="qr-label">PILOT ID</span><strong className="mono">{crewSession?.pilotId || "—"}</strong></div>
@@ -1474,9 +1532,6 @@ export function SettingsScreen({ utc, onNavigate, pilotName, onSimbriefConfigure
         <Sidebar active="settings" onNavigate={onNavigate} pilotName={pilotName} />
         <section className="qr-crewdesk__full">
           <div className="qr-hero-card">
-            <button className="qr-linkbtn" onClick={() => onNavigate("home")}>
-              ← HOME
-            </button>
             <h3>EFB SETUP</h3>
             <SettingsPanel
               apiBase={apiBase}
@@ -1492,8 +1547,9 @@ export function SettingsScreen({ utc, onNavigate, pilotName, onSimbriefConfigure
 
 /* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
 
-export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
+export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan }) {
   const { apiBase } = useCrewPlatform();
+  const { offline } = useDeviceChrome();
   const ofpData = ofp?.ofp_data || null;
   const hero = useMemo(() => mapOfpHero(flight, ofpData), [flight, ofpData]);
   const simPlan = useMemo(
@@ -1528,6 +1584,7 @@ export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, set
     apiBase,
     destinationLat: destPos?.[0],
     destinationLon: destPos?.[1],
+    enabled: !offline,
   });
 
   const simStatus = useMemo(() => mapSimStatus(telemetry, { reachable }), [telemetry, reachable]);
@@ -1625,19 +1682,11 @@ export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, set
         right={
           <>
             <SimChip status={simStatus} />
-            <Sun size={16} className="qr-topbar__icon" />
-            <RefreshCw size={16} className="qr-topbar__icon" />
-            <MoreVertical size={16} className="qr-topbar__icon" />
           </>
         }
       />
       <div className="qr-smartops__brand">
         <QrLogo />
-        {onBack && (
-          <button className="qr-linkbtn qr-smartops__back" onClick={onBack}>
-            ← HOME
-          </button>
-        )}
       </div>
 
       {tab === "flightplan" && (
@@ -2009,6 +2058,7 @@ export function RunwaysScreen({ hero, ofpData }) {
  */
 export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simConnected, live, timing }) {
   const { apiBase } = useCrewPlatform();
+  const { offline } = useDeviceChrome();
   const [wxPlaying, setWxPlaying] = useState(false);
   const [wxOffset, setWxOffset] = useState(0);
   const [altMode, setAltMode] = useState("AUTO");
@@ -2020,7 +2070,7 @@ export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simCo
     () => [flight?.departure_icao, flight?.arrival_icao].filter(Boolean),
     [flight?.departure_icao, flight?.arrival_icao]
   );
-  const navigraph = useNavigraph({ apiBase, stations });
+  const navigraph = useNavigraph({ apiBase, stations, enabled: !offline });
   const tileGate = navigraph.status?.datatypes?.tile || null;
   const tilesAvailable = Boolean(tileGate?.allowed);
 
@@ -2353,8 +2403,9 @@ export function RouteScreen({ flight, ofpData, distanceNm, utc, telemetry, simCo
 
 export function EdtoScreen({ flight, ofpData }) {
   const { apiBase } = useCrewPlatform();
+  const { offline } = useDeviceChrome();
   const staticView = useMemo(() => mapEdtoView(flight, ofpData), [flight, ofpData]);
-  const navigraph = useNavigraph({ apiBase });
+  const navigraph = useNavigraph({ apiBase, enabled: !offline });
   // M4: live operational risk + NAT tracks replace the static snapshot when
   // the feed is reachable; otherwise the snapshot stays, clearly labelled.
   const view = useMemo(
