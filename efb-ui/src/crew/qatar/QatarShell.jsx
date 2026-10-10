@@ -602,7 +602,6 @@ function ShellBody({ onOpenOptimizer, screen, setScreen }) {
           tab={tab}
           setTab={setTab}
           onImportNewPlan={doImportNewPlan}
-          onBack={() => setScreen("home")}
         />
       )}
 
@@ -1363,7 +1362,7 @@ function HomeScreen({
 
 /* ─── Profile (Setup functionality, Qatar look) ────────────────────── */
 
-export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLogout }) {
+export function ProfileScreen({ utc, onOpenOptimizer, crewSession, onLogout }) {
   const { session, selectedProvider, configReady, logout, apiBase } = useCrewPlatform();
   const { offline } = useDeviceChrome();
   const navigraph = useNavigraph({ apiBase, enabled: !offline });
@@ -1377,7 +1376,6 @@ export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLog
       />
       <div className="qr-screen__body">
         <div className="qr-hero-card">
-          <button className="qr-linkbtn" onClick={onBack}>← HOME</button>
           <h3>PILOT PROFILE</h3>
           <div className="qr-idgrid">
             <div><span className="qr-label">PILOT ID</span><strong className="mono">{crewSession?.pilotId || "—"}</strong></div>
@@ -1534,9 +1532,6 @@ export function SettingsScreen({ utc, onNavigate, pilotName, onSimbriefConfigure
         <Sidebar active="settings" onNavigate={onNavigate} pilotName={pilotName} />
         <section className="qr-crewdesk__full">
           <div className="qr-hero-card">
-            <button className="qr-linkbtn" onClick={() => onNavigate("home")}>
-              ← HOME
-            </button>
             <h3>EFB SETUP</h3>
             <SettingsPanel
               apiBase={apiBase}
@@ -1552,7 +1547,7 @@ export function SettingsScreen({ utc, onNavigate, pilotName, onSimbriefConfigure
 
 /* ─── QR SmartOps (flightplan / route / edto) ──────────────────────── */
 
-export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan, onBack }) {
+export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, setTab, onImportNewPlan }) {
   const { apiBase } = useCrewPlatform();
   const { offline } = useDeviceChrome();
   const ofpData = ofp?.ofp_data || null;
@@ -1692,11 +1687,6 @@ export function SmartOpsScreen({ utc, flight, ofp, ofpError, importing, tab, set
       />
       <div className="qr-smartops__brand">
         <QrLogo />
-        {onBack && (
-          <button className="qr-linkbtn qr-smartops__back" onClick={onBack}>
-            ← HOME
-          </button>
-        )}
       </div>
 
       {tab === "flightplan" && (
