@@ -2536,3 +2536,278 @@
     flex: 1 1 160px;
   }
 }
+
+/* ─── Device chrome (Surface-class status cluster) ───────────────────
+   The always-on top-bar cluster: HOME, brightness, refresh, quick
+   settings, real signal/Wi-Fi/battery indicators. Every control keeps
+   the 44 px touch minimum (G8) and works with mouse and touch. */
+
+.qr-shell .qr-chrome {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/* Status-cluster buttons: square 44 px hit boxes, muted until hover,
+   pressed state while their popover is open. */
+.qr-shell .qr-chromebtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--qr-muted);
+  cursor: pointer;
+}
+.qr-shell .qr-chromebtn:hover {
+  color: var(--qr-text);
+  background: rgba(142, 42, 74, 0.28);
+}
+.qr-shell .qr-chromebtn--on {
+  color: var(--qr-text);
+  background: rgba(142, 42, 74, 0.45);
+}
+.qr-shell .qr-chromebtn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+/* HOME reads as a labelled control, not an icon. */
+.qr-shell .qr-chromebtn--home {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0 12px;
+}
+.qr-shell .qr-chromebtn__text {
+  line-height: 1;
+}
+
+/* Do Not Disturb badge next to the cluster: alerts are being withheld. */
+.qr-shell .qr-chrome__dnd {
+  display: inline-flex;
+  align-items: center;
+  color: var(--qr-gold);
+  padding: 0 4px;
+}
+
+/* Signal + Wi-Fi + link label, or the explicit UNKNOWN state. */
+.qr-shell .qr-netind {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  min-height: 44px;
+  color: var(--qr-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.qr-shell .qr-netind__label {
+  min-width: 0;
+}
+.qr-shell .qr-netind--online {
+  color: var(--qr-ok);
+}
+.qr-shell .qr-netind--offline,
+.qr-shell .qr-netind--airplane {
+  color: var(--qr-gold);
+}
+.qr-shell .qr-netind--unknown {
+  color: var(--qr-muted);
+}
+
+/* Unknown battery: the warning glyph is the state, the em dash the value. */
+.qr-shell .qr-batt--unknown {
+  color: var(--qr-muted);
+}
+.qr-shell .qr-batt--unknown .qr-batt__icon {
+  color: var(--qr-gold);
+}
+
+/* ── quick-settings / brightness popovers ─────────────────────────── */
+
+/* The popover wrapper positions relative to its trigger button. */
+.qr-shell .qr-qs {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Full-viewport click-catcher (outside click) — never interactive
+   itself, just swallows the press. */
+.qr-shell .qr-qs__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: transparent;
+}
+
+.qr-shell .qr-qs__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1101;
+  min-width: 260px;
+  background: var(--qr-panel-2);
+  border: 1px solid var(--qr-border);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  padding: 8px;
+}
+
+.qr-shell .qr-qs__poptitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--qr-muted);
+}
+
+.qr-shell .qr-qs__brightrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 8px;
+}
+.qr-shell .qr-qs__slider {
+  flex: 1 1 auto;
+  min-width: 120px;
+  accent-color: var(--qr-gold);
+  height: 44px; /* the whole row is the touch target */
+}
+.qr-shell .qr-qs__note {
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--qr-muted);
+  border-top: 1px solid var(--qr-border-soft);
+}
+
+.qr-shell .qr-qs__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--qr-text);
+  cursor: pointer;
+  text-align: left;
+}
+.qr-shell .qr-qs__item:hover:not(:disabled) {
+  background: rgba(142, 42, 74, 0.3);
+}
+.qr-shell .qr-qs__item:focus {
+  outline: none;
+  border-color: var(--qr-gold);
+}
+.qr-shell .qr-qs__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.qr-shell .qr-qs__item--on {
+  background: rgba(142, 42, 74, 0.25);
+  border-color: var(--qr-accent);
+}
+.qr-shell .qr-qs__itemtext {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.qr-shell .qr-qs__itemlabel {
+  font-size: 13px;
+  font-weight: 600;
+}
+.qr-shell .qr-qs__itemsub {
+  font-size: 10px;
+  color: var(--qr-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qr-shell .qr-qs__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--qr-muted);
+  flex: 0 0 auto;
+}
+.qr-shell .qr-qs__item--on .qr-qs__state {
+  color: var(--qr-ok);
+}
+
+/* ── in-app alerts (corner stack, suppressible by DND) ────────────── */
+
+.qr-shell .qr-notices {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 32px));
+}
+.qr-shell .qr-notice-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--qr-panel-2);
+  border: 1px solid var(--qr-border);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--qr-text);
+}
+.qr-shell .qr-notice-card--error {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.qr-shell .qr-notice-card--warn {
+  border-color: rgba(232, 168, 56, 0.5);
+}
+.qr-shell .qr-notice-card__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.qr-shell .qr-notice-card__x {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+}
+.qr-shell .qr-notice-card--muted {
+  color: var(--qr-muted);
+}
+
+/* ── perceived-brightness dim layer ─────────────────────────────────
+   Driven by --qr-dim (set inline on .qr-shell from the brightness
+   preference). Purely visual: pointer-events none, above content, so
+   it dims what the crew sees without stealing a single tap. */
+.qr-shell .qr-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  background: #000;
+  opacity: var(--qr-dim, 0);
+  pointer-events: none;
+  transition: opacity 120ms linear;
+}
