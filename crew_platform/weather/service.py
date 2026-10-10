@@ -114,13 +114,21 @@ def _box_rank(meta_box: BoxKey, box: BoxKey) -> tuple[int, float, float]:
 
 
 def visible_metas(box: Optional[BoxKey] = None) -> list:
-    """Published datasets usable for ``box``, newest cycle first.
+    """Published datasets usable for ``box``, coverage-aware newest-first.
 
     ``box is None`` (no active route) keeps the store's own newest-first
-    ordering. Otherwise datasets are ranked by region fitness for the active
-    route box (see :func:`_box_rank`) *within* each cycle, so a new box
-    published inside the same cycle is served instead of whichever region
-    happened to be listed first.
+    ordering. Otherwise datasets are ranked so that, among cycles that have
+    *some* region fully covering the route (:func:`_box_rank` tier 0/1 —
+    exact or covering), the newest such cycle sorts first; a cycle whose
+    only datasets for this box are disjoint/partial (tier 2) is pushed
+    behind every covering cycle, even if it is more recent. Only when NO
+    published cycle covers the route at all do the (still partial/disjoint)
+    candidates fall back to newest-first, so callers that pick
+    ``visible_metas(box)[0]`` degrade honestly instead of silently pinning a
+    disjoint box from the latest cycle while an older covering cycle sits
+    unused. Region fitness *within* a cycle is still broken by
+    :func:`_box_rank`, so a new box published inside the same cycle is
+    served instead of whichever region happened to be listed first.
     """
     metas = STORE.list_published()
     if box is None:
@@ -128,9 +136,18 @@ def visible_metas(box: Optional[BoxKey] = None) -> list:
     order: dict[str, int] = {}
     for m in metas:
         order.setdefault(m.cycle_id, len(order))
+    best_tier: dict[str, int] = {}
+    for m in metas:
+        tier = _box_rank(m.box, box)[0]
+        prev = best_tier.get(m.cycle_id)
+        if prev is None or tier < prev:
+            best_tier[m.cycle_id] = tier
     return sorted(
         metas,
-        key=lambda m: (order.get(m.cycle_id, len(order)),) + _box_rank(m.box, box),
+        key=lambda m: (
+            best_tier[m.cycle_id],
+            order.get(m.cycle_id, len(order)),
+        ) + _box_rank(m.box, box),
     )
 
 
