@@ -214,6 +214,51 @@ def test_ingest_malformed_cycle_id_returns_422(client):
     assert "not-a-cycle" in body["detail"]
 
 
+# ── SimBrief fetch failure must never surface as a 500 (QA finding) ────
+
+def test_status_simbrief_fetch_failure_degrades_not_500(monkeypatch, client):
+    """SIMBRIEF_USER set + no saved plan + SimBrief fetch raises
+    FlightplanError (bad handle, outage, rate limit, network error) must
+    degrade /status to has_plan: False, never an uncaught 500."""
+    from optimizer.api import flightplan_service as fps
+
+    listing = fps.list_plans()
+    fps.delete_plan(listing["last_plan"])
+    monkeypatch.setenv("SIMBRIEF_USER", "qa_test_pilot")
+
+    def _boom(**kwargs):
+        raise fps.FlightplanError(
+            "SimBrief fetch failed: SimBrief request failed with HTTP 400: "
+            '{"fetch":{"status":"Error: Unknown UserID"}}'
+        )
+
+    monkeypatch.setattr(fps, "fetch_flightplan_view", _boom)
+    r = client.get("/api/crew/weather/status")
+    assert r.status_code == 200
+    assert r.json()["has_plan"] is False
+
+
+def test_route_simbrief_fetch_failure_degrades_not_500(monkeypatch, client):
+    """Same scenario on /route: must be an honest 4xx with an actionable
+    message calling out the SimBrief handle, never a 500."""
+    from optimizer.api import flightplan_service as fps
+
+    listing = fps.list_plans()
+    fps.delete_plan(listing["last_plan"])
+    monkeypatch.setenv("SIMBRIEF_USER", "qa_test_pilot")
+
+    def _boom(**kwargs):
+        raise fps.FlightplanError(
+            "SimBrief fetch failed: SimBrief request failed with HTTP 400: "
+            '{"fetch":{"status":"Error: Unknown UserID"}}'
+        )
+
+    monkeypatch.setattr(fps, "fetch_flightplan_view", _boom)
+    r = client.get("/api/crew/weather/route")
+    assert r.status_code < 500, r.text
+    assert "SimBrief" in r.json()["detail"]
+
+
 def test_status_no_plan_degraded_state(monkeypatch, client):
     # delete the active plan -> /route degrades to 404 with a clear message
     from optimizer.api import flightplan_service as fps
