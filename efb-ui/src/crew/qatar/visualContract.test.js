@@ -101,8 +101,30 @@ test("interactive controls declare the 44 px iPad minimum", () => {
   assert.match(chip, /min-height:\s*44px/);
 });
 
-/* ── check 6: maroon basemap, not CARTO grey ────────────────────────── */
+/* ── Settings screen: shell tokens, full-width fields, tablet stacking ─ */
 
+test("the Settings screen reuses the shell panel tokens and stays responsive", () => {
+  const section = block(qatarCss, ".qr-shell .qr-settings__section {");
+  // Shell tokens, not a bolted-on palette: no hardcoded brand hex here.
+  assert.match(section, /var\(--qr-border-soft\)/);
+  assert.doesNotMatch(section, /#[0-9a-fA-F]{6}/);
+  assert.match(section, /min-width:\s*0/);
+
+  // Inputs fill their column at every width instead of overflowing it.
+  const field = block(qatarCss, ".qr-shell .qr-settings__field input {");
+  assert.match(field, /width:\s*100%/);
+  assert.match(field, /box-sizing:\s*border-box/);
+
+  // Action rows wrap rather than pushing the card wider (G1's failure mode).
+  const actions = block(qatarCss, ".qr-shell .qr-settings__actions {");
+  assert.match(actions, /flex-wrap:\s*wrap/);
+
+  // Tablet portrait: the buttons grow to a usable width on one row each.
+  const tablet = block(qatarCss, ".qr-shell .qr-settings__actions > button");
+  assert.match(tablet, /flex:\s*1 1 160px/);
+});
+
+/* ── check 6: maroon basemap, not CARTO grey ────────────────────────── */
 test("the basemap tint is the DESIGN.md maroon ramp", () => {
   assert.equal(BASEMAP_TINT.background, "#2a1019");
   assert.equal(BASEMAP_TINT.land, "#5c1a2e");

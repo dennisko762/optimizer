@@ -44,6 +44,7 @@ import {
 
   Gauge,
   Download,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { useCrewPlatform } from "../useCrewPlatform.js";
 import { loadSession, clearSession } from "../crewAuth.js";
@@ -87,6 +88,7 @@ import {
   NAVIGRAPH_TILE_LAYERS,
 } from "./navigraphMappers.js";
 import CrewLogin from "./CrewLogin.jsx";
+import SettingsPanel from "./SettingsPanel.jsx";
 import MapWeatherPanel from "./MapWeatherPanel.jsx";
 import BriefingPanel from "./BriefingPanel.jsx";
 import BoardingPanel from "../BoardingPanel.jsx";
@@ -373,7 +375,7 @@ export default function QatarShell({ onOpenOptimizer }) {
   // app start, or a fresh login screen when absent.
   const [crewSession, setCrewSession] = useState(() => loadSession());
 
-  const [screen, setScreen] = useState("home"); // home | crewdesk | profile | smartops
+  const [screen, setScreen] = useState("home"); // home | crewdesk | profile | smartops | settings
   const [tab, setTab] = useState("flightplan");
   const [flight, setFlight] = useState(null);
   const [ofp, setOfp] = useState(null);
@@ -543,6 +545,15 @@ export default function QatarShell({ onOpenOptimizer }) {
         />
       )}
 
+      {screen === "settings" && (
+        <SettingsScreen
+          utc={utc}
+          onNavigate={setScreen}
+          pilotName={crewSession.pilotId}
+          onSimbriefConfigured={loadLiveFlightplan}
+        />
+      )}
+
       {screen === "smartops" && flight && (
         <SmartOpsScreen
           utc={utc}
@@ -592,6 +603,13 @@ function Sidebar({ active, onNavigate, pilotName }) {
       >
         <User size={17} />
         Profile
+      </button>
+      <button
+        className={`qr-side-item ${active === "settings" ? "qr-side-item--active" : ""}`}
+        onClick={() => onNavigate("settings")}
+      >
+        <SettingsIcon size={17} />
+        Settings
       </button>
       {pilotName && <span className="qr-sidebar__pilot mono">{pilotName}</span>}
       <div className="qr-sidebar__brand">
@@ -1429,6 +1447,44 @@ export function ProfileScreen({ utc, onBack, onOpenOptimizer, crewSession, onLog
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Settings (EFB setup: SimBrief + Navigraph) ───────────────────── */
+
+/**
+ * A real sidebar destination, not a hidden route: the crew configures the
+ * bridge integrations from inside the EFB, on the machine they are flying.
+ * The panel body lives in SettingsPanel.jsx; this wrapper only supplies the
+ * shell chrome (top bar + sidebar + scrolling card) so the screen matches
+ * Crew Desk and Profile at every width the visual tests cover.
+ */
+export function SettingsScreen({ utc, onNavigate, pilotName, onSimbriefConfigured }) {
+  const { apiBase, session } = useCrewPlatform();
+  return (
+    <div className="qr-screen qr-crewdesk">
+      <TopHeader
+        utc={utc}
+        center={<span className="qr-topbar__title">SETTINGS</span>}
+        right={<QrLogo small />}
+      />
+      <div className="qr-crewdesk__body">
+        <Sidebar active="settings" onNavigate={onNavigate} pilotName={pilotName} />
+        <section className="qr-crewdesk__full">
+          <div className="qr-hero-card">
+            <button className="qr-linkbtn" onClick={() => onNavigate("home")}>
+              ← HOME
+            </button>
+            <h3>EFB SETUP</h3>
+            <SettingsPanel
+              apiBase={apiBase}
+              sessionId={session?.session_id || null}
+              onSimbriefConfigured={onSimbriefConfigured}
+            />
+          </div>
+        </section>
       </div>
     </div>
   );

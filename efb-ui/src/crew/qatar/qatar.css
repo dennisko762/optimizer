@@ -2412,3 +2412,127 @@
     scroll-snap-align: start;
   }
 }
+
+/* ─── Settings (EFB setup: SimBrief + Navigraph) ──────────────────────
+   Shares the maroon panel language of the Profile configuration list:
+   the same `--qr-panel` / `--qr-border-soft` surfaces, gold primary
+   actions and ghost secondaries, so the screen reads as part of the shell
+   rather than a bolted-on form. Every control inherits the global 44 px
+   iPad minimum (see the touch-target block above), and the two-column
+   field grid collapses to one column on tablet widths. */
+
+.qr-shell .qr-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.qr-shell .qr-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(58, 24, 36, 0.35);
+  border: 1px solid var(--qr-border-soft);
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.qr-shell .qr-settings__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.qr-shell .qr-settings__head h3 {
+  margin: 0;
+}
+
+.qr-shell .qr-settings__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--qr-muted);
+}
+.qr-shell .qr-settings__hint a {
+  color: var(--qr-gold);
+  text-decoration: none;
+}
+
+.qr-shell .qr-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.qr-shell .qr-settings__field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: rgba(26, 10, 18, 0.8);
+  border: 1px solid var(--qr-border-soft);
+  border-radius: 8px;
+  color: var(--qr-text);
+  font-size: 14px;
+}
+.qr-shell .qr-settings__field input:focus {
+  outline: none;
+  border-color: var(--qr-gold);
+}
+
+.qr-shell .qr-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.qr-shell .qr-settings__result {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.qr-shell .qr-settings__result--ok {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  color: var(--qr-ok);
+}
+.qr-shell .qr-settings__result--err {
+  background: rgba(232, 168, 56, 0.1);
+  border: 1px solid rgba(232, 168, 56, 0.4);
+  color: var(--qr-gold);
+}
+
+.qr-shell .qr-settings__device {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: rgba(26, 10, 18, 0.7);
+  border: 1px solid var(--qr-gold);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.qr-shell .qr-settings__device a {
+  color: var(--qr-gold);
+}
+.qr-shell .qr-settings__code {
+  font-size: 22px;
+  letter-spacing: 3px;
+  color: var(--qr-gold);
+}
+
+/* Tablet portrait: the setup card is already single-column, so only the
+   action rows need to be allowed to stack. */
+@media (max-width: 900px) {
+  .qr-shell .qr-settings__section {
+    padding: 12px;
+  }
+  .qr-shell .qr-settings__actions > button {
+    flex: 1 1 160px;
+  }
+}

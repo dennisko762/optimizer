@@ -51,7 +51,19 @@ def _active_plan() -> dict[str, Any]:
     if not key:
         # fall back to the live OFP when a SimBrief user is configured
         if fps.has_credentials():
-            view = fps.fetch_flightplan_view()
+            try:
+                view = fps.fetch_flightplan_view()
+            except fps.FlightplanError as exc:
+                # Any SimBrief failure (bad handle, outage, rate limit,
+                # network error) degrades to the same honest "no active
+                # flightplan" state the no-credentials path produces,
+                # instead of an uncaught 500 — mirrors the Flightplan
+                # screen's own handling of this identical failure.
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Could not fetch your SimBrief flightplan: {exc} "
+                           "Check your SimBrief handle in Settings.",
+                ) from exc
             return view
         raise HTTPException(
             status_code=404,

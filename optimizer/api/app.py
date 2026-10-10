@@ -16,6 +16,7 @@ from optimizer.api.simbrief_routes import router as simbrief_router
 from optimizer.api.trajectory_routes import router as trajectory_router
 
 from crew_platform.routes import router as crew_router, callback_router as crew_callback_router, technical_router as crew_technical_router
+from crew_platform.settings_routes import router as crew_settings_router
 from crew_platform.weather.routes import router as crew_weather_router
 from crew_platform.weather import scheduler as weather_scheduler
 from crew_platform.weather.briefing.routes import router as crew_briefing_router
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(trajectory_router)
     app.include_router(crew_router)
     app.include_router(crew_technical_router)
+    app.include_router(crew_settings_router)
     app.include_router(crew_weather_router)
     app.include_router(crew_briefing_router)
     app.include_router(navigraph_router)
