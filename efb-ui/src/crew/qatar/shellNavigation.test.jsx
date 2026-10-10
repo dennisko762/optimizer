@@ -125,6 +125,27 @@ beforeEach(() => {
     if (u.includes("/api/simbrief/flightplan/live")) {
       return { ok: false, status: 503, json: async () => ({}) };
     }
+    if (u.includes("/api/simbrief/config/readiness")) {
+      return { ok: true, status: 200, json: async () => ({ configured: false }) };
+    }
+    if (u.includes("/api/crew/settings")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          simbrief: { configured: false, user: null },
+          navigraph: {
+            client_id_set: false,
+            client_secret_set: false,
+            access_token_injected: false,
+            configured: false,
+            scopes: ["openid", "charts"],
+          },
+          env_file: { exists: false, writable: true },
+          remote_writes_allowed: false,
+        }),
+      };
+    }
     return { ok: false, status: 404, json: async () => ({}) };
   });
 });
@@ -173,6 +194,31 @@ test("the sidebar navigates Home → Crew Desk → Profile", async () => {
   // G9: the Profile states the airline AND the rendered interface.
   assert.match(profile, /Qatar Airways Virtual/);
   assert.match(profile, /QR SmartOps \(Qatar Airways reference shell\)/);
+});
+
+test("Settings is a real sidebar destination with both setup sections", async () => {
+  const renderer = await renderShell();
+
+  const entry = sideItem(renderer, "Settings");
+  assert.ok(entry, "no Settings entry in the shell sidebar");
+  await act(async () => entry.props.onClick());
+
+  const settings = textOf(renderer);
+  assert.match(settings, /SETTINGS/);
+  assert.match(settings, /EFB SETUP/);
+  assert.match(settings, /SIMBRIEF USERNAME OR PILOT ID/);
+  assert.match(settings, /NAVIGRAPH CLIENT ID/);
+  // The screen keeps the shell chrome, so the crew can navigate back out.
+  assert.ok(sideItem(renderer, "Home"));
+  assert.equal(
+    renderer.root.findAll((n) =>
+      n.props && n.props["data-testid"] === "efb-settings"
+    ).length,
+    1
+  );
+
+  await act(async () => sideItem(renderer, "Home").props.onClick());
+  assert.match(textOf(renderer), /COMPANY NEWS/);
 });
 
 test("opening a flight hands off to SmartOps and every tab is reachable", async () => {

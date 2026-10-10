@@ -25,8 +25,8 @@ import {
   validateSimbriefUser,
 } from "./settingsApi.js";
 
-const PLACEHOLDER_ID = "efb-test-client-id";
-const PLACEHOLDER_SECRET = "not-a-real-secret-0000";
+const PLACEHOLDER_ID = "aaaa-bbbb-cccc";
+const PLACEHOLDER_SECRET = "zzzz-zzzz-zzzz-zzzz";
 
 afterEach(() => {
   delete globalThis.fetch;

@@ -53,6 +53,16 @@ _session_store = SessionStore()
 _pending_flows: dict[str, tuple[PKCEFlowState, str]] = {}
 
 
+def get_session_store() -> SessionStore:
+    """The process-wide crew session store.
+
+    Sibling routers (e.g. ``crew_platform.settings_routes``) gate their
+    privileged endpoints on the same store these routes create sessions
+    in, instead of inventing a second session concept.
+    """
+    return _session_store
+
+
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------

@@ -32,9 +32,9 @@ from crew_platform.settings import (
 )
 from optimizer.api.app import app
 
-# Obvious placeholders — not credentials.
-PLACEHOLDER_CLIENT_ID = "efb-test-client-id"
-PLACEHOLDER_CLIENT_SECRET = "not-a-real-secret-0000"
+# Deliberately low-entropy, obviously fake placeholders — not credentials.
+PLACEHOLDER_CLIENT_ID = "aaaa-bbbb-cccc"
+PLACEHOLDER_CLIENT_SECRET = "zzzz-zzzz-zzzz-zzzz"
 
 SETTING_ENV_KEYS = (
     "SIMBRIEF_USER",
@@ -325,11 +325,11 @@ class TestSettingsState:
     def test_injected_access_token_counts_as_configured_but_is_not_returned(
         self, env_file, monkeypatch
     ):
-        monkeypatch.setenv("NAVIGRAPH_ACCESS_TOKEN", "injected-token-placeholder")
+        monkeypatch.setenv("NAVIGRAPH_ACCESS_TOKEN", "tttt-tttt-tttt")
         state = settings_state()
         assert state["navigraph"]["access_token_injected"] is True
         assert state["navigraph"]["configured"] is True
-        assert "injected-token-placeholder" not in repr(state)
+        assert "tttt-tttt-tttt" not in repr(state)
 
     def test_field_catalog_carries_labels_and_hints_only(self, env_file):
         fields = {f["name"]: f for f in settings_state()["fields"]}
